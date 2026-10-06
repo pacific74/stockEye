@@ -1,5 +1,5 @@
 # 데이터·비밀 (절대 GitHub 에 올리지 않음)
-data/
+/data/
 *.db
 .env
 .env.*

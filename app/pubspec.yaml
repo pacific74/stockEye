@@ -1,0 +1,43 @@
+name: stockeye
+description: StockEye - 국내 주식 종목 선정 앱
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  intl: any
+  supabase_flutter: ^2.8.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon/logo_256.png
+
+# 앱 실행 아이콘 생성:  dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: "launcher_icon"
+  image_path_android: "assets/icon/icon_rounded.png"     # 구형 안드로이드
+  adaptive_icon_background: "#050B1C"                   # 안드로이드 8+ (원/둥근사각 마스크)
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+  ios: false                                            # iOS 빌드할 때 true 로 (image_path_ios: assets/icon/icon_full.png)
+  image_path: "assets/icon/icon_rounded.png"
+  windows:
+    generate: true
+    image_path: "assets/icon/icon_rounded.png"
+    icon_size: 256
+  web:
+    generate: true
+    image_path: "assets/icon/icon_rounded.png"
+    background_color: "#050B1C"
+    theme_color: "#12B5D9"

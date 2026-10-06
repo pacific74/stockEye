@@ -1,0 +1,12 @@
+pandas>=2.2
+numpy>=1.26
+pyarrow>=15
+pyyaml>=6
+pykrx>=1.0.48
+finance-datareader>=0.9.90
+requests>=2.31
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pytest>=8
+httpx>=0.27
+anthropic>=0.40

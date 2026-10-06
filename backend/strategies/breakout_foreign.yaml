@@ -1,0 +1,19 @@
+# 예시 전략: 20일선 위 + 거래량 2배 + 20일 고점 돌파 + 외국인 순매수 + RSI 50~70
+name: 돌파 + 외국인 매수
+rules:
+  - close_gt_sma20
+  - vol_ratio_gte: 2.0
+  - breakout_20d
+  - foreign_net_positive
+  - rsi_between: [50, 70]
+  - value_ma20_gte: 2000000000   # 거래대금 20억 이상
+  - price_gte: 1000
+rank_by: score          # 신호가 슬롯보다 많으면 100점 점수 높은 순
+start: 2021-01-01
+end: null               # null = 데이터 마지막 날까지
+
+# 사용 가능한 조건:
+#  close_gt_sma20, close_gt_sma60, sma5_gt_sma20, sma20_rising,
+#  vol_ratio_gte: N, value_ma20_gte: 원, price_gte: 원,
+#  breakout_20d, breakout_60d, foreign_net_positive, institution_net_positive,
+#  foreign_streak_gte: N, rsi_between: [lo, hi], macd_positive, not_halted

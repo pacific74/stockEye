@@ -1,0 +1,25 @@
+# 데이터·비밀 (절대 GitHub 에 올리지 않음)
+data/
+*.db
+.env
+.env.*
+*.env
+!deploy/vm/stockeye.env.example
+**/.kis_token*.json
+
+# 파이썬
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Flutter
+app/build/
+app/.dart_tool/
+app/.flutter-plugins*
+app/.idea/
+app/*.iml
+app/android/.gradle/
+app/android/local.properties
+app/android/key.properties
+app/android/app/*.jks

@@ -1,0 +1,421 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// 데이터를 어디서 가져올지
+///  1) 클라우드 (기본 배포): 빌드할 때 --dart-define=SUPABASE_URL=… --dart-define=SUPABASE_ANON_KEY=…
+///     → Supabase 에서 직접 읽음 (PC 서버 불필요, 어디서나 로그인해서 사용)
+///  2) PC 서버: 위 값이 없으면 예전처럼 PC 의 FastAPI 서버 (http://PC주소:8000)
+const String supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+const String supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+bool get useCloud => supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
+
+const String _envBase = String.fromEnvironment('API_BASE');
+
+String get apiBase {
+  if (useCloud) return 'StockEye 클라우드';
+  if (_envBase.isNotEmpty) return _envBase;
+  if (kIsWeb && Uri.base.path.startsWith('/app')) return Uri.base.origin;
+  return 'http://localhost:8000';
+}
+
+typedef Json = Map<String, dynamic>;
+
+Json asMap(dynamic v) => v == null ? <String, dynamic>{} : Map<String, dynamic>.from(v as Map);
+List<Json> asList(dynamic v) => (v as List? ?? []).map((e) => asMap(e)).toList();
+
+class Api {
+  static Future<Json> dashboard() => useCloud ? _Cloud.dashboard() : _Http.dashboard();
+  static Future<Json> candidates(String list, {int top = 30}) =>
+      useCloud ? _Cloud.candidates(list, top) : _Http.candidates(list, top);
+  static Future<Json> sectors() => useCloud ? _Cloud.sectors() : _Http.get('/api/sectors');
+  static Future<Json> sector(String group) =>
+      useCloud ? _Cloud.sector(group) : _Http.get('/api/sectors/${Uri.encodeComponent(group)}');
+  static Future<List<Json>> search(String q) => useCloud ? _Cloud.search(q) : _Http.search(q);
+  static Future<Json> stock(String code) => useCloud ? _Cloud.stock(code) : _Http.get('/api/stocks/$code');
+  static Future<Json> explain(String code) => useCloud ? _Cloud.explain(code) : _Http.get('/api/stocks/$code/explain');
+  static Future<Json> similar(String code) => useCloud ? _Cloud.similar(code) : _Http.get('/api/stocks/$code/similar');
+  static Future<List<Json>> strategies() => useCloud ? _Cloud.strategies() : _Http.getList('/api/strategies');
+  static Future<Json> backtest(Json req) => useCloud ? _Cloud.backtest(req) : _Http.post('/api/backtest', req);
+  static Future<Json> latestBacktest({String? strategy}) => useCloud
+      ? _Cloud.latestBacktest(strategy)
+      : _Http.get('/api/backtest/latest${strategy == null ? '' : '?strategy=$strategy'}');
+  static Future<Json> tradingStatus() => useCloud ? _Cloud.tradingStatus() : _Http.get('/api/trading/status');
+  static Future<List<Json>> orders({String status = 'pending'}) =>
+      useCloud ? _Cloud.orders(status) : _Http.getList('/api/orders?status=$status');
+  static Future<Json> approveOrder(String id) =>
+      useCloud ? _Cloud.rpcMap('approve_order', {'p_id': id}) : _Http.post('/api/orders/$id/approve', {});
+  static Future<Json> rejectOrder(String id) =>
+      useCloud ? _Cloud.rpcMap('reject_order', {'p_id': id}) : _Http.post('/api/orders/$id/reject', {});
+  static Future<List<Json>> journal({String? status, String? mode}) {
+    if (useCloud) return _Cloud.journal(status, mode);
+    final q = [if (status != null) 'status=$status', if (mode != null) 'mode=$mode'].join('&');
+    return _Http.getList('/api/journal${q.isEmpty ? '' : '?$q'}');
+  }
+
+  static Future<Json> closePosition(String id, double price, {String reason = '수동', String? exitTime}) => useCloud
+      ? _Cloud.closePosition(id, price, reason, exitTime)
+      : _Http.post('/api/journal/$id/close', {'price': price, 'reason': reason, 'exit_time': exitTime});
+  static Future<Json> journalAnalysis({String? mode}) => useCloud
+      ? _Cloud.journalAnalysis(mode, ai: false)
+      : _Http.get('/api/journal/analysis${mode == null ? '' : '?mode=$mode'}');
+  static Future<Json> journalAI({String? mode}) => useCloud
+      ? _Cloud.journalAnalysis(mode, ai: true)
+      : _Http.get('/api/journal/analysis/ai${mode == null ? '' : '?mode=$mode'}');
+  static Future<List<Json>> portfolioReview() =>
+      useCloud ? _Cloud.portfolioReview() : _Http.getList('/api/portfolio/review');
+  static Future<Json> addHolding(Json h) => useCloud ? _Cloud.addHolding(h) : _Http.post('/api/portfolio', h);
+  static Future<void> deleteHolding(String id) =>
+      useCloud ? _Cloud.deleteHolding(id) : _Http.send('DELETE', '/api/portfolio/$id');
+}
+
+// ============================================================ 클라우드 (Supabase)
+class _Cloud {
+  static SupabaseClient get db => Supabase.instance.client;
+
+  static const _tsKeys = ['entry_time', 'exit_time', 'signal_time', 'created_at', 'expires_at', 'filled_at', 'time'];
+
+  static Json _norm(dynamic row) {
+    final m = asMap(row);
+    for (final k in _tsKeys) {
+      final v = m[k];
+      if (v is String && v.length >= 16) m[k] = ('${v.replaceFirst('T', ' ')}:00').substring(0, 19);
+    }
+    return m;
+  }
+
+  static Json _position(dynamic row) {
+    final p = _norm(row);
+    final ep = (p['entry_price'] as num?)?.toDouble();
+    double? pctOf(String k) {
+      final v = (p[k] as num?)?.toDouble();
+      if (v == null || ep == null || ep == 0) return null;
+      return ((v / ep - 1) * 10000).roundToDouble() / 100;
+    }
+
+    p['mae_pct'] = pctOf('min_price'); // 보유 중 최대 손실폭
+    p['mfe_pct'] = pctOf('max_price'); // 보유 중 최대 수익폭
+    return p;
+  }
+
+  static String _ts(String t) => t.length == 10 ? '$t 09:00:00' : (t.length == 16 ? '$t:00' : t);
+
+  // ---------------------------------------------------------------- 리포트
+  static Json? _rep;
+  static DateTime? _repAt;
+
+  static Future<Json> _latest() async {
+    if (_rep != null && _repAt != null && DateTime.now().difference(_repAt!).inMinutes < 2) return _rep!;
+    final r = await db.from('daily_reports').select().order('date', ascending: false).limit(1).maybeSingle();
+    if (r == null) {
+      throw Exception('아직 리포트가 없습니다.\n첫 일일 배치가 끝나면 나타납니다 (평일 저녁 6시 40분 이후).');
+    }
+    _rep = asMap(r);
+    _repAt = DateTime.now();
+    return _rep!;
+  }
+
+  static Future<Json> dashboard() async {
+    _repAt = null; // 새로고침 = 최신으로
+    final r = await _latest();
+    return {
+      'date': r['date'],
+      'as_of': r['as_of'],
+      'market': r['market'],
+      'sectors': asList(r['sectors']).take(8).toList(),
+      'top10': r['top10'] ?? [],
+      'strategies': r['strategies'] ?? {},
+      'funnel': r['funnel'],
+      'ai_explained': r['ai_explained'] ?? 0,
+    };
+  }
+
+  static Future<Json> candidates(String list, int top) async {
+    final r = await _latest();
+    final rows = await db
+        .from('candidates')
+        .select('payload')
+        .eq('date', r['date'] as String)
+        .eq('list', list)
+        .order('rank')
+        .limit(top);
+    final cands = rows.map((e) => asMap(e['payload'])).toList();
+    if (list == 'overall') return {'list': 'overall', 'name': '상승 후보 (종합 점수)', 'candidates': cands};
+    final s = asMap(asMap(r['strategies'])[list]);
+    return {
+      'list': list,
+      'name': s['name'] ?? list,
+      'description': s['description'],
+      'limitation': s['limitation'],
+      'candidates': cands,
+    };
+  }
+
+  static Future<Json> sectors() async {
+    final r = await _latest();
+    return {'date': r['date'], 'sectors': r['sectors'] ?? [], 'unmatched_theme_names': r['unmatched_theme_names'] ?? []};
+  }
+
+  static Future<Json> sector(String group) async {
+    final r = await _latest();
+    final g = asList(r['sectors']).where((s) => s['group'] == group);
+    if (g.isEmpty) throw Exception('업종/테마 없음');
+    return g.first;
+  }
+
+  // ---------------------------------------------------------------- 종목
+  static Future<List<Json>> search(String q) async {
+    final s = q.replaceAll(RegExp(r'[,()*%\\."]'), '').trim();
+    if (s.isEmpty) return [];
+    final rows = await db
+        .from('stock_details')
+        .select('code,name,market')
+        .or('name.ilike.*$s*,code.like.$s*')
+        .order('score', ascending: false)
+        .limit(20);
+    return rows.map(asMap).toList();
+  }
+
+  static Future<Json> _detail(String code, String cols) async {
+    final r = await db.from('stock_details').select(cols).eq('code', code).maybeSingle();
+    if (r == null) throw Exception('종목 데이터가 없습니다 ($code)');
+    return asMap(r);
+  }
+
+  static Future<Json> stock(String code) async {
+    final r = await _detail(code, 'candidate,chart,disclosures,explanation');
+    return {
+      'candidate': r['candidate'],
+      'chart': r['chart'] ?? [],
+      'explanation': r['explanation'],
+      'disclosures': r['disclosures'] ?? [],
+    };
+  }
+
+  static Future<Json> explain(String code) async {
+    final r = await _detail(code, 'explanation');
+    if (r['explanation'] == null) throw Exception('설명이 아직 없습니다');
+    return asMap(r['explanation']);
+  }
+
+  static Future<Json> similar(String code) async {
+    final r = await _detail(code, 'similar_patterns');
+    final s = r['similar_patterns'];
+    if (s == null) {
+      throw Exception('비슷한 패턴은 매일 저녁 배치에서 "매수 후보" 종목만 미리 계산합니다.');
+    }
+    final m = asMap(s);
+    if (m['error'] != null) throw Exception('${m['error']}');
+    return m;
+  }
+
+  // ---------------------------------------------------------------- 전략 / 백테스트
+  static Future<List<Json>> strategies() async {
+    final meta = await db.from('system_status').select('payload').eq('key', 'strategies').maybeSingle();
+    final bts = await db.from('backtests').select('key,start_date,end_date,metrics,metrics_oos,audit_passed');
+    final byKey = {for (final b in bts) b['key'] as String: asMap(b)};
+    return asList(meta?['payload']).map<Json>((s) {
+      final b = byKey[s['key']];
+      return {
+        ...s,
+        'backtest': b == null
+            ? null
+            : {
+                'start': b['start_date'],
+                'end': b['end_date'],
+                'metrics': b['metrics'],
+                'metrics_oos': b['metrics_oos'],
+                'audit_passed': b['audit_passed'],
+              },
+      };
+    }).toList();
+  }
+
+  static Future<Json> backtest(Json req) async {
+    final spec = Map<String, dynamic>.from(req)..removeWhere((k, v) => v == null || v == false);
+    spec.remove('run_audit');
+    if (spec['strategy'] == null) spec.remove('strategy');
+    final Json r;
+    try {
+      r = await db.from('backtest_requests').insert({'spec': spec}).select('id').single();
+    } on PostgrestException catch (e) {
+      if (e.code == '42501') throw Exception('이미 대기 중인 백테스트 요청이 있습니다. 끝난 뒤 다시 요청하세요.');
+      rethrow;
+    }
+    return {
+      'queued': true,
+      'id': r['id'],
+      'message': '백테스트를 요청했습니다. 다음 배치(평일 저녁 또는 토요일)에서 5년치로 실행한 뒤 이 화면에 결과가 나옵니다.',
+    };
+  }
+
+  static Future<Json> latestBacktest(String? strategy) async {
+    if (strategy != null) {
+      final r = await db.from('backtests').select('payload').eq('key', strategy).maybeSingle();
+      if (r == null) throw Exception('아직 백테스트 결과가 없습니다');
+      return asMap(r['payload']);
+    }
+    final req = await db
+        .from('backtest_requests')
+        .select('result,done_at')
+        .eq('status', 'done')
+        .order('done_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    if (req != null && req['result'] != null) return asMap(req['result']);
+    final r = await db.from('backtests').select('payload').order('updated_at', ascending: false).limit(1).maybeSingle();
+    if (r == null) throw Exception('아직 백테스트 결과가 없습니다');
+    return asMap(r['payload']);
+  }
+
+  /// 내가 요청한 백테스트 상태 (queued/running/done/failed)
+  static Future<List<Json>> backtestRequests() async {
+    final rows = await db
+        .from('backtest_requests')
+        .select('id,spec,status,message,created_at,done_at')
+        .order('id', ascending: false)
+        .limit(10);
+    return rows.map(asMap).toList();
+  }
+
+  // ---------------------------------------------------------------- 매매 상태 / 주문
+  static Future<Json> tradingStatus() async {
+    final st = await db.from('system_status').select('payload,updated_at').eq('key', 'trading').maybeSingle();
+    final p = asMap(st?['payload']);
+    final pending = await db.from('orders').select('id').eq('status', 'pending');
+    final opens = await db.from('positions').select('id').eq('status', 'open');
+    final cash = await db.from('paper_cash').select('balance').eq('mode', 'paper').maybeSingle();
+    final batch = await db.from('system_status').select('payload').eq('key', 'batch').maybeSingle();
+    return {
+      'mode': p['mode'] ?? 'alert',
+      'broker': p['broker'],
+      'allow_real_orders': p['allow_real_orders'] ?? false,
+      'notify_channels': p['notify_channels'] ?? <String>[],
+      'pending_orders': pending.length,
+      'open_positions': opens.length,
+      'paper_cash': cash?['balance'] ?? p['paper_capital'],
+      'batch': batch?['payload'],
+      'recent_alerts': <Json>[],
+    };
+  }
+
+  static Future<List<Json>> orders(String status) async {
+    final rows = await db.from('orders').select().eq('status', status).order('created_at', ascending: false).limit(100);
+    return rows.map(_norm).toList();
+  }
+
+  static Future<Json> rpcMap(String fn, Json params) async => asMap(await db.rpc(fn, params: params));
+
+  // ---------------------------------------------------------------- 매매일지 / 보유종목
+  static Future<List<Json>> journal(String? status, String? mode) async {
+    var q = db.from('positions').select();
+    if (status != null) q = q.eq('status', status);
+    if (mode != null) q = q.eq('mode', mode);
+    final rows = await q.order('entry_time', ascending: false).limit(300);
+    return rows.map(_position).toList();
+  }
+
+  static Future<Json> closePosition(String id, double price, String reason, String? exitTime) async {
+    final r = await db.rpc('close_position', params: {
+      'p_id': id,
+      'p_price': price,
+      'p_reason': reason,
+      if (exitTime != null) 'p_exit_time': _ts(exitTime),
+    });
+    return _position(r);
+  }
+
+  static Future<Json> journalAnalysis(String? mode, {required bool ai}) async {
+    final r = await db.from('journal_analysis').select('payload,updated_at').eq('mode', mode ?? 'all').maybeSingle();
+    final empty = <String, dynamic>{'closed': 0, 'message': '아직 분석이 없습니다.\n매매일지 분석은 매일 저녁 배치 때 갱신됩니다.'};
+    if (r == null) {
+      return ai ? {'stats': empty, 'summary': {'text': empty['message'], 'source': 'rule'}} : empty;
+    }
+    final p = asMap(r['payload']);
+    return ai ? p : asMap(p['stats']);
+  }
+
+  static Future<List<Json>> portfolioReview() async {
+    final opens = await db.from('positions').select().eq('status', 'open').order('entry_time', ascending: false);
+    if (opens.isEmpty) return [];
+    final ids = opens.map((p) => p['id'] as String).toList();
+    final reviews = await db.from('position_reviews').select('position_id,payload').inFilter('position_id', ids);
+    final byId = {for (final r in reviews) r['position_id'] as String: asMap(r['payload'])};
+    return opens.map<Json>((row) {
+      final p = _position(row);
+      final rv = byId[p['id']];
+      return <String, dynamic>{
+        ...p,
+        'avg_price': p['entry_price'],
+        'target': p['target1'],
+        'buy_date': (p['entry_time'] as String? ?? '').length >= 10 ? (p['entry_time'] as String).substring(0, 10) : null,
+        if (rv != null) ...rv,
+        if (rv == null) 'status': '점검 대기',
+        if (rv == null) 'alerts': ['오늘 저녁 배치 때 손절·목표·추세를 점검합니다'],
+      };
+    }).toList();
+  }
+
+  static Future<Json> addHolding(Json h) async {
+    final r = await db.rpc('open_manual_position', params: {
+      'p_code': h['code'],
+      'p_price': h['avg_price'],
+      'p_qty': h['qty'],
+      if (h['buy_date'] != null) 'p_entry_time': _ts(h['buy_date'] as String),
+      'p_stop': h['stop'],
+      'p_target1': h['target'],
+      'p_target2': h['target2'],
+      'p_memo': h['memo'],
+      'p_name': h['name'],
+    });
+    return _position(r);
+  }
+
+  static Future<void> deleteHolding(String id) async {
+    await db.from('positions').delete().eq('id', id);
+  }
+}
+
+// ============================================================ PC 서버 (FastAPI)
+class _Http {
+  static Future<dynamic> send(String method, String path, [Object? body]) async {
+    final uri = Uri.parse('$apiBase$path');
+    const headers = {'Content-Type': 'application/json'};
+    final http.Response res;
+    switch (method) {
+      case 'POST':
+        res = await http.post(uri, headers: headers, body: jsonEncode(body)).timeout(const Duration(minutes: 15));
+        break;
+      case 'PATCH':
+        res = await http.patch(uri, headers: headers, body: jsonEncode(body)).timeout(const Duration(seconds: 30));
+        break;
+      case 'DELETE':
+        res = await http.delete(uri).timeout(const Duration(seconds: 30));
+        break;
+      default:
+        res = await http.get(uri).timeout(const Duration(minutes: 3));
+    }
+    final text = utf8.decode(res.bodyBytes);
+    if (res.statusCode != 200) {
+      String msg = text;
+      try {
+        msg = (jsonDecode(text) as Map)['detail']?.toString() ?? text;
+      } catch (_) {}
+      throw Exception(msg);
+    }
+    return jsonDecode(text);
+  }
+
+  static Future<Json> get(String path) async => asMap(await send('GET', path));
+  static Future<List<Json>> getList(String path) async => asList(await send('GET', path));
+  static Future<Json> post(String path, Object body) async => asMap(await send('POST', path, body));
+
+  static Future<Json> dashboard() => get('/api/dashboard');
+  static Future<Json> candidates(String list, int top) => get('/api/candidates?list=$list&top=$top');
+  static Future<List<Json>> search(String q) => getList('/api/search?q=${Uri.encodeQueryComponent(q)}');
+}
+
+/// 백테스트 요청 목록 (클라우드 전용)
+Future<List<Json>> backtestRequests() => useCloud ? _Cloud.backtestRequests() : Future.value(<Json>[]);

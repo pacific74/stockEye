@@ -1,0 +1,52 @@
+# 평일 18:40(한국시간) 자동: 수집 → 분석 → Supabase 발행 → 휴대폰 알림
+# 서울 VM 으로 옮기면: GitHub 저장소 Settings → Secrets and variables → Actions → Variables 에
+#   BATCH_RUNNER = vm  을 추가하면 이 예약 실행은 멈춘다 (수동 실행은 계속 가능).
+name: daily-batch
+
+on:
+  schedule:
+    - cron: "40 9 * * 1-5"        # UTC 09:40 = 한국 18:40 (GitHub 사정으로 10~30분 늦게 시작될 수 있음)
+  workflow_dispatch:
+    inputs:
+      skip_collect:
+        description: "수집 없이 분석·발행만 (시험용)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: stockeye-batch
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    if: github.event_name == 'workflow_dispatch' || vars.BATCH_RUNNER != 'vm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TZ: Asia/Seoul
+      PYTHONUTF8: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      KRX_ID: ${{ secrets.KRX_ID }}
+      KRX_PW: ${{ secrets.KRX_PW }}
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      NTFY_SERVER: ${{ secrets.NTFY_SERVER }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: 패키지 설치
+        run: pip install -r backend/requirements.txt
+      - name: 일일 배치
+        working-directory: backend
+        run: python -m scripts.cloud_daily ${{ inputs.skip_collect && '--skip-collect' || '' }}

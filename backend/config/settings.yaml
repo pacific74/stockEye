@@ -1,0 +1,115 @@
+# ==========================================================
+# StockEye 설정 파일
+#  - 숫자를 바꾸면 코드 수정 없이 필터/점수/비용이 바뀝니다.
+# ==========================================================
+
+data:
+  dir: ../data                # parquet 저장 위치 (backend/ 기준 상대경로)
+  source: pykrx               # pykrx | synthetic
+  history_days: 400           # 매일 스크리닝 시 불러올 과거 영업일 수
+
+# ---------------- 1차 필터 (4,000 → ~500) ----------------
+stage1:
+  min_trading_value: 2_000_000_000   # 거래대금 20억 (20일 평균 기준)
+  trading_value_window: 20
+  min_price: 1000
+  exclude_admin: true                # 관리종목 제외
+  exclude_halted: true               # 거래정지 제외
+  crash_lookback: 5                  # 최근 N일 안에
+  crash_daily_drop: -0.10            #   하루 -10% 이상 하락이 있거나
+  crash_period_drop: -0.15           #   N일 누적 -15% 이상이면 제외
+
+# ---------------- 2차 필터 (~500 → 50~100) ----------------
+stage2:
+  require:                           # 반드시 충족 (하나라도 틀리면 탈락)
+    - sma5_gt_sma20
+    - sma20_rising
+    - close_gt_sma20
+  rsi_max: 82                        # 이 이상은 과열로 탈락
+  min_optional_hits: 2               # 아래 선택조건 중 최소 몇 개 충족
+  optional:
+    - volume_up                      # 거래량 증가 (20일 평균 대비 1.5배)
+    - breakout_20d                   # 최근 20일 고점 돌파
+    - macd_positive                  # MACD > 시그널
+    - rsi_in_zone                    # RSI 50~70
+    - bb_upper_half                  # 볼린저밴드 중심선 위
+  volume_up_ratio: 1.5
+  max_candidates: 100
+
+# ---------------- 100점 스코어 ----------------
+score_weights:
+  trend: 20
+  volume: 15
+  trading_value: 10
+  supply: 20
+  breakout: 15
+  volatility: 5
+  financial: 5
+  news: 10
+
+# ---------------- 매매 계획 (ATR 기반) ----------------
+trade_plan:
+  entry_low_atr: 0.3        # 매수구간 하단 = 현재가 - 0.3 ATR
+  entry_high_atr: 0.1       # 매수구간 상단 = 현재가 + 0.1 ATR
+  stop_atr: 1.5             # 손절 = 진입가 - 1.5 ATR (단, 20일선 아래 1.5%가 더 높으면 그쪽)
+  stop_min_atr: 1.0         # 손절폭 최소 1 ATR (너무 촘촘하면 노이즈에 털림)
+  target1_atr: 2.5
+  target2_atr: 4.5
+  max_stop_pct: 0.08        # 손절폭 상한 8%
+
+# ---------------- 거래 비용 (2026년 기준, 매년 확인 필요) ----------------
+costs:
+  commission_rate: 0.00015  # 증권사 수수료 0.015% (매수/매도 각각) - 본인 증권사로 수정
+  sell_tax_rate: 0.0020     # 2026: 코스피 0.05%+농특세 0.15% / 코스닥 0.20% → 모두 0.20%
+  slippage_bps: 10          # 기본 슬리피지 0.10% (매수/매도 각각)
+  illiquid_slippage_bps: 30 # 거래대금 50억 미만 종목은 0.30%
+  illiquid_threshold: 5_000_000_000
+
+# ---------------- 백테스트 ----------------
+backtest:
+  initial_capital: 100_000_000
+  max_positions: 5
+  position_pct: 0.2          # 종목당 자본의 20%
+  max_hold_days: 15          # 15영업일 지나면 시가 청산
+  execution: next_open       # 신호는 T일 종가 기준, 체결은 T+1 (아래 entry_mode)
+  entry_mode: zone           # zone: 실전처럼 '매수 적정구간'에 올 때만 체결 | open: 무조건 다음날 시가
+  same_bar_rule: stop_first  # 같은 날 손절/목표 모두 닿으면 손절 우선 (보수적)
+  limit_up_skip: 0.29        # 시가가 전일 대비 +29% 이상(상한가 근처)이면 매수 불가로 처리
+  oos_ratio: 0.3             # 마지막 30% 기간은 표본 외(Out-of-sample)로 따로 성과 표시
+
+# ---------------- 전략별 후보 ----------------
+strategies:
+  max_per_strategy: 30       # 전략별 최대 후보 수
+
+# ---------------- AI 설명 (판단 보조) ----------------
+ai:
+  enabled: true              # ANTHROPIC_API_KEY 환경변수가 있을 때만 실제 호출, 없으면 규칙 기반 문장
+  model: claude-sonnet-5-5   # 비용을 줄이려면 claude-haiku-4-5-20251001
+  max_tokens: 600
+  explain_top: 20            # 매일 리포트에서 AI 설명을 미리 만들 종목 수 (TOP10 + 전략별 상위)
+
+# ---------------- 한국투자증권 Open API ----------------
+kis:
+  env: prod                  # prod(실전) | vps(모의). 시세 조회는 실전 앱키 권장
+  calls_per_sec: 15          # 초당 호출 제한 (실전 계좌 기준 20회 미만으로)
+  program_universe: stage1   # 프로그램매매를 받을 종목: 1차 필터 통과 종목
+
+# ---------------- 실시간 알림 / 모의투자 / 반자동 매매 ----------------
+trading:
+  mode: alert                # alert(3단계: 알림만) | paper(4단계: 모의 자동체결) | semi_auto(5단계: 승인 후 주문)
+  broker: paper              # paper(내부 모의) | kis_vps(KIS 모의투자 계좌) | kis_prod(실전 계좌)
+  allow_real_orders: false   # ★ 실전 주문 허용. kis_prod 를 쓰려면 직접 true 로 바꿔야 함
+  auto_stop_loss: false      # semi_auto 에서 손절은 승인 없이 바로 주문할지 (기본: 손절도 승인 필요)
+  signal_lists: [overall, A, B, D]      # 진입 신호를 볼 후보 목록 (C 급등초기는 기본 제외)
+  entry_verdicts: [매수 고려, 눌림 대기]   # 이 판정인 종목이 '매수 적정구간'에 오면 신호
+  entry_start: "09:05"       # 장 초반 5분 변동성 회피
+  entry_end: "15:00"
+  poll_seconds: 30           # 시세 확인 간격 (KIS 초당 호출 제한 고려)
+  position_krw: 1_000_000    # 1회 매수 금액
+  max_order_krw: 1_000_000   # 1회 주문 금액 상한 (position_krw 보다 우선)
+  max_positions: 5           # 동시에 보유할 최대 종목 수
+  max_daily_buys: 3          # 하루 최대 매수 주문 수
+  daily_loss_limit_pct: 2    # 하루 실현손실이 자본의 2% 를 넘으면 신규 진입 중지
+  paper_capital: 10_000_000  # 내부 모의계좌 시작 금액
+  approval_timeout_min: 10   # 승인 대기 주문 만료 시간
+  app_url: null              # 알림을 눌렀을 때 열 주소 (예: 앱/웹 주소). 없으면 생략

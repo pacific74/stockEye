@@ -45,6 +45,14 @@ PC 는 **처음 한 번 5년치 데이터를 올릴 때만** 필요합니다. �
 → `SUPABASE_USER_ID`. (실시간 감시·모의/반자동 주문은 이 계정 것만 처리합니다)
 웹 앱이 아직 없으면 Users → Add user → Create new user (Auto Confirm User 체크) 로 먼저 만들어도 됩니다.
 
+### 가입 승인 (관리자)
+- 새로 가입한 사람은 메일 인증 후 로그인하면 **"관리자 승인을 기다리고 있어요"** 화면만 보입니다.
+- 관리자(가장 먼저 가입한 계정 = 나)는 앱 홈 → 오른쪽 위 ⋮ → **회원 관리** 에서 승인/거절/승인 취소.
+  홈 화면 맨 위에도 "가입 승인 대기 N명" 이 뜨고, 매일 저녁 리포트 알림에도 대기 인원이 붙습니다.
+- 가입 즉시 휴대폰 알림을 받으려면 Supabase SQL Editor 에서 한 번:
+  `insert into public.app_config values ('ntfy_topic', '내 ntfy 토픽') on conflict (key) do update set value = excluded.value;`
+- 관리자를 바꾸려면 SQL Editor: `update public.profiles set is_admin = (email = '새관리자@메일');`
+
 ### 누가 무엇을 보나
 - **모두 같이 보는 것**: 오늘의 시장 · 업종 · TOP10 · 전략 후보 · 종목 상세 · 백테스트 결과
 - **각자 자기 것만**: 보유종목 · 매매일지 · 매매 분석 · 백테스트 요청 (한 사람당 대기 1건)

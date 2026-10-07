@@ -150,7 +150,12 @@ def main():
     n = Notifier()
     top = ", ".join(f"{c['name']}({c['score']:.0f})" for c in report["top10"][:3]) or "후보 없음"
     m = report["market"]
+    try:   # 관리자에게: 가입 승인 대기 인원
+        pending = sb.count("profiles", {"status": "eq.pending"})
+    except Exception:  # noqa: BLE001  (예전 스키마)
+        pending = 0
     n.send(f"StockEye {report['date']} 리포트", f"{m.get('mood_icon', '')} {m.get('mood', '')} · TOP3 {top}"
+           + (f"\n👤 가입 승인 대기 {pending}명 (앱 → 회원 관리)" if pending else "")
            + (f"\n⚠ 일부 단계 실패 {len(errors)}건" if errors else ""))
     log.info("완료 (%.1f분). 오류 %d건", (time.time() - t0) / 60, len(errors))
     for e in errors:

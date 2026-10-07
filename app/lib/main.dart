@@ -108,10 +108,39 @@ class _AuthGateState extends State<AuthGate> {
     super.dispose();
   }
 
+  Future<Json?>? _profile;
+  String? _profileFor;
+
+  void _reloadProfile() => setState(() => _profile = myProfile());
+
   @override
   Widget build(BuildContext context) {
-    if (_auth.currentSession == null) return const LoginScreen();
+    final user = _auth.currentUser;
+    if (_auth.currentSession == null || user == null) {
+      _profileFor = null;
+      return const LoginScreen();
+    }
     if (_recovery) return NewPasswordScreen(onDone: () => setState(() => _recovery = false));
-    return const HomeShell();
+    if (_profileFor != user.id) {
+      _profileFor = user.id;
+      _profile = myProfile();
+    }
+    // 관리자 승인을 받은 회원만 앱 사용
+    return FutureBuilder<Json?>(
+      future: _profile,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        if (snap.hasError) {
+          return PendingScreen(email: user.email, error: '${snap.error}', onRefresh: _reloadProfile);
+        }
+        final p = snap.data;
+        isAdminUser = p?['is_admin'] == true;
+        final status = p?['status'] as String? ?? 'pending';
+        if (status == 'approved') return const HomeShell();
+        return PendingScreen(email: user.email, rejected: status == 'rejected', onRefresh: _reloadProfile);
+      },
+    );
   }
 }

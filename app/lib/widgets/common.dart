@@ -80,9 +80,11 @@ const strategyLabels = {
 };
 
 class CandidateTile extends StatelessWidget {
-  const CandidateTile({super.key, required this.c, this.showStrategyScore = false});
+  const CandidateTile({super.key, required this.c, this.showStrategyScore = false, this.rank, this.bigStrategy = false});
   final Json c;
-  final bool showStrategyScore;
+  final bool showStrategyScore; // 전략 점수도 함께 표시
+  final int? rank; // 화면 정렬 순서대로 매긴 순위 (없으면 원래 순위)
+  final bool bigStrategy; // 큰 글씨를 전략 점수로
 
   @override
   Widget build(BuildContext context) {
@@ -95,7 +97,7 @@ class CandidateTile extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
-        leading: CircleAvatar(child: Text('${c['rank']}')),
+        leading: CircleAvatar(child: Text('${rank ?? c['rank']}')),
         title: Text('${c['name']}', style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('${stars(c['stars'] as int)}  ${won(plan['price'] as num)}'),
@@ -110,8 +112,11 @@ class CandidateTile extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(showStrategyScore && ss != null ? '${ss.toStringAsFixed(0)}점' : '${score.toStringAsFixed(0)}점',
+            Text(bigStrategy && ss != null ? '${ss.toStringAsFixed(0)}점' : '${score.toStringAsFixed(0)}점',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            if (showStrategyScore && ss != null)
+              Text(bigStrategy ? '종합 ${score.toStringAsFixed(0)}' : '전략 ${ss.toStringAsFixed(0)}',
+                  style: const TextStyle(fontSize: 11, color: Colors.grey)),
             Text(verdict, style: TextStyle(color: verdictColor(verdict), fontSize: 12)),
           ],
         ),

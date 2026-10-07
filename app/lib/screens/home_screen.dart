@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../api.dart';
 import '../format.dart';
 import '../widgets/common.dart';
+import 'admin_screen.dart';
 import 'candidate_list_screen.dart';
 import 'orders_screen.dart';
 import 'portfolio_screen.dart';
@@ -44,12 +45,16 @@ class _HomeScreenState extends State<HomeScreen> {
             PopupMenuButton<String>(
               onSelected: (v) async {
                 if (v == 'logout') await Supabase.instance.client.auth.signOut();
+                if (v == 'users' && context.mounted) {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminUsersScreen()));
+                }
               },
               itemBuilder: (_) => [
                 PopupMenuItem(
                     enabled: false,
                     child: Text(Supabase.instance.client.auth.currentUser?.email ?? '',
                         style: Theme.of(context).textTheme.bodySmall)),
+                if (isAdminUser) const PopupMenuItem(value: 'users', child: Text('회원 관리')),
                 const PopupMenuItem(value: 'logout', child: Text('로그아웃')),
               ],
             ),
@@ -69,6 +74,7 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 32),
               children: [
                 Text('${d['date']} 장 마감 기준', style: Theme.of(context).textTheme.bodySmall),
+                const PendingUsersBanner(),
                 const _TradingBanner(),
                 const SectionTitle('오늘의 시장'),
                 _MarketCard(m: m),

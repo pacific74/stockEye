@@ -240,3 +240,55 @@ class _NewPasswordScreenState extends State<NewPasswordScreen> {
     );
   }
 }
+
+/// 가입은 했지만 관리자 승인 전 (또는 거절)
+class PendingScreen extends StatelessWidget {
+  const PendingScreen({super.key, this.email, this.rejected = false, this.error, required this.onRefresh});
+  final String? email;
+  final bool rejected;
+  final String? error;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 380),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(rejected ? Icons.block : Icons.hourglass_top, size: 56,
+                  color: rejected ? Colors.redAccent : Colors.amber),
+              const SizedBox(height: 16),
+              Text(rejected ? '가입이 승인되지 않았습니다' : '관리자 승인을 기다리고 있어요',
+                  style: t.titleLarge, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              Text(
+                  error != null
+                      ? '회원 정보를 불러오지 못했습니다.\n$error'
+                      : rejected
+                          ? '관리자에게 문의하세요.'
+                          : '${email ?? ''}\n관리자가 승인하면 바로 이용할 수 있습니다.\n승인 후 아래 [다시 확인]을 눌러 주세요.',
+                  textAlign: TextAlign.center,
+                  style: t.bodyMedium),
+              const SizedBox(height: 24),
+              if (!rejected)
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                      onPressed: onRefresh, icon: const Icon(Icons.refresh), label: const Text('다시 확인')),
+                ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Supabase.instance.client.auth.signOut(),
+                child: const Text('로그아웃'),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}

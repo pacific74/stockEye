@@ -9,10 +9,99 @@
 --   [내 데이터]  본인 것만 (RLS)
 --     positions(매매일지·보유종목), orders(승인 대기 주문), alerts, paper_cash,
 --     journal_analysis, position_reviews, backtest_requests
+--   [회원] profiles — 가입 → 관리자 승인 후 이용 (가장 먼저 가입한 사람이 관리자)
 --   [원본 데이터] Storage 버킷 'stockeye' (비공개, service_role 만 접근)
 --
 --   시각 컬럼은 timestamp(시간대 없음) = 한국 시각(KST) 그대로 저장
 -- ============================================================
+
+-- ---------------------------------------------------------------- 회원 (관리자 승인제)
+-- 가입하면 profiles 에 'pending' 으로 등록 → 관리자가 앱의 '회원 관리'에서 승인해야 데이터가 보인다.
+-- 가장 먼저 가입한 사람(=나)이 자동으로 관리자.
+create table if not exists public.profiles (
+  user_id    uuid primary key references auth.users(id) on delete cascade,
+  email      text,
+  status     text not null default 'pending',   -- pending | approved | rejected
+  is_admin   boolean not null default false,
+  created_at timestamptz not null default now(),
+  decided_at timestamptz,
+  decided_by uuid
+);
+alter table public.profiles enable row level security;
+
+-- 관리자 알림 설정 (선택): insert into public.app_config values ('ntfy_topic', '내토픽') on conflict (key) do update set value = excluded.value;
+create table if not exists public.app_config (key text primary key, value text);
+alter table public.app_config enable row level security;   -- 정책 없음 = 서버(service_role)만
+
+create or replace function public.is_approved() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where user_id = auth.uid() and status = 'approved') $$;
+
+create or replace function public.is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where user_id = auth.uid() and status = 'approved' and is_admin) $$;
+
+-- 가입 알림을 휴대폰(ntfy)으로 보내기 위한 확장 (없으면 알림만 생략)
+do $$ begin
+  create extension if not exists pg_net;
+exception when others then raise notice 'pg_net 사용 불가 → 가입 알림 생략';
+end $$;
+
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  first_user boolean := not exists (select 1 from public.profiles where is_admin);
+  topic text;
+  server text;
+begin
+  insert into public.profiles (user_id, email, status, is_admin)
+  values (new.id, new.email, case when first_user then 'approved' else 'pending' end, first_user)
+  on conflict (user_id) do nothing;
+  if not first_user then
+    select value into topic from public.app_config where key = 'ntfy_topic';
+    select value into server from public.app_config where key = 'ntfy_server';
+    if topic is not null and topic <> '' then
+      begin   -- 알림이 실패해도 가입은 진행
+        perform net.http_post(url := coalesce(nullif(server, ''), 'https://ntfy.sh'),
+                              body := jsonb_build_object('topic', topic, 'title', 'StockEye 가입 승인 요청',
+                                                         'message', coalesce(new.email, '') || ' 님이 가입했습니다. 앱 → 회원 관리에서 승인하세요.'));
+      exception when others then null;
+      end;
+    end if;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- 이 기능을 넣기 전에 가입한 사용자: 승인 상태로 등록, 가장 먼저 가입한 사람 = 관리자
+insert into public.profiles (user_id, email, status, is_admin, created_at)
+select id, email, 'approved', false, created_at from auth.users
+on conflict (user_id) do nothing;
+update public.profiles set is_admin = true
+ where user_id = (select user_id from public.profiles order by created_at limit 1)
+   and not exists (select 1 from public.profiles where is_admin);
+
+drop policy if exists "self or admin read" on public.profiles;
+create policy "self or admin read" on public.profiles for select to authenticated
+  using (user_id = auth.uid() or public.is_admin());
+
+-- 관리자: 승인 / 거절 / 승인 취소
+create or replace function public.set_user_status(p_user uuid, p_status text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception '관리자만 할 수 있습니다'; end if;
+  if p_status not in ('approved', 'rejected', 'pending') then raise exception '상태 값이 올바르지 않습니다'; end if;
+  if p_user = auth.uid() then raise exception '자기 자신은 바꿀 수 없습니다'; end if;
+  update public.profiles set status = p_status, decided_at = now(), decided_by = auth.uid() where user_id = p_user;
+  if not found then return jsonb_build_object('ok', false, 'message', '사용자 없음'); end if;
+  return jsonb_build_object('ok', true);
+end $$;
+revoke all on function public.set_user_status(uuid, text) from public, anon;
+grant execute on function public.set_user_status(uuid, text) to authenticated;
 
 -- ---------------------------------------------------------------- 분석 결과
 create table if not exists public.daily_reports (
@@ -90,7 +179,7 @@ declare t text;
 begin
   foreach t in array array['daily_reports','candidates','stock_details','backtests','system_status'] loop
     execute format('drop policy if exists "read for users" on public.%I', t);
-    execute format('create policy "read for users" on public.%I for select to authenticated using (true)', t);
+    execute format('create policy "read for users" on public.%I for select to authenticated using (public.is_approved())', t);
   end loop;
 end $$;
 -- 쓰기 정책 없음 → service_role 키(배치)만 쓸 수 있음
@@ -189,22 +278,22 @@ declare t text;
 begin
   foreach t in array array['positions','orders','alerts','paper_cash','journal_analysis','position_reviews','backtest_requests'] loop
     execute format('drop policy if exists "own read" on public.%I', t);
-    execute format('create policy "own read" on public.%I for select to authenticated using (user_id = auth.uid())', t);
+    execute format('create policy "own read" on public.%I for select to authenticated using (user_id = auth.uid() and public.is_approved())', t);
   end loop;
 end $$;
 
 -- 보유종목: 손절/목표/메모 수정, 삭제는 앱에서 직접 (추가·매도는 아래 함수로)
 drop policy if exists "own update" on public.positions;
 create policy "own update" on public.positions for update to authenticated
-  using (user_id = auth.uid()) with check (user_id = auth.uid());
+  using (user_id = auth.uid() and public.is_approved()) with check (user_id = auth.uid());
 drop policy if exists "own delete" on public.positions;
-create policy "own delete" on public.positions for delete to authenticated using (user_id = auth.uid());
+create policy "own delete" on public.positions for delete to authenticated using (user_id = auth.uid() and public.is_approved());
 
 -- 백테스트 요청: 앱에서 넣기
 drop policy if exists "own insert" on public.backtest_requests;
 -- 한 사람당 대기/실행 중인 요청은 1개까지 (여러 사람이 써도 배치 시간이 넘치지 않게)
 create policy "own insert" on public.backtest_requests for insert to authenticated
-  with check (user_id = auth.uid() and not exists (
+  with check (user_id = auth.uid() and public.is_approved() and not exists (
     select 1 from public.backtest_requests b where b.user_id = auth.uid() and b.status in ('queued', 'running')));
 
 -- ---------------------------------------------------------------- 앱에서 부르는 함수 (RPC)
@@ -226,7 +315,7 @@ declare
   lk  text;
   r   public.positions;
 begin
-  if auth.uid() is null then raise exception '로그인이 필요합니다'; end if;
+  if not public.is_approved() then raise exception '관리자 승인 후 이용할 수 있습니다'; end if;
   select * into d from stock_details where code = p_code;
   -- 오늘 후보 목록에 있으면 그 후보(전략 정보 포함)를 우선 사용
   select cd.payload, cd.list into c, lk from candidates cd
@@ -265,6 +354,7 @@ declare
   ret numeric;
   days int;
 begin
+  if not public.is_approved() then raise exception '관리자 승인 후 이용할 수 있습니다'; end if;
   select * into p from positions where id = p_id and user_id = auth.uid() for update;
   if p is null or p.status <> 'open' then raise exception '열린 포지션이 아닙니다'; end if;
   proceeds := p_price * p.qty;
@@ -291,6 +381,7 @@ returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare o public.orders;
 begin
+  if not public.is_approved() then raise exception '관리자 승인 후 이용할 수 있습니다'; end if;
   select * into o from orders where id = p_id and user_id = auth.uid() for update;
   if o is null or o.status <> 'pending' then
     return jsonb_build_object('ok', false, 'message', '승인 대기 주문이 아닙니다 (만료/처리됨)');
@@ -308,6 +399,7 @@ create or replace function public.reject_order(p_id text)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 begin
+  if not public.is_approved() then raise exception '관리자 승인 후 이용할 수 있습니다'; end if;
   update orders set status = 'rejected', message = '사용자 거절'
    where id = p_id and user_id = auth.uid() and status = 'pending';
   if not found then return jsonb_build_object('ok', false, 'message', '승인 대기 주문이 아닙니다'); end if;
@@ -329,6 +421,7 @@ grant execute on function public.reject_order(text) to authenticated;
 grant usage on schema public to authenticated, service_role;
 grant select, insert, update, delete on all tables in schema public to service_role;
 grant usage, select on all sequences in schema public to service_role;
+grant select on public.profiles to authenticated;
 grant select on public.daily_reports, public.candidates, public.stock_details, public.backtests,
                 public.system_status, public.positions, public.orders, public.alerts, public.paper_cash,
                 public.journal_analysis, public.position_reviews, public.backtest_requests to authenticated;

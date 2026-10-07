@@ -417,5 +417,31 @@ class _Http {
   static Future<List<Json>> search(String q) => getList('/api/search?q=${Uri.encodeQueryComponent(q)}');
 }
 
+// ============================================================ 회원 (관리자 승인제, 클라우드 전용)
+/// 지금 로그인한 사람이 관리자인지 (AuthGate 가 회원 정보를 읽을 때 채움)
+bool isAdminUser = false;
+
+/// 내 회원 정보 {status: pending|approved|rejected, is_admin, email}
+Future<Json?> myProfile() async {
+  final db = Supabase.instance.client;
+  final uid = db.auth.currentUser?.id;
+  if (uid == null) return null;
+  final r = await db.from('profiles').select().eq('user_id', uid).maybeSingle();
+  return r == null ? null : asMap(r);
+}
+
+/// (관리자) 전체 회원 — 승인 대기 먼저
+Future<List<Json>> listUsers() async {
+  final rows = await Supabase.instance.client.from('profiles').select().order('created_at', ascending: false);
+  final list = rows.map(asMap).toList();
+  int rank(Json u) => u['status'] == 'pending' ? 0 : (u['status'] == 'approved' ? 1 : 2);
+  list.sort((a, b) => rank(a).compareTo(rank(b)));
+  return list;
+}
+
+/// (관리자) 승인 approved / 거절 rejected / 대기로 되돌리기 pending
+Future<Json> setUserStatus(String userId, String status) =>
+    _Cloud.rpcMap('set_user_status', {'p_user': userId, 'p_status': status});
+
 /// 백테스트 요청 목록 (클라우드 전용)
 Future<List<Json>> backtestRequests() => useCloud ? _Cloud.backtestRequests() : Future.value(<Json>[]);

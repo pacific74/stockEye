@@ -1,7 +1,9 @@
 # 앱 빌드·배포: 웹(Cloudflare Pages) + 안드로이드 APK
 #   app/ 폴더가 바뀌어 push 되거나, Actions 탭에서 수동 실행할 때
 # 필요한 Secrets: SUPABASE_URL, SUPABASE_ANON_KEY (anon 공개키 — 앱에 들어가도 되는 키)
-#                CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID (없으면 웹 배포만 건너뜀, APK 는 Actions 결과물로 받기)
+#                웹 배포: VERCEL_TOKEN (권장) 또는 CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID
+#                (둘 다 없으면 웹 배포만 건너뜀, APK 는 Actions 결과물로 받기)
+# Variables(선택): PAGES_PROJECT = 웹 주소 이름 (기본 stockeye), WEB_URL = 웹 주소 (인증 메일 링크용)
 name: app-build
 
 on:
@@ -23,7 +25,9 @@ jobs:
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       PAGES_PROJECT: ${{ vars.PAGES_PROJECT || 'stockeye' }}
+      WEB_URL: ${{ vars.WEB_URL }}
     defaults:
       run:
         working-directory: app
@@ -54,24 +58,37 @@ jobs:
       - name: 코드 점검
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
       - name: 웹 빌드
-        run: flutter build web --release --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=WEB_URL=https://$PAGES_PROJECT.pages.dev
+        run: flutter build web --release --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=WEB_URL=$WEB_URL
       - name: 안드로이드 APK 빌드
         run: |
-          flutter build apk --release --split-per-abi --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=WEB_URL=https://$PAGES_PROJECT.pages.dev
+          flutter build apk --release --split-per-abi --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=WEB_URL=$WEB_URL
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk build/web/stockeye.apk
       - uses: actions/upload-artifact@v4
         with:
           name: stockeye-apk
           path: app/build/app/outputs/flutter-apk/*.apk
           retention-days: 30
+      - name: 웹 배포 (Vercel)
+        if: env.VERCEL_TOKEN != ''
+        run: |
+          rm -rf "/tmp/$PAGES_PROJECT" && cp -r build/web "/tmp/$PAGES_PROJECT" && cd "/tmp/$PAGES_PROJECT"
+          npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN" > /tmp/vercel_url.txt
+          URL=$(tail -n 1 /tmp/vercel_url.txt)
+          echo "배포 주소: $URL"
+          {
+            echo "### 배포 완료 (Vercel)"
+            echo "- 이번 배포: $URL"
+            echo "- 고정 주소: Vercel 대시보드 → 프로젝트 $PAGES_PROJECT → Domains (보통 https://$PAGES_PROJECT.vercel.app)"
+            echo "- 안드로이드: (고정 주소)/stockeye.apk"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Cloudflare Pages 프로젝트 준비
-        if: env.CF_TOKEN != ''
+        if: env.CF_TOKEN != '' && env.VERCEL_TOKEN == ''
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx --yes wrangler@3 pages project create "$PAGES_PROJECT" --production-branch main || true
       - name: 웹 배포 (Cloudflare Pages)
-        if: env.CF_TOKEN != ''
+        if: env.CF_TOKEN != '' && env.VERCEL_TOKEN == ''
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

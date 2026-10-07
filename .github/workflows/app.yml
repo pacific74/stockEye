@@ -26,6 +26,7 @@ jobs:
       CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       PAGES_PROJECT: ${{ vars.PAGES_PROJECT || 'stockeye' }}
       WEB_URL: ${{ vars.WEB_URL }}
     defaults:
@@ -61,8 +62,22 @@ jobs:
         run: flutter build web --release --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=WEB_URL=$WEB_URL
       - name: 안드로이드 APK 빌드
         run: |
-          flutter build apk --release --split-per-abi --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=WEB_URL=$WEB_URL
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk build/web/stockeye.apk
+          flutter build apk --release --split-per-abi --build-number=${{ github.run_number }} --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=WEB_URL=$WEB_URL
+      - name: APK 고정 키로 서명 (설치된 앱에 덮어쓰기 업데이트 가능)
+        if: env.KS_B64 != ''
+        env:
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/stockeye.jks"
+          BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          for f in build/app/outputs/flutter-apk/*-release.apk; do
+            "$ANDROID_HOME/build-tools/$BT/apksigner" sign --ks "$RUNNER_TEMP/stockeye.jks" --ks-key-alias stockeye \
+              --ks-pass env:KS_PASS --key-pass env:KS_PASS "$f"
+          done
+          "$ANDROID_HOME/build-tools/$BT/apksigner" verify --print-certs build/app/outputs/flutter-apk/app-arm64-v8a-release.apk | head -3
+          rm -f "$RUNNER_TEMP/stockeye.jks"
+      - name: APK 를 웹 주소에 올릴 준비
+        run: cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk build/web/stockeye.apk
       - uses: actions/upload-artifact@v4
         with:
           name: stockeye-apk

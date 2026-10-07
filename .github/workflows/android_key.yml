@@ -1,0 +1,37 @@
+# 안드로이드 앱 서명 키 만들기 — 딱 한 번만 실행
+#  결과물(android-key.zip)을 내려받아 Secrets 2개에 넣고, zip 은 안전한 곳에 백업한 뒤 Actions 에서 결과물을 삭제.
+#  이 키를 잃어버리면 다음 업데이트 때 앱을 지우고 다시 설치해야 합니다.
+name: android-key-once
+
+on:
+  workflow_dispatch:
+
+jobs:
+  key:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: 키 만들기
+        run: |
+          PASS=$(openssl rand -hex 16)
+          keytool -genkeypair -keystore stockeye.jks -storetype PKCS12 -alias stockeye -keyalg RSA -keysize 2048 \
+            -validity 10000 -storepass "$PASS" -keypass "$PASS" -dname "CN=StockEye, O=StockEye, C=KR" >/dev/null 2>&1
+          mkdir out
+          cp stockeye.jks out/stockeye.jks
+          base64 -w0 stockeye.jks > out/ANDROID_KEYSTORE_BASE64.txt
+          printf '%s' "$PASS" > out/ANDROID_KEYSTORE_PASSWORD.txt
+          cat > out/README.txt <<'TXT'
+          GitHub 저장소 → Settings → Secrets and variables → Actions → New repository secret
+            ANDROID_KEYSTORE_BASE64   = ANDROID_KEYSTORE_BASE64.txt 의 내용 전체 (아주 긴 한 줄)
+            ANDROID_KEYSTORE_PASSWORD = ANDROID_KEYSTORE_PASSWORD.txt 의 내용
+          이 zip 은 백업해 두고(남에게 주지 말 것), Actions 의 이 실행 결과물은 삭제하세요.
+          TXT
+          echo "키를 만들었습니다. 아래 Artifacts 의 android-key 를 내려받으세요."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-key
+          path: out
+          retention-days: 1

@@ -23,3 +23,9 @@ app/android/.gradle/
 app/android/local.properties
 app/android/key.properties
 app/android/app/*.jks
+
+# 안드로이드 서명 키 (절대 올리지 않음)
+*.jks
+android-key*/
+android-key*.zip
+ANDROID_KEYSTORE_*.txt

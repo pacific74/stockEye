@@ -85,7 +85,15 @@ def main():
             sb = Supabase()
             rows = sb.select("daily_reports", {"select": "date", "order": "date.desc", "limit": "1"})
             files = sb.list_files("data")
-            uid = "있음" if os.getenv("SUPABASE_USER_ID") else "없음(⚠)"
+            import re
+            u = (os.getenv("SUPABASE_USER_ID") or "").strip()
+            if not u:
+                uid = "없음(⚠)"
+            elif re.match(r"^[0-9a-fA-F-]{36}$", u):
+                uid = "있음"
+            else:
+                raise RuntimeError("SUPABASE_USER_ID 가 User UID 형식(36자리)이 아닙니다 — 이메일 말고 "
+                                   "Authentication → Users 의 User UID 를 넣으세요")
             return f"최근 리포트 {rows[0]['date'] if rows else '없음'} · Storage data/ {len(files)}개 · USER_ID {uid}"
         check("Supabase", supa, res)
     else:

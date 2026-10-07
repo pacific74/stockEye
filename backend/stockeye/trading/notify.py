@@ -16,8 +16,8 @@ class Notifier:
     def __init__(self):
         self.tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
         self.tg_chat = os.getenv("TELEGRAM_CHAT_ID")
-        self.ntfy = os.getenv("NTFY_TOPIC")
-        self.ntfy_server = os.getenv("NTFY_SERVER", "https://ntfy.sh")
+        self.ntfy = (os.getenv("NTFY_TOPIC") or "").strip().strip("/") or None
+        self.ntfy_server = (os.getenv("NTFY_SERVER") or "https://ntfy.sh").rstrip("/")   # 비어 있어도 기본 서버
 
     @property
     def channels(self) -> list[str]:

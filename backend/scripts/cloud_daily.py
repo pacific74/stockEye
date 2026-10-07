@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
 import sys
 import time
 import traceback
@@ -29,6 +30,7 @@ from stockeye.cloud.sync import DataSync
 from stockeye.cloud import publish as pub
 
 log = logging.getLogger("stockeye.cloud_daily")
+UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
 def step(name, fn, errors: list, required: bool = False):
@@ -115,8 +117,13 @@ def main():
     # 매매일지: 앱을 쓰는 모든 사용자 각각 (본인 데이터만 본인에게 보임)
     from stockeye.cloud.journal import CloudJournal
     uids = {r["user_id"] for r in sb.select("positions", {"select": "user_id", "limit": "100000"})}
-    if os.getenv("SUPABASE_USER_ID"):
-        uids.add(os.getenv("SUPABASE_USER_ID"))
+    owner = (os.getenv("SUPABASE_USER_ID") or "").strip()
+    if owner and not UUID_RE.match(owner):
+        errors.append("SUPABASE_USER_ID 가 User UID 형식이 아닙니다 (이메일이 아니라 "
+                      "Supabase → Authentication → Users 에서 복사한 36자리 값을 넣으세요)")
+        log.error(errors[-1])
+    elif owner:
+        uids.add(owner)
     last_bar = pit.ohlcv[pit.ohlcv["date"] == pit.ohlcv["date"].max()].set_index("code")
     for uid in sorted(uids):
         j = CloudJournal(sb, user_id=uid)

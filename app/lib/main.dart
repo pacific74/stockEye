@@ -16,7 +16,7 @@ Future<void> main() async {
   if (useCloud) {
     await Supabase.initialize(
       url: supabaseUrl,
-      anonKey: supabaseAnonKey,
+      publishableKey: supabaseAnonKey,
       // implicit: 인증/재설정 메일을 다른 기기(폰 메일앱 → 브라우저)에서 열어도 동작
       authOptions: const FlutterAuthClientOptions(authFlowType: AuthFlowType.implicit),
     );

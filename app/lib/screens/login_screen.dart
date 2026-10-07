@@ -61,8 +61,8 @@ class _LoginScreenState extends State<LoginScreen> {
           await _sb.auth.signInWithPassword(email: email, password: _pw.text);
           break;
         case _Mode.signup:
-          if (_pw.text.length < 8) throw AuthException('비밀번호는 8자 이상으로 해 주세요');
-          if (_pw.text != _pw2.text) throw AuthException('비밀번호 확인이 다릅니다');
+          if (_pw.text.length < 8) throw const AuthException('비밀번호는 8자 이상으로 해 주세요');
+          if (_pw.text != _pw2.text) throw const AuthException('비밀번호 확인이 다릅니다');
           final r = await _sb.auth.signUp(email: email, password: _pw.text, emailRedirectTo: _redirect);
           if (r.session == null) {
             _mode = _Mode.login;

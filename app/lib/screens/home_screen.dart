@@ -6,6 +6,7 @@ import '../format.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
 import 'admin_screen.dart';
+import 'help_screen.dart';
 import 'notify_screen.dart';
 import 'orders_screen.dart';
 import 'search_screen.dart';
@@ -38,6 +39,9 @@ class _HomeScreenState extends State<HomeScreen> {
             PopupMenuButton<String>(
               onSelected: (v) async {
                 if (v == 'logout') await Supabase.instance.client.auth.signOut();
+                if (v == 'help' && context.mounted) {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const HelpScreen()));
+                }
                 if (v == 'notify' && context.mounted) {
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const NotifySettingsScreen()));
                 }
@@ -50,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     enabled: false,
                     child: Text(Supabase.instance.client.auth.currentUser?.email ?? '',
                         style: Theme.of(context).textTheme.bodySmall)),
+                const PopupMenuItem(value: 'help', child: Text('이용 안내')),
                 const PopupMenuItem(value: 'notify', child: Text('알림 설정')),
                 if (isAdminUser) const PopupMenuItem(value: 'users', child: Text('회원 관리')),
                 const PopupMenuItem(value: 'logout', child: Text('로그아웃')),

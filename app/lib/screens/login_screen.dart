@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'help_screen.dart';
 import 'notify_screen.dart';
 
 /// 인증 메일 링크가 돌아올 주소 (웹 앱 주소). 앱 빌드 때 --dart-define=WEB_URL=https://xxx.pages.dev
@@ -156,7 +157,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   ])
                 else
                   TextButton(onPressed: () => _switch(_Mode.login), child: const Text('로그인으로 돌아가기')),
-                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () =>
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const HelpScreen(showNav: false))),
+                  icon: const Icon(Icons.help_outline, size: 18),
+                  label: const Text('처음이신가요? 이용 안내'),
+                ),
+                const SizedBox(height: 4),
                 Text('투자 판단 참고용 도구입니다. 매수·매도 권유가 아니며, 결과에 대한 책임은 본인에게 있습니다.',
                     style: Theme.of(context).textTheme.bodySmall, textAlign: TextAlign.center),
               ]),
@@ -295,6 +302,12 @@ class PendingScreen extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: () =>
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const HelpScreen(showNav: false))),
+                icon: const Icon(Icons.help_outline, size: 18),
+                label: const Text('이용 안내 보기'),
+              ),
               TextButton(
                 onPressed: () => Supabase.instance.client.auth.signOut(),
                 child: const Text('로그아웃'),

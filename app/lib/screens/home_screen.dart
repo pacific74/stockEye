@@ -4,10 +4,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../api.dart';
 import '../format.dart';
 import '../widgets/common.dart';
+import '../widgets/nav.dart';
 import 'admin_screen.dart';
-import 'candidate_list_screen.dart';
+import 'notify_screen.dart';
 import 'orders_screen.dart';
-import 'portfolio_screen.dart';
 import 'search_screen.dart';
 import 'sector_screen.dart';
 
@@ -28,14 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Row(mainAxisSize: MainAxisSize.min, children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Image.asset('assets/icon/logo_256.png', width: 28, height: 28),
-          ),
-          const SizedBox(width: 8),
-          const Text('StockEye', style: TextStyle(fontWeight: FontWeight.bold)),
-        ]),
+        title: const LogoTitle('StockEye', bold: true),
         actions: [
           IconButton(
               icon: const Icon(Icons.search),
@@ -45,6 +38,9 @@ class _HomeScreenState extends State<HomeScreen> {
             PopupMenuButton<String>(
               onSelected: (v) async {
                 if (v == 'logout') await Supabase.instance.client.auth.signOut();
+                if (v == 'notify' && context.mounted) {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const NotifySettingsScreen()));
+                }
                 if (v == 'users' && context.mounted) {
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminUsersScreen()));
                 }
@@ -54,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     enabled: false,
                     child: Text(Supabase.instance.client.auth.currentUser?.email ?? '',
                         style: Theme.of(context).textTheme.bodySmall)),
+                const PopupMenuItem(value: 'notify', child: Text('알림 설정')),
                 if (isAdminUser) const PopupMenuItem(value: 'users', child: Text('회원 관리')),
                 const PopupMenuItem(value: 'logout', child: Text('로그아웃')),
               ],
@@ -191,13 +188,12 @@ class _ShortcutGrid extends StatelessWidget {
       ...items.map((it) => ActionChip(
             avatar: Icon(it.$3, size: 18),
             label: Text(it.$4 == null ? it.$2 : '${it.$2} ${it.$4}'),
-            onPressed: () => Navigator.push(
-                context, MaterialPageRoute(builder: (_) => CandidateListScreen(list: it.$1, title: it.$2))),
+            onPressed: () => goTab(context, 1, list: it.$1),
           )),
       ActionChip(
         avatar: const Icon(Icons.account_balance_wallet, size: 18),
         label: const Text('보유종목 관리'),
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PortfolioScreen())),
+        onPressed: () => goTab(context, 2),
       ),
     ]);
   }
@@ -214,6 +210,7 @@ class _TradingBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (useCloud && !isAdminUser) return const SizedBox.shrink(); // 실시간 매매는 관리자 계좌용
     return FutureBuilder<Json>(
       future: Api.tradingStatus(),
       builder: (context, snap) {

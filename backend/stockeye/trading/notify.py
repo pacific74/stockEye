@@ -44,3 +44,20 @@ class Notifier:
                 requests.post(f"{self.ntfy_server}/{self.ntfy}", data=body.encode("utf-8"), headers=headers, timeout=10)
             except Exception as e:  # noqa: BLE001
                 log.warning("ntfy 전송 실패: %s", e)
+
+    def send_topic(self, topic: str, title: str, body: str, priority: str = "default", url: str | None = None) -> bool:
+        """특정 ntfy 토픽으로 보내기 (회원 각자의 알림)."""
+        topic = (topic or "").strip().strip("/")
+        if not topic:
+            return False
+        try:
+            import requests
+            headers = {"Title": title.encode("utf-8"), "Priority": {"high": "4", "urgent": "5"}.get(priority, "3")}
+            if url:
+                headers["Click"] = url
+            r = requests.post(f"{self.ntfy_server}/{topic}", data=body.encode("utf-8"), headers=headers, timeout=10)
+            return r.status_code < 300
+        except Exception as e:  # noqa: BLE001
+            log.warning("ntfy(%s) 전송 실패: %s", topic[:6], e)
+            return False
+

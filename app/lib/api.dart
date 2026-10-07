@@ -443,5 +443,12 @@ Future<List<Json>> listUsers() async {
 Future<Json> setUserStatus(String userId, String status) =>
     _Cloud.rpcMap('set_user_status', {'p_user': userId, 'p_status': status});
 
+/// 내 알림 설정 저장 (토픽 '' = 끄기)
+Future<Json> saveMyNotify(String topic, bool daily, bool holdings, bool signals) => _Cloud.rpcMap(
+    'set_my_notify', {'p_topic': topic, 'p_daily': daily, 'p_holdings': holdings, 'p_signals': signals});
+
+/// 내 토픽으로 테스트 알림
+Future<Json> sendTestNotify() => _Cloud.rpcMap('send_test_notify', {});
+
 /// 백테스트 요청 목록 (클라우드 전용)
 Future<List<Json>> backtestRequests() => useCloud ? _Cloud.backtestRequests() : Future.value(<Json>[]);

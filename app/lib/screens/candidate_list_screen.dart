@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../widgets/common.dart';
+import '../widgets/nav.dart';
 
 /// 전략별 후보 목록 (탭으로 전환)
 class CandidateListScreen extends StatelessWidget {
@@ -18,7 +19,7 @@ class CandidateListScreen extends StatelessWidget {
       initialIndex: keys.contains(list) ? keys.indexOf(list) : 0,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('매수 후보'),
+          title: const LogoTitle('매수 후보'),
           bottom: TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,

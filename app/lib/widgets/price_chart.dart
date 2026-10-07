@@ -11,24 +11,28 @@ class PriceLevel {
 
 /// 외부 차트 라이브러리 없이 그리는 간단한 캔들 차트 + 목표/손절 수평선.
 class PriceChart extends StatelessWidget {
-  const PriceChart({super.key, required this.bars, this.levels = const []});
+  const PriceChart({super.key, required this.bars, this.levels = const [], this.slots, this.markIndex});
   final List<Map<String, dynamic>> bars;
   final List<PriceLevel> levels;
+  final int? slots; // 가로 칸 수 (bars 보다 크면 오른쪽이 비어 있음 → 다른 차트와 같은 폭으로 비교)
+  final int? markIndex; // 이 위치에 세로 점선 (예: 패턴 끝)
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: _ChartPainter(bars, levels, Theme.of(context).colorScheme.onSurface),
+      painter: _ChartPainter(bars, levels, Theme.of(context).colorScheme.onSurface, slots, markIndex),
       size: Size.infinite,
     );
   }
 }
 
 class _ChartPainter extends CustomPainter {
-  _ChartPainter(this.bars, this.levels, this.fg);
+  _ChartPainter(this.bars, this.levels, this.fg, [this.slots, this.markIndex]);
   final List<Map<String, dynamic>> bars;
   final List<PriceLevel> levels;
   final Color fg;
+  final int? slots;
+  final int? markIndex;
 
   double _d(dynamic v) => (v as num).toDouble();
 
@@ -49,7 +53,16 @@ class _ChartPainter extends CustomPainter {
     hi += pad;
     double y(double p) => h - (p - lo) / (hi - lo) * h;
 
-    final step = w / bars.length;
+    final step = w / math.max(slots ?? bars.length, bars.length);
+    if (markIndex != null) {
+      final mx = markIndex! * step;
+      final mp = Paint()
+        ..color = fg.withValues(alpha: 0.5)
+        ..strokeWidth = 1;
+      for (double yy = 0; yy < h; yy += 6) {
+        canvas.drawLine(Offset(mx, yy), Offset(mx, math.min(yy + 3, h)), mp);
+      }
+    }
     final bodyW = math.max(1.0, step * 0.6);
     for (var i = 0; i < bars.length; i++) {
       final b = bars[i];

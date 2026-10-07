@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../widgets/nav.dart';
 import 'stock_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -30,6 +31,7 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      bottomNavigationBar: const MainNavBar(),
       appBar: AppBar(
         title: TextField(
           autofocus: true,

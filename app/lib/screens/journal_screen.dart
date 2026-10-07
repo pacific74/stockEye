@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../format.dart';
 import '../widgets/common.dart';
+import '../widgets/nav.dart';
 
 const _modes = {null: '전체', 'paper': '모의', 'kis_paper': 'KIS 모의', 'real': '실전', 'manual': '직접 입력'};
 
@@ -23,7 +24,7 @@ class _JournalScreenState extends State<JournalScreen> {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('매매일지'),
+          title: const LogoTitle('매매일지'),
           actions: [
             PopupMenuButton<String?>(
               initialValue: _mode,

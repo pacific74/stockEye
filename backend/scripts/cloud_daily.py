@@ -157,6 +157,8 @@ def main():
     n.send(f"StockEye {report['date']} 리포트", f"{m.get('mood_icon', '')} {m.get('mood', '')} · TOP3 {top}"
            + (f"\n👤 가입 승인 대기 {pending}명 (앱 → 회원 관리)" if pending else "")
            + (f"\n⚠ 일부 단계 실패 {len(errors)}건" if errors else ""))
+    step("회원별 알림", lambda: pub.notify_members(sb, report, n, skip_topics=[n.ntfy or ""],
+                                                app_url=os.getenv("WEB_URL") or None), errors)
     log.info("완료 (%.1f분). 오류 %d건", (time.time() - t0) / 60, len(errors))
     for e in errors:
         log.warning("  - %s", e)

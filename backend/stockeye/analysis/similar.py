@@ -99,6 +99,9 @@ class PatternIndex:
                         "similarity": round(float(max(0.0, 1 - dist.flat[k] / 1.5)) * 100, 1),
                         "path": [round(float(v), 4) for v in
                                  np.expm1(self.cum[e + 2 - W:e + 2, ci] - self.cum[e + 1 - W, ci])],
+                        # 패턴 이후 H일 (같은 기준점에서의 누적 수익률) — 화면에서 '그 뒤' 점선으로 비교
+                        "future": [round(float(v), 4) for v in
+                                   np.expm1(self.cum[e + 2:e + 2 + H, ci] - self.cum[e + 1 - W, ci])],
                         **{k2: round(v * 100, 2) for k2, v in fwd.items()}})
         if not res:
             return {"error": "비슷한 구간 없음"}

@@ -10,6 +10,7 @@ import 'screens/home_screen.dart';
 import 'screens/journal_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/portfolio_screen.dart';
+import 'widgets/nav.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,24 +56,50 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  int _idx = 0;
-  final _pages = const [HomeScreen(), CandidateListScreen(), PortfolioScreen(), JournalScreen(), BacktestScreen()];
+  // 탭을 누를 때마다 보유·일지는 새로 만들어서 최신 데이터를 다시 불러온다
+  final _gen = List<int>.filled(5, 0);
+  int _lastTap = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    tabIndex.value = 0;
+    tabIndex.addListener(_changed);
+    tabTap.addListener(_tapped);
+    candidateListKey.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    tabIndex.removeListener(_changed);
+    tabTap.removeListener(_tapped);
+    candidateListKey.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() => setState(() {});
+
+  void _tapped() {
+    if (tabTap.value == _lastTap) return;
+    _lastTap = tabTap.value;
+    setState(() {
+      final i = tabIndex.value;
+      if (i == 2 || i == 3) _gen[i]++; // 보유 / 일지: 항상 새로고침
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final pages = <Widget>[
+      const HomeScreen(),
+      CandidateListScreen(key: ValueKey('c${candidateListKey.value}'), list: candidateListKey.value),
+      PortfolioScreen(key: ValueKey('p${_gen[2]}')),
+      JournalScreen(key: ValueKey('j${_gen[3]}')),
+      const BacktestScreen(),
+    ];
     return Scaffold(
-      body: IndexedStack(index: _idx, children: _pages),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _idx,
-        onDestinationSelected: (i) => setState(() => _idx = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), label: '오늘'),
-          NavigationDestination(icon: Icon(Icons.trending_up), label: '후보'),
-          NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined), label: '보유'),
-          NavigationDestination(icon: Icon(Icons.menu_book_outlined), label: '일지'),
-          NavigationDestination(icon: Icon(Icons.history), label: '백테스트'),
-        ],
-      ),
+      body: IndexedStack(index: tabIndex.value, children: pages),
+      bottomNavigationBar: const MainNavBar(),
     );
   }
 }

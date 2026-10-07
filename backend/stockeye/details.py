@@ -102,6 +102,7 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
         pi = PatternIndex(pit.ohlcv, window=20)
         name_of = dict(zip(names["code"], names["name"]))
         by_code = {r["code"]: r for r in rows}
+        results = {}
         for code in rep_idx:
             if code not in by_code:
                 continue
@@ -113,5 +114,24 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
                 for m in s["matches"]:
                     m["name"] = name_of.get(m["code"], m["code"])
                 s["name"] = name_of.get(code, code)
+            results[code] = s
+        # 비교 화면용: 각 유사 구간의 실제 일봉 (패턴 20일 + 그 뒤 20일)
+        need = {m["code"] for s in results.values() if "error" not in s for m in s["matches"]}
+        oh = pit.ohlcv[pit.ohlcv["code"].isin(need)].sort_values(["code", "date"])
+        groups = {c: g.reset_index(drop=True) for c, g in oh.groupby("code", sort=False)}
+        for code, s in results.items():
+            if "error" not in s:
+                for m in s["matches"]:
+                    g = groups.get(m["code"])
+                    if g is None:
+                        continue
+                    pos = g.index[g["date"] == pd.Timestamp(m["start"])]
+                    if len(pos) == 0:
+                        continue
+                    seg = g.iloc[int(pos[0]): int(pos[0]) + s["window"] + len(m.get("future", []))]
+                    m["bars"] = [{"date": str(pd.Timestamp(d).date()), "open": float(o), "high": float(h),
+                                  "low": float(lo), "close": float(c), "volume": float(v)}
+                                 for d, o, h, lo, c, v in zip(seg["date"], seg["open"], seg["high"], seg["low"],
+                                                              seg["close"], seg["volume"])]
             by_code[code]["similar_patterns"] = s
     return rows

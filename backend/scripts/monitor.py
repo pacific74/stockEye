@@ -52,6 +52,19 @@ def run_live(cfg, journal, notifier):
     print(f"[{tc['mode']}] 감시 시작 — 후보 {len(eng.watch)}종목 + 보유 {len(journal.positions(status='open'))}종목, "
           f"리포트 {report['date']} 기준, 알림: {', '.join(notifier.channels)}")
     notifier.send("StockEye 감시 시작", f"모드 {tc['mode']} · 감시 {len(eng.codes_to_watch())}종목")
+    members = None
+    try:   # 회원 장중 알림 (클라우드일 때)
+        from stockeye.cloud.client import enabled, Supabase
+        if enabled():
+            from stockeye.trading.member_alerts import MemberAlerts
+            import os
+            members = MemberAlerts(Supabase(), notifier, os.getenv("SUPABASE_USER_ID"),
+                                   app_url=os.getenv("WEB_URL") or None)
+            members.refresh(force=True)
+            print(f"회원 장중 알림: {len(members.members)}명 · 보유 {len(members.positions)}건 감시")
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger("stockeye").warning("회원 알림 준비 실패: %s", e)
+        members = None
     checked_open = False
     while True:
         now = datetime.now()
@@ -69,9 +82,18 @@ def run_live(cfg, journal, notifier):
                     break
             except Exception as e:  # noqa: BLE001
                 logging.getLogger("stockeye").warning("휴장일 확인 실패: %s", e)
-        evs = eng.tick(quotes.get(eng.codes_to_watch()), now)
+        extra = []
+        if members is not None:
+            members.refresh()
+            extra = members.codes()
+        qs = quotes.get(sorted(set(eng.codes_to_watch()) | set(extra)))
+        evs = eng.tick(qs, now)
         for e in evs:
             logging.getLogger("stockeye").info("%s %s %s", e["type"], e["name"], e.get("reason", ""))
+            if members is not None and e["type"] == "entry":
+                members.broadcast_entry(e, now)
+        if members is not None:
+            members.check(qs, now)
         # 앱(휴대폰)에서 승인한 주문 처리 (클라우드 매매일지일 때)
         for r in eng.process_app_approvals(quotes.get):
             logging.getLogger("stockeye").info("앱 승인 주문 %s → %s", r["id"], r.get("message") or r.get("ok"))

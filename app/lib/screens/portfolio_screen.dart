@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../api.dart';
 import '../format.dart';
 import '../widgets/common.dart';
+import '../widgets/nav.dart';
 import 'stock_detail_screen.dart';
 
 class PortfolioScreen extends StatefulWidget {
@@ -35,7 +36,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('보유종목 관리'), actions: [
+      appBar: AppBar(title: const LogoTitle('보유종목 관리'), actions: [
         IconButton(icon: const Icon(Icons.refresh), onPressed: _reload),
       ]),
       floatingActionButton: FloatingActionButton.extended(

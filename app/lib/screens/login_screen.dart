@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'notify_screen.dart';
+
 /// 인증 메일 링크가 돌아올 주소 (웹 앱 주소). 앱 빌드 때 --dart-define=WEB_URL=https://xxx.pages.dev
 const String _webUrl = String.fromEnvironment('WEB_URL');
 String? get _redirect => kIsWeb ? Uri.base.origin : (_webUrl.isEmpty ? null : _webUrl);
@@ -280,6 +282,18 @@ class PendingScreen extends StatelessWidget {
                   child: FilledButton.icon(
                       onPressed: onRefresh, icon: const Icon(Icons.refresh), label: const Text('다시 확인')),
                 ),
+              if (!rejected) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.push(
+                        context, MaterialPageRoute(builder: (_) => const NotifySettingsScreen(showNav: false))),
+                    icon: const Icon(Icons.notifications_active_outlined),
+                    label: const Text('승인되면 폰으로 알림 받기'),
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => Supabase.instance.client.auth.signOut(),

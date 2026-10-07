@@ -144,3 +144,44 @@ def process_backtest_requests(sb: Supabase, pit, cfg: dict, limit: int = 3, bt=N
             sb.update("backtest_requests", {"id": f"eq.{q['id']}"},
                       {"status": "failed", "message": str(e)[:500], "done_at": datetime.utcnow().isoformat() + "Z"})
     return len(reqs)
+
+
+ALERT_STATUSES = ("손절 검토", "익절 검토", "확인 필요")
+
+
+def notify_members(sb: Supabase, report: dict, notifier, skip_topics=(), app_url: str | None = None) -> int:
+    """알림 토픽을 등록한 승인 회원에게 각자 알림: 오늘 리포트 요약 + 내 보유종목 경고."""
+    try:
+        members = sb.select("profiles", {"select": "user_id,ntfy_topic,notify_daily,notify_holdings",
+                                         "status": "eq.approved", "ntfy_topic": "not.is.null"})
+    except Exception as e:  # noqa: BLE001  (예전 스키마)
+        log.info("회원 알림 생략: %s", e)
+        return 0
+    m = report["market"]
+    top = ", ".join(f"{c['name']}({c['score']:.0f})" for c in report["top10"][:3]) or "후보 없음"
+    summary = f"{m.get('mood_icon', '')} {m.get('mood', '')} · TOP3 {top}"
+    skip = {t.strip() for t in skip_topics if t}
+    sent = 0
+    for u in members:
+        topic = (u.get("ntfy_topic") or "").strip()
+        if not topic or topic in skip:
+            continue
+        if u.get("notify_holdings", True):
+            reviews = sb.select("position_reviews", {"select": "position_id,payload", "user_id": f"eq.{u['user_id']}"})
+            names = {p["id"]: p["name"] for p in sb.select("positions", {
+                "select": "id,name", "user_id": f"eq.{u['user_id']}", "status": "eq.open"})}
+            lines = []
+            for r in reviews:
+                pl = r["payload"] or {}
+                if r["position_id"] in names and pl.get("status") in ALERT_STATUSES:
+                    first = (pl.get("alerts") or [""])[0]
+                    lines.append(f"⚠ {names[r['position_id']]} [{pl['status']}] {first}")
+            if lines:
+                notifier.send_topic(topic, f"StockEye 보유종목 점검 ({report['date']})", "\n".join(lines[:10]),
+                                    priority="high", url=app_url)
+                sent += 1
+        if u.get("notify_daily", True):
+            notifier.send_topic(topic, f"StockEye {report['date']} 리포트", summary, url=app_url)
+            sent += 1
+    log.info("회원 알림 %d건 발송", sent)
+    return sent

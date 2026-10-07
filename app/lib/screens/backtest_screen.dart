@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../format.dart';
 import '../widgets/common.dart';
+import '../widgets/nav.dart';
 
 class BacktestScreen extends StatefulWidget {
   const BacktestScreen({super.key});
@@ -92,7 +93,7 @@ class _BacktestScreenState extends State<BacktestScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('백테스트')),
+      appBar: AppBar(title: const LogoTitle('백테스트')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [

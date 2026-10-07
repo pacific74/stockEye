@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../format.dart';
 import '../widgets/common.dart';
+import '../widgets/nav.dart';
 import 'stock_detail_screen.dart';
 
 class SectorListScreen extends StatelessWidget {
@@ -11,7 +12,8 @@ class SectorListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('업종 · 테마 강도')),
+      bottomNavigationBar: const MainNavBar(),
+      appBar: AppBar(title: const LogoTitle('업종 · 테마 강도')),
       body: Loader<Json>(
         future: Api.sectors(),
         builder: (context, d) {
@@ -58,7 +60,8 @@ class SectorDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final top = asList(g['top']);
     return Scaffold(
-      appBar: AppBar(title: Text('${g['group']}  ${g['arrows']}')),
+      bottomNavigationBar: const MainNavBar(),
+      appBar: AppBar(title: LogoTitle('${g['group']}  ${g['arrows']}')),
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [

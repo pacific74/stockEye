@@ -4,6 +4,7 @@ import '../api.dart';
 import '../format.dart';
 import '../widgets/common.dart';
 import '../widgets/price_chart.dart';
+import '../widgets/nav.dart';
 import 'portfolio_screen.dart';
 import 'similar_screen.dart';
 
@@ -33,7 +34,8 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.name} (${widget.code})')),
+      bottomNavigationBar: const MainNavBar(),
+      appBar: AppBar(title: LogoTitle('${widget.name} (${widget.code})')),
       body: Loader<Json>(
         future: _f,
         onRetry: () => setState(() => _f = Api.stock(widget.code)),

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 import os
 import time as _time
 import zipfile
@@ -96,48 +97,94 @@ class DartFinancials:
 
     # ---------------------------------------------------------------- 재무
     def fetch(self, codes: list[str], years: list[int], reprts=("11013", "11012", "11014", "11011"),
-              corp_map: dict[str, str] | None = None) -> pd.DataFrame:
+              corp_map: dict[str, str] | None = None, workers: int = 8, deadline: float | None = None) -> pd.DataFrame:
+        """여러 묶음(100개 회사)을 동시에 요청 (DART 응답이 1건에 수십 초 걸릴 때가 있어 순서대로 하면 매우 느림).
+        deadline(time.time() 기준) 을 넘기면 남은 요청은 건너뜀. 실패한 묶음 수는 self.failed 에."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         if not self.key:
             log.warning("DART_API_KEY 없음 → 재무 수집 생략")
             return pd.DataFrame()
         corp_map = corp_map or self.corp_codes()
         pairs = [(c, corp_map[c]) for c in codes if c in corp_map]
-        rows = []
-        for y in years:
-            for rc in reprts:
-                for i in range(0, len(pairs), 100):
-                    if self.limit_hit:
-                        log.warning("DART 하루 호출 한도 초과 → 중단 (내일 이어서)")
-                        return pd.DataFrame(rows)
-                    chunk = pairs[i:i + 100]
-                    rows += self._multi([cc for _, cc in chunk], y, rc)
-                    _time.sleep(self.sleep)
-                log.info("DART 재무 %d %s (누적 %d건, 호출 %d회)", y, REPRT[rc], len(rows), self.calls)
+        jobs = [(y, rc, [cc for _, cc in pairs[i:i + 100]]) for y in years for rc in reprts
+                for i in range(0, len(pairs), 100)]
+        rows: list[dict] = []
+        self.failed = 0
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
+            futs = {ex.submit(self._multi_safe, cc, y, rc, deadline): (y, rc) for y, rc, cc in jobs}
+            for f in as_completed(futs):
+                got = f.result()
+                if got is None:
+                    self.failed += 1
+                else:
+                    rows += got
+        if self.limit_hit:
+            log.warning("DART 하루 호출 한도 초과 → 일부만 받음 (내일 이어서)")
+        log.info("DART 재무 %s %s: %d건 (요청 %d묶음, 실패 %d, 누적 호출 %d)",
+                 years, [REPRT[r] for r in reprts], len(rows), len(jobs), self.failed, self.calls)
         return pd.DataFrame(rows)
 
-    def _multi(self, corp_codes: list[str], year: int, reprt_code: str) -> list[dict]:
+    def _multi_safe(self, corp_codes, year, reprt_code, deadline=None):
+        if self.limit_hit or (deadline is not None and _time.time() > deadline):
+            return None
+        try:
+            return self._multi(corp_codes, year, reprt_code)
+        except Exception as ex:  # noqa: BLE001
+            log.warning("DART 재무 묶음 실패 %s %s: %s", year, reprt_code, ex)
+            return None
+
+    def _multi(self, corp_codes: list[str], year: int, reprt_code: str) -> list[dict] | None:
+        """None = 실패(다시 받아야 함) / [] = 자료 없음"""
         import requests
+        js = None
         for attempt in range(3):
             try:
                 r = requests.get(f"{BASE}/fnlttMultiAcnt.json", params={
                     "crtfc_key": self.key, "corp_code": ",".join(corp_codes),
-                    "bsns_year": str(year), "reprt_code": reprt_code}, timeout=30)
+                    "bsns_year": str(year), "reprt_code": reprt_code}, timeout=120)
                 self.calls += 1
                 js = r.json()
                 break
             except Exception as ex:  # noqa: BLE001
                 log.warning("DART 재무 요청 실패 (%s) 재시도 %d", ex, attempt + 1)
-                _time.sleep(2 * (attempt + 1))
-        else:
-            return []
+                _time.sleep(3 * (attempt + 1))
+        if js is None:
+            return None
         st = js.get("status")
         if st != "000":
             if st == "020":
                 self.limit_hit = True
-            elif st != "013":
-                log.warning("DART 재무 오류 %s: %s", st, js.get("message"))
-            return []
+                return None
+            if st == "013":          # 자료 없음
+                return []
+            log.warning("DART 재무 오류 %s: %s", st, js.get("message"))
+            return None
         return parse_multi(js.get("list", []), year, reprt_code)
+
+
+PERIODIC = re.compile(r"(분기|반기|사업)보고서\s*\((\d{4})\.(\d{2})\)")
+
+
+def periodic_filings(disc: pd.DataFrame, since: pd.Timestamp) -> dict[tuple[int, str], set[str]]:
+    """최근 공시 중 정기보고서 제출 → {(사업연도, 보고서코드): 종목들}  (일일 배치는 이것만 새로 받음)
+    예: '반기보고서 (2026.06)' → (2026, '11012') / '사업보고서 (2025.12)' → (2025, '11011')"""
+    out: dict[tuple[int, str], set[str]] = {}
+    if disc is None or disc.empty:
+        return out
+    d = disc[pd.to_datetime(disc["published_at"]) >= since]
+    for code, title in zip(d["code"], d["title"]):
+        m = PERIODIC.search(str(title).replace(" (", " ("))
+        if not m:
+            continue
+        kind, y, mm = m.group(1), int(m.group(2)), int(m.group(3))
+        if kind == "사업":
+            rc = "11011"
+        elif kind == "반기":
+            rc = "11012"
+        else:
+            rc = "11013" if mm <= 4 else "11014"
+        out.setdefault((y, rc), set()).add(code)
+    return out
 
 
 def parse_multi(items: list[dict], year: int, reprt_code: str) -> list[dict]:

@@ -48,7 +48,7 @@ def step(name, fn, errors: list, required: bool = False):
         return None
 
 
-def collect(store: DataStore, cfg: dict, errors: list) -> None:
+def collect(store: DataStore, cfg: dict, errors: list, sync=None) -> None:
     from stockeye.data.collector import collect_range, collect_disclosures
     from stockeye.data.sources.pykrx_source import PykrxSource
     today = pd.Timestamp.now(tz="Asia/Seoul").strftime("%Y-%m-%d")
@@ -64,7 +64,7 @@ def collect(store: DataStore, cfg: dict, errors: list) -> None:
         from stockeye.data.sources.dart_source import DartSource
         step("DART 공시 수집", lambda: collect_disclosures(store, DartSource(), start, today), errors)
         from scripts.dart_backfill import update_financials_recent
-        step("DART 재무 갱신 (올해·작년)", lambda: update_financials_recent(store), errors)
+        step("DART 재무 갱신 (최근 정기보고서 낸 회사만)", lambda: update_financials_recent(store, sync), errors)
     if os.getenv("KIS_APP_KEY") and os.getenv("KIS_APP_SECRET"):
         from stockeye.data.sources.kis_source import collect_program
         step("KIS 프로그램매매 수집", lambda: collect_program(store, cfg), errors)
@@ -107,7 +107,7 @@ def main():
 
     step("Storage → 원본 데이터 받기", sync.pull, errors, required=True)
     if not args.skip_collect:
-        step("오늘 데이터 수집", lambda: collect(store, cfg, errors), errors, required=True)
+        step("오늘 데이터 수집", lambda: collect(store, cfg, errors, sync), errors, required=True)
         if not args.no_push:
             step("원본 데이터 → Storage 올리기", sync.push, errors)
         last = store.last_date("ohlcv").strftime("%Y-%m-%d")

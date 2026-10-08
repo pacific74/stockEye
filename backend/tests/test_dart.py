@@ -37,7 +37,8 @@ def test_backfill_resume(tmp_path, monkeypatch):
     store = DataStore(tmp_path)
     store.save("ohlcv", pd.DataFrame({"date": pd.to_datetime(["2024-01-02"] * 2), "code": ["005930", "000660"],
                                       "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0, "value": 1.0}))
-    calls = []
+    calls, failed = [], []
+    fail_once = True
 
     class Fake(dart_fin.DartFinancials):
         def corp_codes(self):
@@ -46,12 +47,44 @@ def test_backfill_resume(tmp_path, monkeypatch):
         def _multi(self, corp_codes, year, reprt_code):
             calls.append((year, reprt_code))
             self.calls += 1
+            if fail_once and (year, reprt_code) == (2024, "11014") and not failed:
+                failed.append(1)
+                return None
             return [{"code": c, "fs": "CFS", "year": year, "reprt": dart_fin.REPRT[reprt_code], "revenue": 1.0,
                      "date": pd.Timestamp(f"{year}-06-01")} for c in ("005930", "000660")]
 
     monkeypatch.setattr(dart_fin, "DartFinancials", Fake)
     monkeypatch.setenv("DART_API_KEY", "x")
-    assert bf.backfill_financials(store, [2023, 2024])
+    st = bf.State(store)
+    assert not bf.backfill_financials(store, [2023, 2024], state=st)      # 2024 Q3 한 묶음 실패
+    assert "2024-Q3" not in st.fin and "2024-FY" in st.fin
+    assert len(calls) == 8
+    assert bf.backfill_financials(store, [2023, 2024], state=bf.State(store))   # 다시 실행: 실패한 것만
+    assert len(calls) == 9
     f = store.load("financials")
     assert len(f) == 2 * 2 * 4 and set(f["reprt"]) == {"Q1", "H1", "Q3", "FY"}
-    assert len(calls) == 8
+
+
+def test_daily_update_only_recent_filers(tmp_path, monkeypatch):
+    from scripts import dart_backfill as bf
+    from stockeye.data.sources import dart_fin
+    store = DataStore(tmp_path)
+    now = pd.Timestamp.now(tz="Asia/Seoul").tz_localize(None).normalize()
+    store.save("disclosures", pd.DataFrame({
+        "code": ["005930", "000660", "035720"], "published_at": [now - pd.Timedelta(days=1)] * 2 + [now - pd.Timedelta(days=40)],
+        "title": ["반기보고서 (2026.06)", "단일판매ㆍ공급계약체결", "분기보고서 (2026.03)"], "source": "DART"}))
+    asked = []
+
+    class Fake(dart_fin.DartFinancials):
+        def corp_codes(self):
+            return {"005930": "1", "000660": "2", "035720": "3"}
+
+        def _multi(self, corp_codes, year, reprt_code):
+            asked.append((tuple(corp_codes), year, reprt_code))
+            return [{"code": "005930", "fs": "CFS", "year": year, "reprt": dart_fin.REPRT[reprt_code], "revenue": 1.0,
+                     "date": now}]
+
+    monkeypatch.setattr(dart_fin, "DartFinancials", Fake)
+    monkeypatch.setenv("DART_API_KEY", "x")
+    assert bf.update_financials_recent(store) == 1
+    assert asked == [(("1",), 2026, "11012")]          # 최근 반기보고서 낸 회사 1곳만

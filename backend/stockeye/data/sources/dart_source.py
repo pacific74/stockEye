@@ -47,26 +47,35 @@ class DartSource:
         parts = [p for p in parts if not p.empty]
         return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
 
-    def _fetch(self, start, end, corp_cls: str) -> pd.DataFrame:
+    def _fetch(self, start, end, corp_cls: str, kind: str | None = None) -> pd.DataFrame:
+        """kind = 공시 유형 (A 정기 / B 주요사항 / F 외부감사 / I 거래소 …), None = 전체"""
         import requests
         rows, page = [], 1
         while True:
-            try:
-                r = requests.get(URL, params={
-                    "crtfc_key": self.key, "corp_cls": corp_cls,
-                    "bgn_de": pd.Timestamp(start).strftime("%Y%m%d"),
-                    "end_de": pd.Timestamp(end).strftime("%Y%m%d"), "page_no": page, "page_count": 100,
-                }, timeout=20)
-                js = r.json()
-            except Exception as ex:  # noqa: BLE001
-                log.warning("DART 요청 실패 (%s), 건너뜀", ex)
+            params = {"crtfc_key": self.key, "corp_cls": corp_cls,
+                      "bgn_de": pd.Timestamp(start).strftime("%Y%m%d"),
+                      "end_de": pd.Timestamp(end).strftime("%Y%m%d"), "page_no": page, "page_count": 100}
+            if kind:
+                params["pblntf_ty"] = kind
+            js = None
+            for attempt in range(3):
+                try:
+                    js = requests.get(URL, params=params, timeout=60).json()
+                    break
+                except Exception as ex:  # noqa: BLE001
+                    log.warning("DART 요청 실패 (%s) 재시도 %d", ex, attempt + 1)
+                    _time.sleep(3 * (attempt + 1))
+            if js is None:
+                self.failed = getattr(self, "failed", 0) + 1
                 break
+
             st = js.get("status")
             if st != "000":
                 if st == "020":          # 요청 제한 초과
                     self.limit_hit = True
                 elif st != "013":        # 013 = 조회 결과 없음
                     log.warning("DART 오류: %s", js.get("message"))
+                    self.failed = getattr(self, "failed", 0) + 1
                 break
             for it in js["list"]:
                 if not it.get("stock_code"):
@@ -83,3 +92,11 @@ class DartSource:
             page += 1
             _time.sleep(self.sleep)
         return pd.DataFrame(rows)
+
+    def month(self, ms, me, kinds=("A", "B", "F", "I")) -> tuple[pd.DataFrame, int]:
+        """백필용: 한 달 · 점수에 쓰는 공시 유형만 (지분공시 D 등 대량·무관 공시 제외). (결과, 실패 수)"""
+        self.failed = 0
+        parts = [self._fetch(ms, me, cls, k) for cls in ("Y", "K") for k in kinds]
+        parts = [p for p in parts if not p.empty]
+        df = pd.concat(parts, ignore_index=True).drop_duplicates(["code", "published_at", "title"]) if parts else pd.DataFrame()
+        return df, self.failed

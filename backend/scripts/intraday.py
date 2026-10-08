@@ -92,6 +92,12 @@ def main():
     as_of = today + pd.Timedelta(hours=18)          # 진행 중인 오늘 봉을 '알 수 있는' 것으로 취급
     report, res, view = build_report_full(pit, cfg, as_of, with_ai=False)
     report["market"]["intraday"] = hm
+    if report.get("v3"):                      # 장중엔 선정 기록 없이 읽기만 (기록은 저녁 배치)
+        from stockeye.engine.v3_report import attach_portfolio
+        try:
+            attach_portfolio(report, pit, DataSync(store, sb), record=False, eligible=getattr(res, "v3_eligible", None))
+        except Exception as e:  # noqa: BLE001
+            log.warning("V3 모의 보유 계산 실패: %s", e)
     report["intraday"] = {"time": hm, "coverage": round(cov, 3)}
     v2 = report.get("v2", {})
     print(f"장중 재분석 {report['date']} {hm}: 시장 {v2.get('market')} / {v2.get('counts')}")

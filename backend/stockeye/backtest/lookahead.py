@@ -30,6 +30,8 @@ from ..data.pit import PointInTimeData, at, DECISION_TIME
 from ..indicators import compute_features
 
 FEATURE_COLS_SKIP = {"code"}
+# 미래 가격을 일부러 쓰는 '성과 측정 전용' 파일 (점수·선정·매매 결정에는 쓰지 않음) — 늘릴 때는 신중히
+OUTCOME_ONLY = {"lookahead.py", "v3_outcome.py", "score_power.py"}
 BAD_PATTERNS = [
     (re.compile(r"\.shift\(\s*-\s*\d"), "shift(음수) → 미래 값을 당겨옴"),
     (re.compile(r"center\s*=\s*True"), "rolling(center=True) → 미래 구간 포함"),
@@ -157,7 +159,7 @@ def audit(data: PointInTimeData, features: pd.DataFrame, strategy=None, trades=N
     src = Path(src_dir) if src_dir else Path(__file__).resolve().parent.parent
     hits = []
     for py in src.rglob("*.py"):
-        if py.name == "lookahead.py":
+        if py.name in OUTCOME_ONLY:      # 성과 '채점' 전용 모듈 (결정 코드에서 쓰지 않음)
             continue
         for ln, code_part in _code_lines(py):
             for pat, why in BAD_PATTERNS:

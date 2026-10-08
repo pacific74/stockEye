@@ -83,6 +83,15 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
             },
         })
         targets = L["overall"][: cfg.get("ai", {}).get("explain_top", 20)]
+        # ---- V3 기준 전략 (🔒 고정 규칙): 오늘 V3B 상위 10 ----
+        try:
+            from .engine.v3_report import build_section
+            v3s = build_section(pit, x, ev, name_of, theme_of, as_of)
+            report["strategies"] = {"v3": v3s["list"], **report["strategies"]}
+            report["v3"] = v3s["meta"]
+            res.v3_eligible = v3s["eligible"]
+        except Exception as e:  # noqa: BLE001  V3 가 실패해도 V2 리포트는 그대로
+            log.warning("V3 기준 전략 계산 실패: %s", e)
     else:
         # ---- (예전) V1: 종합 점수 + 전략 A~E ----
         weak = weak_markets(market, cfg)

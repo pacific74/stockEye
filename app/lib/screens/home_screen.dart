@@ -6,6 +6,7 @@ import '../api.dart';
 import '../format.dart';
 import '../live.dart';
 import '../today_picks.dart';
+import '../v3.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
@@ -163,6 +164,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 _NowHeader(clock: clock, busy: _liveBusy, at: _liveAt, onRefresh: _refreshLive),
                 const PendingUsersBanner(),
                 const _TradingBanner(),
+                if (asMap(m['v3']).isNotEmpty) ...[
+                  SectionTitle('V3 기준 전략',
+                      trailing: TextButton(onPressed: () => goTab(context, 1, list: 'v3'), child: const Text('상위 10'))),
+                  V3HomeCard(meta: asMap(m['v3'])),
+                ],
                 const SectionTitle('지금 시장'),
                 _LiveMarketCard(live: _idx, yesterday: m, busy: _liveBusy && _idx == null, weak: weak),
                 SectionTitle('오늘 살 만한 후보 · 지금 가격 기준',

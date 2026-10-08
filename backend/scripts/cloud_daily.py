@@ -134,6 +134,11 @@ def main():
     from stockeye.details import build_details
     pit = PointInTimeData.from_store(store)
     report, res, view = step("리포트 만들기", lambda: build_report_full(pit, cfg, args.as_of), errors, required=True)
+    if report.get("v3"):
+        from stockeye.engine.v3_report import attach_portfolio
+        step("V3 기준 전략: 선정 기록·모의 보유·매도 예정일",
+             lambda: attach_portfolio(report, pit, sync, record=not args.as_of, eligible=getattr(res, "v3_eligible", None)),
+             errors)
     save_report(report, cfg)
     step("리포트 → Storage", lambda: (sync.put_json("reports/latest.json", report),
                                        sync.put_json(f"reports/{report['date']}.json", report)), errors)

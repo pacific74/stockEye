@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../live.dart';
 import '../today_picks.dart';
+import '../v3.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
@@ -13,8 +14,8 @@ class CandidateListScreen extends StatefulWidget {
   final String list;
   final String title;
 
-  // now = 오늘 지금 가격 기준 / signal·buy·watch = 매수후보 V2 (어제 장 마감 분석)
-  static const keys = ['now', 'signal', 'buy', 'watch'];
+  // v3 = V3 기준 전략 (🔒 고정) / now = 오늘 지금 가격 기준 / signal·buy·watch = 매수후보 V2 (참고)
+  static const keys = ['v3', 'now', 'signal', 'buy', 'watch'];
 
   @override
   State<CandidateListScreen> createState() => _CandidateListScreenState();
@@ -102,7 +103,7 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
       future: _f,
       onRetry: () => setState(() => _f = Api.candidates(widget.listKey)),
       builder: (context, d) {
-        final all = _sorted(asList(d['candidates']));
+        final all = widget.listKey == 'v3' ? asList(d['candidates']) : _sorted(asList(d['candidates']));
         final cands = all.take(maxShow).toList(); // 정렬한 뒤 상위 10개만
         return ListView(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
@@ -130,6 +131,11 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
                   ]),
                 ),
               ),
+            if (widget.listKey == 'v3' && cands.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+                child: V3ScheduleLine(v: asMap(cands.first['v3'])),
+              ),
             if (_isStrategy && cands.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
@@ -153,6 +159,9 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
                               ? '오늘은 매수 신호가 없습니다.\n무리해서 살 필요 없는 날일 수 있어요.'
                               : '오늘 조건을 만족한 종목이 없습니다',
                           textAlign: TextAlign.center))),
+            if (widget.listKey == 'v3')
+              ...cands.asMap().entries.map((e) => V3PickTile(c: e.value, rank: e.key + 1))
+            else
             ...cands.asMap().entries.map((e) => CandidateTile(
                 c: e.value,
                 rank: e.key + 1,

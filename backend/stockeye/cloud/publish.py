@@ -28,7 +28,8 @@ def publish_report(sb: Supabase, report: dict, keep_days: int = 60) -> None:
     sb.upsert("daily_reports", [{
         "date": d, "as_of": str(report["as_of"])[:19],
         # V2 시장 상태(A/B/C)·등급 개수는 market 안에 같이 넣음 (표 구조 변경 없이)
-        "market": {**report["market"], "engine": report.get("engine", "v1"), **({"v2": report["v2"]} if report.get("v2") else {})},
+        "market": {**report["market"], "engine": report.get("engine", "v1"), **({"v2": report["v2"]} if report.get("v2") else {}),
+                   **({"v3": report["v3"]} if report.get("v3") else {})},
         "sectors": report["sectors"],
         "top10": report["top10"], "strategies": _strategy_summary(report), "funnel": report["funnel"],
         "labels": report.get("labels"), "unmatched_theme_names": report.get("unmatched_theme_names", []),

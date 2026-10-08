@@ -1,4 +1,4 @@
-"""주간 백테스트 (클라우드): 매수후보 V2 엔진을 5년치로 검증 → 앱의 백테스트 화면(관리자)에 발행.
+"""주간 백테스트 (클라우드): V3 기준 전략 검증(선정력·매매 분리) + 매수후보 V2 엔진 → 앱의 백테스트 화면(관리자)에 발행.
 
   python -m scripts.cloud_backtest              # V2
   python -m scripts.cloud_backtest --only A,D   # (예전) V1 전략
@@ -35,7 +35,8 @@ def main():
     cfg = load_config()
     store = DataStore(data_dir(cfg))
     sb = Supabase()
-    DataSync(store, sb).pull()
+    sync = DataSync(store, sb)
+    sync.pull()
     pit = PointInTimeData.from_store(store)
     t0 = time.time()
     log.info("지표 계산 중 (전 종목 × 전 기간)...")
@@ -43,6 +44,25 @@ def main():
         from stockeye.backtest.engine_v2 import BacktesterV2
         from stockeye.indicators import compute_features
         feat = compute_features(pit.ohlcv, pit.flows, pit.fund)
+        # ---- V3 기준 전략 검증: ① 종목 선정력 ② 실제 매매 (기간별, 고정 이후 포함) ----
+        try:
+            from stockeye.engine.v3_report import history_entries, validate, LOG_KEY
+            t3 = time.time()
+            ent = history_entries(pit, cfg, feat)
+            try:
+                flog = sync.get_json(LOG_KEY)
+            except Exception:  # noqa: BLE001
+                flog = None
+            v = validate(pit, ent, flog)
+            pub.publish_backtest(sb, "V3B", "V3 기준 전략 검증", {**v, "start": ent[0]["date"] if ent else None,
+                                                              "end": ent[-1]["date"] if ent else None, "metrics": {}})
+            for pr in v["periods"]:
+                log.info("[V3B] %s: 매매 %s · 기대값 %s%% · PF %s · MDD %s%% · 20일 초과 %s%%", pr["name"],
+                         pr["trading"].get("trades"), pr["trading"].get("expectancy_pct"), pr["trading"].get("profit_factor"),
+                         pr["trading"].get("mdd_pct"), (pr["selection"].get("20") or {}).get("excess"))
+            log.info("V3 검증 %.0f분", (time.time() - t3) / 60)
+        except Exception as e:  # noqa: BLE001
+            log.error("V3 검증 실패: %s", e)
         res = BacktesterV2(pit, cfg, feat).run()
         d = res.to_dict()
         pub.publish_backtest(sb, "V2", "매수후보 V2 엔진", d)

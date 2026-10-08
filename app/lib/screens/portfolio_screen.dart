@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../api.dart';
 import '../format.dart';
 import '../live.dart';
+import '../v3.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
@@ -23,14 +24,20 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   Future<List<Json>> _load() async {
     final rows = await Api.portfolioReview();
     final codes = rows.map((h) => '${h['code']}').toList();
-    final r = await Future.wait([Api.stockMeta(codes), Live.stocks(codes)]);
+    final r = await Future.wait([Api.stockMeta(codes), Live.stocks(codes), Api.v3().catchError((_) => <String, dynamic>{})]);
     final meta = r[0] as Map<String, Json>;
     final live = (r[1] as LiveResult).quotes;
+    final v3m = r[2] as Json;
+    final cal = v3Calendar(v3m);
+    final today = '${v3m['date'] ?? ''}';
     return [
       for (final h in rows)
         {
           ..._withPnl(h, live['${h['code']}'], (meta['${h['code']}']?['score'] as num?)?.toDouble()),
           'market': meta['${h['code']}']?['market'] ?? h['market'],
+          // V3 기준: 매수일 포함 20거래일째 종가 매도 예정 (앞으로의 휴장일은 추정)
+          'sell_date': holdingSellDate(v3m, h['buy_date'] as String?),
+          'sell_left': tradingDaysLeft(cal, today, holdingSellDate(v3m, h['buy_date'] as String?)),
         },
     ];
   }
@@ -201,6 +208,16 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                                 style: TextStyle(fontSize: 12, color: pnlWon >= 0 ? upColor : downColor)),
                         ]),
                       ]),
+                      if (h['sell_date'] != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                              '매수 ${mdw(h['buy_date'] as String?)} · V3 기준 매도 예정 ${mdw(h['sell_date'] as String?)} 종가'
+                              '${h['sell_left'] == null ? '' : (h['sell_left'] as int) <= 0 ? ' (오늘 또는 지남)' : ' (${h['sell_left']}거래일 남음)'}',
+                              style: t.bodySmall?.copyWith(
+                                  color: ((h['sell_left'] as int?) ?? 99) <= 3 ? Colors.orange : null,
+                                  fontWeight: FontWeight.w600)),
+                        ),
                       ...alerts.map((a) => Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text('⚠ $a', style: const TextStyle(color: Colors.orange)),

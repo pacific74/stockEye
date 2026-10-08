@@ -28,6 +28,8 @@ List<Json> asList(dynamic v) => (v as List? ?? []).map((e) => asMap(e)).toList()
 
 class Api {
   static Future<Json> dashboard() => useCloud ? _Cloud.dashboard() : _Http.dashboard();
+  /// V3 기준 전략: 선정 상태 · 매수/매도 예정일 · 거래일 달력 · 모의 보유 · 고정 이후 성과 (리포트 market.v3)
+  static Future<Json> v3() => useCloud ? _Cloud.v3() : _Http.v3();
   static Future<Json> candidates(String list, {int top = 30}) =>
       useCloud ? _Cloud.candidates(list, top) : _Http.candidates(list, top);
   /// 어제(최근) 분석의 모든 후보 (종합 + 전략별, 종목별 1개) — '지금 매수구간' 계산용
@@ -162,6 +164,12 @@ class _Cloud {
       'funnel': r['funnel'],
       'ai_explained': r['ai_explained'] ?? 0,
     };
+  }
+
+  static Future<Json> v3() async {
+    final r = await _latest();
+    final m = asMap(asMap(r['market'])['v3']);
+    return m.isEmpty ? m : {...m, 'date': r['date']};
   }
 
   static Future<Json> candidates(String list, int top) async {
@@ -464,6 +472,11 @@ class _Http {
   static Future<Json> post(String path, Object body) async => asMap(await send('POST', path, body));
 
   static Future<Json> dashboard() => get('/api/dashboard');
+  static Future<Json> v3() async {
+    final d = await dashboard();
+    final m = asMap(asMap(d['market'])['v3']);
+    return m.isEmpty ? m : {...m, 'date': d['date']};
+  }
   static Future<List<Json>> allCandidates() async {
     final lists = await Future.wait(['overall', 'signal', 'buy', 'watch']
         .map((k) => candidates(k, 30).then((d) => asList(d['candidates']), onError: (_) => <Json>[])));

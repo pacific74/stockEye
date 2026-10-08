@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../format.dart';
+import '../v3.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
@@ -77,6 +78,16 @@ class _BacktestScreenState extends State<BacktestScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
+          Card(
+            color: Colors.teal.withValues(alpha: 0.08),
+            child: ListTile(
+              leading: const Icon(Icons.lock_outline, color: Colors.teal),
+              title: const Text('V3 기준 전략 검증', style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: const Text('① 종목 선정력 (상위10 · 후보 전체 · 랜덤10)과 ② 실제 매매 (PF · 기대값 · MDD · CAGR)를 나눠서'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const V3Screen())),
+            ),
+          ),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12),

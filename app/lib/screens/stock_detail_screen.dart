@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../format.dart';
 import '../live.dart';
+import '../reversal.dart';
 import '../widgets/common.dart';
 import '../widgets/price_chart.dart';
 import '../widgets/nav.dart';
@@ -93,6 +94,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
           final warnings = (c['warnings'] is List) ? (c['warnings'] as List).map((e) => '$e').toList() : <String>[];
           final explanation = d['explanation'] == null ? null : asMap(d['explanation']);
           final v3 = asMap(c['v3']);
+          final rev = asMap(c['reversal']);
           num? pv(String k) => p[k] as num?;
 
           return ListView(
@@ -205,6 +207,14 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
               if (v3.isNotEmpty) ...[
                 const SectionTitle('점수 구성'),
                 _V3Score(v: v3),
+              ],
+
+              // ---- 추세전환 점수 (실험 탭 · 관찰용) ----
+              if (rev.isNotEmpty) ...[
+                const SectionTitle('추세전환 점수'),
+                ReversalScore(v: rev),
+                ...((rev['reasons'] is List) ? rev['reasons'] as List : const []).map((r) => _bullet('✓', '$r', Colors.indigo)),
+                ...((rev['warnings'] is List) ? rev['warnings'] as List : const []).map((w) => _bullet('⚠', '$w', Colors.orange)),
               ],
 
               if (disc.isNotEmpty) ...[

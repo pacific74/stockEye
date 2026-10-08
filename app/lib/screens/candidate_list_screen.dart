@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../live.dart';
+import '../reversal.dart';
 import '../today_picks.dart';
 import '../v3.dart';
 import '../widgets/common.dart';
@@ -15,7 +16,8 @@ class CandidateListScreen extends StatefulWidget {
   final String title;
 
   // v3 = V3 기준 전략 (🔒 고정) / now = 오늘 지금 가격 기준 / signal·buy·watch = 매수후보 V2 (참고)
-  static const keys = ['v3']; // V2 목록(지금 매수구간·매수 신호·강력 후보·관심)은 숨김 — V3 로 통일
+  // reversal = 추세전환 (실험 탭 · 관찰용, 70점 이상)
+  static const keys = ['v3', 'reversal']; // V2 목록(지금 매수구간·매수 신호·강력 후보·관심)은 숨김
 
   @override
   State<CandidateListScreen> createState() => _CandidateListScreenState();
@@ -103,8 +105,9 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
       future: _f,
       onRetry: () => setState(() => _f = Api.candidates(widget.listKey)),
       builder: (context, d) {
-        final all = widget.listKey == 'v3' ? sortByScore(asList(d['candidates'])) : _sorted(asList(d['candidates']));
-        final cands = all.take(maxShow).toList(); // 정렬한 뒤 상위 10개만
+        final rev = widget.listKey == 'reversal';
+        final all = widget.listKey == 'v3' || rev ? sortByScore(asList(d['candidates'])) : _sorted(asList(d['candidates']));
+        final cands = all.take(rev ? 30 : maxShow).toList(); // 정렬한 뒤 상위 10개만 (추세전환은 30개)
         return ListView(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
           children: [
@@ -113,7 +116,7 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
               child: Text(
                   '${d['date'] == null ? '최근' : _md('${d['date']}')} '
                   '${d['intraday'] != null ? '${d['intraday']} 장중 분석 (지금 가격 반영, 수급은 어제까지)' : '장 마감 분석'} · '
-                  '${all.length > maxShow ? '조건 통과 ${all.length}개 중 ' : ''}상위 ${cands.length}개',
+                  '${all.length > cands.length ? '조건 통과 ${all.length}개 중 ' : ''}상위 ${cands.length}개',
                   style: Theme.of(context).textTheme.bodySmall),
             ),
             if (d['description'] != null)
@@ -159,8 +162,15 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
                               ? '오늘은 매수 신호가 없습니다.\n무리해서 살 필요 없는 날일 수 있어요.'
                               : '오늘 조건을 만족한 종목이 없습니다',
                           textAlign: TextAlign.center))),
+            if (rev && cands.isNotEmpty && cands.last['reversal'] is Map && ((asMap(cands.last['reversal'])['score'] as num?) ?? 100) < 70)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+                child: Text('오늘 70점 이상이 적어 60점대(근접)도 같이 보여줍니다.', style: Theme.of(context).textTheme.bodySmall),
+              ),
             if (widget.listKey == 'v3')
               ...cands.asMap().entries.map((e) => V3PickTile(c: e.value, rank: e.key + 1))
+            else if (rev)
+              ...cands.asMap().entries.map((e) => ReversalTile(c: e.value, rank: e.key + 1))
             else
             ...cands.asMap().entries.map((e) => CandidateTile(
                 c: e.value,

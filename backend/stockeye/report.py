@@ -96,6 +96,15 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
             targets = []          # AI 설명은 V2 항목 기준이라 끔 → 종목 상세에 V3 규칙 문장
         except Exception as e:  # noqa: BLE001  V3 가 실패해도 V2 리포트는 그대로
             log.warning("V3 기준 전략 계산 실패: %s", e)
+        # ---- 추세전환 (실험 탭 · 관찰용): 바닥 → 20일선 전환 100점 ----
+        try:
+            from .engine.reversal_report import build_section as rev_section
+            rvs = rev_section(view, x, ev, name_of, theme_of, as_of)
+            report.setdefault("strategies", {})["reversal"] = rvs["list"]
+            report["reversal"] = rvs["meta"]
+            res.rev_scores = rvs["scores"]
+        except Exception as e:  # noqa: BLE001
+            log.warning("추세전환 계산 실패: %s", e)
     else:
         # ---- (예전) V1: 종합 점수 + 전략 A~E ----
         weak = weak_markets(market, cfg)

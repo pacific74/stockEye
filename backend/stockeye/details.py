@@ -49,7 +49,9 @@ def _report_index(report: dict) -> dict[str, dict]:
     idx = {}
     for c in report["candidates"]:
         idx.setdefault(c["code"], c)
-    for v in report["strategies"].values():
+    for k, v in report["strategies"].items():
+        if k == "reversal":           # 추세전환은 점수 체계가 달라 기본 후보로 쓰지 않음 (상세에 따로 붙임)
+            continue
         for c in v["candidates"]:
             idx.setdefault(c["code"], c)
     return idx
@@ -145,6 +147,10 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
                         "v3": {"status": "자격 없음", "why_not": ["1차 필터 미통과 (거래대금·가격·관리종목·급락 등)"],
                                "version": None}}
                 v3text = "1차 필터(거래대금·가격·관리종목·급락)를 통과하지 못해 V3 점수를 매기지 않았습니다."
+        rvs = getattr(res, "rev_scores", None)
+        if rvs is not None and code in rvs.index:
+            from .engine.reversal_report import info as rev_info
+            cand = {**cand, "reversal": rev_info(rvs.loc[code])}
         e = expl.get(code) if v3s is None else None
         if v3text:
             e = {"text": v3text, "source": "rule", "model": None, "verified": True,

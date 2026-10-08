@@ -246,7 +246,7 @@ class _Result extends StatelessWidget {
             _kv('최대 낙폭', pct(m['mdd_pct'] as num?)),
             _kv('최종 수익률', pct(m['total_return_pct'] as num?), bold: true),
             _kv('연평균(CAGR)', pct(m['cagr_pct'] as num?)),
-            _kv('KOSPI 대비', pct(m['benchmark_return_pct'] as num?)),
+            _kv('같은 기간 KOSPI', pct(m['benchmark_return_pct'] as num?)),
           ]),
         ),
       ),

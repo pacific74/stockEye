@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../api.dart';
 import '../format.dart';
+import '../live.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
@@ -18,13 +19,35 @@ class PortfolioScreen extends StatefulWidget {
 class _PortfolioScreenState extends State<PortfolioScreen> {
   late Future<List<Json>> _f = _load();
 
-  /// 보유종목 + 각 종목의 최근 분석 점수
+  /// 보유종목 + 최근 분석 점수 + 지금 시세로 계산한 수익률
   Future<List<Json>> _load() async {
     final rows = await Api.portfolioReview();
-    final sc = await Api.scores(rows.map((h) => '${h['code']}').toList());
+    final codes = rows.map((h) => '${h['code']}').toList();
+    final r = await Future.wait([Api.scores(codes), Live.stocks(codes)]);
+    final sc = r[0] as Map<String, double>;
+    final live = (r[1] as LiveResult).quotes;
     return [
-      for (final h in rows) {...h, 'score_now': h['today_score'] ?? sc['${h['code']}']}
+      for (final h in rows) _withPnl(h, live['${h['code']}'], sc['${h['code']}']),
     ];
+  }
+
+  /// 매수가(평단) 대비 수익률·손익: 지금 시세가 있으면 그걸로, 없으면 저녁 점검 때 가격으로
+  static Json _withPnl(Json h, LiveQuote? q, double? score) {
+    final avg = (h['avg_price'] as num?)?.toDouble();
+    final qty = (h['qty'] as num?)?.toDouble() ?? 0;
+    final price = q?.price ?? (h['price'] as num?)?.toDouble();
+    final pnl = (avg != null && avg > 0 && price != null) ? (price / avg - 1) * 100 : (h['pnl_pct'] as num?)?.toDouble();
+    return {
+      ...h,
+      'score_now': h['today_score'] ?? score,
+      'now_price': price,
+      'now_live': q != null,
+      'today_ratio': q?.ratio,
+      'pnl_now': pnl,
+      'pnl_won': (avg != null && price != null) ? (price - avg) * qty : null,
+      'cost': avg == null ? null : avg * qty,
+      'value': price == null ? null : price * qty,
+    };
   }
 
   void _reload() => setState(() => _f = _load());
@@ -62,11 +85,41 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
           if (rows.isEmpty) {
             return const Center(child: Text('보유종목이 없습니다.\n아래 [추가] 버튼에서 종목명이나 코드로 추가하세요.', textAlign: TextAlign.center));
           }
+          double sum(String k) => rows.fold(0.0, (a, h) => a + ((h[k] as num?)?.toDouble() ?? 0));
+          final cost = sum('cost'), value = sum('value'), pnlWon = sum('pnl_won');
+          final totalPct = cost > 0 ? pnlWon / cost * 100 : null;
+          final t = Theme.of(context).textTheme;
           return ListView(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 88),
-            children: rows.map((h) {
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(children: [
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('보유 ${rows.length}종목 · 매수가 대비', style: t.bodySmall),
+                        const SizedBox(height: 2),
+                        Text('매수 ${won(cost)} → 평가 ${won(value)}', style: t.bodyMedium),
+                      ]),
+                    ),
+                    Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                      Text(pct(totalPct),
+                          style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: (totalPct ?? 0) >= 0 ? upColor : downColor)),
+                      Text('${pnlWon >= 0 ? '+' : ''}${won(pnlWon.round())}',
+                          style: TextStyle(color: pnlWon >= 0 ? upColor : downColor, fontSize: 12)),
+                    ]),
+                  ]),
+                ),
+              ),
+              ...rows.map((h) {
               final alerts = List<String>.from(h['alerts'] as List? ?? []);
-              final pnl = (h['pnl_pct'] as num?)?.toDouble();
+              final pnl = (h['pnl_now'] as num?)?.toDouble();
+              final pnlWon = (h['pnl_won'] as num?)?.toDouble();
+              final today = (h['today_ratio'] as num?)?.toDouble();
               final status = h['status'] as String? ?? '';
               return Card(
                 child: InkWell(
@@ -95,10 +148,26 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                       ]),
                       const SizedBox(height: 6),
                       Row(children: [
-                        Expanded(child: Text('평단 ${won(h['avg_price'] as num?)} → 현재 ${won(h['price'] as num?)}')),
-                        Text(pct(pnl),
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, color: (pnl ?? 0) >= 0 ? upColor : downColor)),
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text('매수가 ${won(h['avg_price'] as num?)}'
+                                '${h['qty'] == null ? '' : ' · ${num0(h['qty'] as num)}주'}'),
+                            Text(
+                                '${h['now_live'] == true ? '지금' : '최근'} ${won(h['now_price'] as num?)}'
+                                '${today == null ? '' : '  (오늘 ${pct(today)})'}',
+                                style: t.bodySmall),
+                          ]),
+                        ),
+                        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                          Text(pct(pnl),
+                              style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: (pnl ?? 0) >= 0 ? upColor : downColor)),
+                          if (pnlWon != null)
+                            Text('${pnlWon >= 0 ? '+' : ''}${won(pnlWon.round())}',
+                                style: TextStyle(fontSize: 12, color: pnlWon >= 0 ? upColor : downColor)),
+                        ]),
                       ]),
                       Text('손절 ${won(h['stop'] as num?)} · 목표 ${won(h['target'] as num?)}',
                           style: Theme.of(context).textTheme.bodySmall),
@@ -130,7 +199,8 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                   ),
                 ),
               );
-            }).toList(),
+            }),
+            ],
           );
         },
       ),
@@ -179,7 +249,8 @@ Future<void> showAddHoldingDialog(BuildContext context,
   final digits = [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))];
   TextEditingController? stockC; // 종목명/코드 입력칸
   Json? picked = code == null ? null : {'code': code, 'name': name ?? code};
-  String? err;
+  String? err; // 종목 칸 오류
+  String? qtyErr, priceErr;
 
   String label(Json o) => '${o['name']} (${o['code']})';
 
@@ -237,14 +308,21 @@ Future<void> showAddHoldingDialog(BuildContext context,
                 ),
               TextField(
                   controller: qtyC,
-                  decoration: const InputDecoration(labelText: '수량'),
+                  autofocus: code != null,
+                  decoration: InputDecoration(labelText: '수량 (필수)', errorText: qtyErr),
                   keyboardType: TextInputType.number,
-                  inputFormatters: digits),
+                  inputFormatters: digits,
+                  onChanged: (_) {
+                    if (qtyErr != null) setS(() => qtyErr = null);
+                  }),
               TextField(
                   controller: priceC,
-                  decoration: const InputDecoration(labelText: '평균 매수가'),
+                  decoration: InputDecoration(labelText: '평균 매수가 (필수)', errorText: priceErr),
                   keyboardType: TextInputType.number,
-                  inputFormatters: digits),
+                  inputFormatters: digits,
+                  onChanged: (_) {
+                    if (priceErr != null) setS(() => priceErr = null);
+                  }),
               TextField(
                   controller: stopC,
                   decoration: const InputDecoration(labelText: '손절가 (비우면 자동)'),
@@ -285,8 +363,13 @@ Future<void> showAddHoldingDialog(BuildContext context,
                   return;
                 }
               }
-              if ((double.tryParse(qtyC.text) ?? 0) <= 0 || (double.tryParse(priceC.text) ?? 0) <= 0) {
-                setS(() => err = '수량과 평균 매수가를 입력하세요');
+              final noQty = (double.tryParse(qtyC.text) ?? 0) <= 0;
+              final noPrice = (double.tryParse(priceC.text) ?? 0) <= 0;
+              if (noQty || noPrice) {
+                setS(() {
+                  qtyErr = noQty ? '수량을 입력해 주세요' : null;
+                  priceErr = noPrice ? '평균 매수가를 입력해 주세요' : null;
+                });
                 return;
               }
               if (ctx.mounted) Navigator.pop(ctx, true);

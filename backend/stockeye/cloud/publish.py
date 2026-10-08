@@ -30,7 +30,8 @@ def publish_report(sb: Supabase, report: dict, keep_days: int = 60) -> None:
         # V2 시장 상태(A/B/C)·등급 개수는 market 안에 같이 넣음 (표 구조 변경 없이)
         "market": {**report["market"], "engine": report.get("engine", "v1"), **({"v2": report["v2"]} if report.get("v2") else {}),
                    **({"v3": report["v3"]} if report.get("v3") else {}),
-                   **({"reversal": report["reversal"]} if report.get("reversal") else {})},
+                   **({"reversal": report["reversal"]} if report.get("reversal") else {}),
+                   **({"early": report["early"]} if report.get("early") else {})},
         "sectors": report["sectors"],
         "top10": report["top10"], "strategies": _strategy_summary(report), "funnel": report["funnel"],
         "labels": report.get("labels"), "unmatched_theme_names": report.get("unmatched_theme_names", []),
@@ -116,7 +117,7 @@ def publish_journal(sb: Supabase, cfg: dict, journal, pit=None, report: dict | N
     oh = oh[oh["date"] >= oh["date"].max() - pd.Timedelta(days=120)]
     x = compute_features(oh).xs(oh["date"].max(), level="date")
     idx = {}
-    for c in report["candidates"] + [c for k, v in report["strategies"].items() if k != "reversal" for c in v["candidates"]]:
+    for c in report["candidates"] + [c for k, v in report["strategies"].items() if k not in ("reversal", "early") for c in v["candidates"]]:
         idx.setdefault(c["code"], {"score": c["score"], "tags": c.get("tags", [])})
     cal = (report.get("v3") or {}).get("calendar")
     if cal is None and report.get("v3"):

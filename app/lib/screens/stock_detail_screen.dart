@@ -95,6 +95,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
           final explanation = d['explanation'] == null ? null : asMap(d['explanation']);
           final v3 = asMap(c['v3']);
           final rev = asMap(c['reversal']);
+          final early = asMap(c['early']);
           num? pv(String k) => p[k] as num?;
 
           return ListView(
@@ -215,6 +216,14 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 ReversalScore(v: rev),
                 ...((rev['reasons'] is List) ? rev['reasons'] as List : const []).map((r) => _bullet('✓', '$r', Colors.indigo)),
                 ...((rev['warnings'] is List) ? rev['warnings'] as List : const []).map((w) => _bullet('⚠', '$w', Colors.orange)),
+              ],
+
+              // ---- 상승초기 점수 (실험 탭 · 관찰용) ----
+              if (early.isNotEmpty) ...[
+                const SectionTitle('상승초기 점수'),
+                ReversalScore(v: early, kind: earlyKind),
+                ...((early['reasons'] is List) ? early['reasons'] as List : const []).map((r) => _bullet('✓', '$r', Colors.indigo)),
+                ...((early['warnings'] is List) ? early['warnings'] as List : const []).map((w) => _bullet('⚠', '$w', Colors.orange)),
               ],
 
               if (disc.isNotEmpty) ...[

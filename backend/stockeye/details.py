@@ -50,7 +50,7 @@ def _report_index(report: dict) -> dict[str, dict]:
     for c in report["candidates"]:
         idx.setdefault(c["code"], c)
     for k, v in report["strategies"].items():
-        if k == "reversal":           # 추세전환은 점수 체계가 달라 기본 후보로 쓰지 않음 (상세에 따로 붙임)
+        if k in ("reversal", "early"):           # 추세전환은 점수 체계가 달라 기본 후보로 쓰지 않음 (상세에 따로 붙임)
             continue
         for c in v["candidates"]:
             idx.setdefault(c["code"], c)
@@ -151,6 +151,10 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
         if rvs is not None and code in rvs.index:
             from .engine.reversal_report import info as rev_info
             cand = {**cand, "reversal": rev_info(rvs.loc[code])}
+        ups = getattr(res, "early_scores", None)
+        if ups is not None and code in ups.index:
+            from .engine.early_report import info as up_info
+            cand = {**cand, "early": up_info(ups.loc[code])}
         e = expl.get(code) if v3s is None else None
         if v3text:
             e = {"text": v3text, "source": "rule", "model": None, "verified": True,

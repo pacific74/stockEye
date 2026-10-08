@@ -16,8 +16,8 @@ class CandidateListScreen extends StatefulWidget {
   final String title;
 
   // v3 = V3 기준 전략 (🔒 고정) / now = 오늘 지금 가격 기준 / signal·buy·watch = 매수후보 V2 (참고)
-  // reversal = 추세전환 (실험 탭 · 관찰용, 70점 이상)
-  static const keys = ['v3', 'reversal']; // V2 목록(지금 매수구간·매수 신호·강력 후보·관심)은 숨김
+  // early = 상승초기 (실험 탭 · 60점 이상) / reversal = 추세전환 (실험 탭 · 70점 이상)
+  static const keys = ['v3', 'early', 'reversal']; // V2 목록(지금 매수구간·매수 신호·강력 후보·관심)은 숨김
 
   @override
   State<CandidateListScreen> createState() => _CandidateListScreenState();
@@ -106,8 +106,9 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
       onRetry: () => setState(() => _f = Api.candidates(widget.listKey)),
       builder: (context, d) {
         final rev = widget.listKey == 'reversal';
-        final all = widget.listKey == 'v3' || rev ? sortByScore(asList(d['candidates'])) : _sorted(asList(d['candidates']));
-        final cands = all.take(rev ? 30 : maxShow).toList(); // 정렬한 뒤 상위 10개만 (추세전환은 30개)
+        final early = widget.listKey == 'early';
+        final all = widget.listKey == 'v3' || rev || early ? sortByScore(asList(d['candidates'])) : _sorted(asList(d['candidates']));
+        final cands = all.take(rev || early ? 30 : maxShow).toList(); // 정렬한 뒤 상위 10개만 (실험 탭은 30개)
         return ListView(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
           children: [
@@ -171,6 +172,8 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
               ...cands.asMap().entries.map((e) => V3PickTile(c: e.value, rank: e.key + 1))
             else if (rev)
               ...cands.asMap().entries.map((e) => ReversalTile(c: e.value, rank: e.key + 1))
+            else if (early)
+              ...cands.asMap().entries.map((e) => ReversalTile(c: e.value, rank: e.key + 1, kind: earlyKind))
             else
             ...cands.asMap().entries.map((e) => CandidateTile(
                 c: e.value,

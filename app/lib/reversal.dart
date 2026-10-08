@@ -9,6 +9,20 @@ import 'widgets/common.dart';
 ///   ① 하락·바닥 15 ② 바닥 횡보 25 ③ 이평 전환 35 ④ 초기 반등 15 ⑤ 거래량·변동성 10
 ///   70점 이상 후보 · 80점 이상 우선 관찰 · 매매 규칙 없음 (V3 기준 전략과 별개)
 
+/// 실험 탭 설정: 후보 dict 의 필드 · 항목 순서 · 이름 · 기준 설명
+class ExpKind {
+  const ExpKind(this.field, this.title, this.parts, this.note);
+  final String field, title, note;
+  final List<String> parts;
+}
+
+const reversalKind = ExpKind('reversal', '추세전환', ['bottom15', 'base25', 'ma35', 'rebound15', 'volume10'],
+    '기준 사이를 직선으로 이어 소수점까지 계산 · 70점 이상 후보 · 80점 이상 우선 관찰 · 관찰용 (매매 규칙 없음)');
+
+/// 상승초기형 V1: 20일선 회복 + 단기 상승 시작
+const earlyKind = ExpKind('early', '상승초기', ['trend25', 'mom20', 'mid20', 'vol20', 'risk15'],
+    '기준 사이를 직선으로 이어 소수점까지 계산 · 80↑ 우선 관찰 · 70~79 관찰 후보 · 60~69 보류 · 관찰용 (매매 규칙 없음)');
+
 const reversalParts = ['bottom15', 'base25', 'ma35', 'rebound15', 'volume10'];
 
 Color reversalColor(num? s) => s == null
@@ -27,13 +41,14 @@ Widget _chip(String s, Color color) => Container(
 
 /// 목록 한 줄: 총점(소수점) · 판정 · 5개 항목
 class ReversalTile extends StatelessWidget {
-  const ReversalTile({super.key, required this.c, required this.rank});
+  const ReversalTile({super.key, required this.c, required this.rank, this.kind = reversalKind});
   final Json c;
   final int rank;
+  final ExpKind kind;
 
   @override
   Widget build(BuildContext context) {
-    final v = asMap(c['reversal']);
+    final v = asMap(c[kind.field]);
     final parts = asMap(v['parts']), labels = asMap(v['labels']), maxes = asMap(v['maxes']);
     final score = v['score'] as num?;
     final col = reversalColor(score);
@@ -47,7 +62,7 @@ class ReversalTile extends StatelessWidget {
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const SizedBox(height: 2),
           Wrap(spacing: 4, runSpacing: 2, children: [
-            for (final k in reversalParts)
+            for (final k in kind.parts)
               _chip('${labels[k] ?? k} ${(parts[k] as num?)?.toStringAsFixed(1) ?? '-'}/${maxes[k] ?? ''}', Colors.indigo),
           ]),
           const SizedBox(height: 2),
@@ -68,8 +83,9 @@ class ReversalTile extends StatelessWidget {
 
 /// 종목 상세: 추세전환 점수 5개 항목 막대 + 세부 14개 (펼쳐 보기)
 class ReversalScore extends StatelessWidget {
-  const ReversalScore({super.key, required this.v});
+  const ReversalScore({super.key, required this.v, this.kind = reversalKind});
   final Json v;
+  final ExpKind kind;
 
   Widget _bar(String label, num? got, num max, {bool small = false}) => Padding(
         padding: EdgeInsets.symmetric(vertical: small ? 1 : 3),
@@ -91,6 +107,11 @@ class ReversalScore extends StatelessWidget {
         ]),
       );
 
+  static String excl(Json v) {
+    final ex = v['excluded'];
+    return (ex is List && ex.isNotEmpty) ? ' (제외: ${ex.join(', ')})' : ' (매수 차단·1차 필터로 목록 제외)';
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
@@ -99,10 +120,10 @@ class ReversalScore extends StatelessWidget {
     final score = v['score'] as num?;
     final col = reversalColor(score);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('추세전환 ${score == null ? '-' : score.toStringAsFixed(1)}점 · ${v['label'] ?? ''}'
-          '${v['eligible'] == true ? '' : ' (매수 차단·1차 필터로 목록 제외)'}',
+      Text('${kind.title} ${score == null ? '-' : score.toStringAsFixed(1)}점 · ${v['label'] ?? ''}'
+          '${v['eligible'] == true ? '' : excl(v)}',
           style: t.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: col)),
-      for (final k in reversalParts) _bar('${labels[k] ?? k}', parts[k] as num?, (maxes[k] as num?) ?? 1),
+      for (final k in kind.parts) _bar('${labels[k] ?? k}', parts[k] as num?, (maxes[k] as num?) ?? 1),
       if (subs.isNotEmpty)
         Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -115,7 +136,7 @@ class ReversalScore extends StatelessWidget {
             ],
           ),
         ),
-      Text('기준 사이를 직선으로 이어 소수점까지 계산 · 70점 이상 후보 · 80점 이상 우선 관찰 · 관찰용 (매매 규칙 없음) ${v['version'] ?? ''}',
+      Text('${kind.note} ${v['version'] ?? ''}',
           style: t.bodySmall),
     ]);
   }

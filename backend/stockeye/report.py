@@ -105,6 +105,15 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
             res.rev_scores = rvs["scores"]
         except Exception as e:  # noqa: BLE001
             log.warning("추세전환 계산 실패: %s", e)
+        # ---- 상승초기 (실험 탭 · 관찰용): 20일선 회복 + 단기 상승 시작 100점 ----
+        try:
+            from .engine.early_report import build_section as up_section
+            ups = up_section(view, x, ev, name_of, theme_of, as_of)
+            report.setdefault("strategies", {})["early"] = ups["list"]
+            report["early"] = ups["meta"]
+            res.early_scores = ups["scores"]
+        except Exception as e:  # noqa: BLE001
+            log.warning("상승초기 계산 실패: %s", e)
     else:
         # ---- (예전) V1: 종합 점수 + 전략 A~E ----
         weak = weak_markets(market, cfg)

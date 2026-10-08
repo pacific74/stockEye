@@ -135,6 +135,7 @@ class SectionTitle extends StatelessWidget {
 const strategyLabels = {
   'v3': 'V3 기준',
   'reversal': '추세전환',
+  'early': '상승초기',
   'now': '지금 매수구간',
   'signal': '매수 신호',
   'buy': '강력·매수 후보',

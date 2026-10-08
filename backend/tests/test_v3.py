@@ -83,3 +83,16 @@ def test_calendar():
     assert v3.is_entry_day(td, "2026-10-01", "2026-10-01") and not v3.is_entry_day(td, "2026-10-01", "2026-10-02")
     assert v3.is_entry_day(td, "2026-10-01", "2026-10-08")     # 1,2,5,6,7 → 8일이 6번째 거래일 = 다음 선정일
     assert v3.next_entry_day(pd.bdate_range("2026-10-01", "2026-10-02"), "2026-10-01", "2026-10-02") == "2026-10-08"
+
+
+def test_review_v3_sell_dates():
+    from stockeye.portfolio import review
+    cal = [d.strftime("%Y-%m-%d") for d in pd.bdate_range("2026-09-01", "2026-11-30")]
+    x = pd.DataFrame({"close": [1000.0, 2000.0], "ret1": [0.01, 0.0], "low": [990.0, 1990.0], "high": [1010.0, 2010.0]},
+                     index=["A", "B"])
+    holds = [{"id": 1, "code": "A", "avg_price": 900, "qty": 10, "buy_date": "2026-09-01", "stop": 950},
+             {"id": 2, "code": "B", "avg_price": 2000, "qty": 1, "buy_date": "2026-09-24"}]
+    r = {h["code"]: h for h in review(holds, x, "2026-10-19", {"A": {"score": 40}}, calendar=cal)}
+    assert r["A"]["sell_date"] == "2026-09-28" and r["A"]["status"] == "매도 예정일"        # 9/1 포함 20거래일째
+    assert "연장" in r["A"]["alerts"][0] and "손절" not in " ".join(r["A"]["alerts"])       # V3: 손절 알림 없음
+    assert r["B"]["sell_date"] == "2026-10-21" and r["B"]["status"] == "매도 임박" and r["B"]["days_left"] == 2

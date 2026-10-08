@@ -54,9 +54,12 @@ class LocalRepo:
 
 
 def review(holdings: list[dict], x: pd.DataFrame, as_of_date, report_index: dict | None = None,
-           max_hold_days: int = 15) -> list[dict]:
-    """보유종목 상태 점검. x = 최근일 피처 단면, report_index = 코드→(점수, 태그)."""
+           max_hold_days: int = 15, calendar: list[str] | None = None) -> list[dict]:
+    """보유종목 상태 점검. x = 최근일 피처 단면, report_index = 코드→(점수, 태그).
+    calendar(거래일 달력)가 있으면 V3 기준: 매수일 포함 20거래일째가 매도 예정일 → 임박·도래 알림 (손절·익절 알림 없음)"""
     report_index = report_index or {}
+    if calendar is not None:
+        return _review_v3(holdings, x, as_of_date, report_index, calendar)
     out = []
     for h in holdings:
         code = h["code"]
@@ -93,5 +96,43 @@ def review(holdings: list[dict], x: pd.DataFrame, as_of_date, report_index: dict
         info = report_index.get(code)
         if info:
             item["today_score"], item["today_tags"] = info.get("score"), info.get("tags", [])
+        out.append(item)
+    return out
+
+
+def _review_v3(holdings, x, as_of_date, report_index, cal) -> list[dict]:
+    from .engine import v3
+    today = pd.Timestamp(as_of_date).strftime("%Y-%m-%d")
+    out = []
+    for h in holdings:
+        code = h["code"]
+        r = x.loc[code] if code in x.index else None
+        item = {**h, "alerts": [], "status": "보유 중"}
+        if r is None:
+            item["alerts"].append("오늘 데이터 없음 (거래정지/상장폐지 확인)")
+            item["status"] = "확인 필요"
+            out.append(item)
+            continue
+        px = float(r["close"])
+        avg = float(h.get("avg_price") or px)
+        item.update({"price": int(px), "pnl_pct": round((px / avg - 1) * 100, 2),
+                     "pnl": int((px - avg) * float(h.get("qty") or 0)),
+                     "ret1_pct": round(float(r["ret1"]) * 100, 2) if pd.notna(r["ret1"]) else None})
+        bd = (h.get("buy_date") or "")[:10]
+        sell = v3.nth_day(cal, bd, v3.RULES["hold"]) if bd else None
+        if sell:
+            left = sum(1 for d in cal if today < d <= sell)
+            item.update({"sell_date": sell, "days_left": left,
+                         "hold_days": sum(1 for d in cal if bd <= d <= today)})
+            if sell <= today:
+                item["status"] = "매도 예정일"
+                item["alerts"].append(f"V3 기준 매도 예정일({sell}) 도래 — 종가 매도 검토"
+                                      + (" · 오늘 다시 V3 상위 10 → 20거래일 연장 가능" if report_index.get(code) else ""))
+            elif left <= 3:
+                item["status"] = "매도 임박"
+                item["alerts"].append(f"V3 기준 매도 예정 {sell} 종가 ({left}거래일 남음)")
+        info = report_index.get(code)
+        if info:
+            item["today_score"], item["today_tags"] = info.get("score"), ["V3 상위 10"]
         out.append(item)
     return out

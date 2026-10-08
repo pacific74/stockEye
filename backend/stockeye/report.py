@@ -87,9 +87,13 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
         try:
             from .engine.v3_report import build_section
             v3s = build_section(pit, x, ev, name_of, theme_of, as_of)
-            report["strategies"] = {"v3": v3s["list"], **report["strategies"]}
+            # 앱·알림·발행은 V3 만: TOP 10 = V3B 상위 10 / 목록 = V3 기준 하나 (V2 는 자격 판정 재료로 내부에서만 씀)
+            v3c = v3s["list"]["candidates"]
+            report.update({"top10": v3c, "candidates": v3c, "strategies": {"v3": v3s["list"]}})
             report["v3"] = v3s["meta"]
             res.v3_eligible = v3s["eligible"]
+            res.v3_scores = v3s["scores"]
+            targets = v3c
         except Exception as e:  # noqa: BLE001  V3 가 실패해도 V2 리포트는 그대로
             log.warning("V3 기준 전략 계산 실패: %s", e)
     else:

@@ -141,14 +141,8 @@ class _NotifySettingsScreenState extends State<NotifySettingsScreen> {
               SwitchListTile(
                 value: _holdings,
                 onChanged: (v) => setState(() => _holdings = v),
-                title: const Text('내 보유종목 경고'),
-                subtitle: const Text('손절가·목표가 도달 (장중 실시간 + 저녁 점검)'),
-              ),
-              SwitchListTile(
-                value: _signals,
-                onChanged: (v) => setState(() => _signals = v),
-                title: const Text('장중 매수 신호'),
-                subtitle: const Text('후보 종목이 매수 적정구간에 들어오면 (참고용, 장중 감시가 켜져 있을 때)'),
+                title: const Text('내 보유종목 매도 예정일'),
+                subtitle: const Text('V3 기준 매도 예정일이 3거래일 안이거나 도래하면 (저녁 점검)'),
               ),
               const ListTile(
                 dense: true,

@@ -46,7 +46,12 @@ def build_section(pit, x: pd.DataFrame, ev: pd.DataFrame, name_of: dict, theme_o
     cands = []
     for i, (code, r) in enumerate(t.iterrows(), 1):
         c = candidate_dict(code, ev.loc[code], x.loc[code], name_of.get(code, code), i, theme_of.get(code))
-        c["v3"] = {"score": round(float(r["v3b"]), 1), "max": 60,
+        c["v2_score"] = c.get("score")
+        c["score"], c["max_score"], c["stars"] = round(float(r["v3b"]), 1), 60, None
+        c["plan"] = {**c["plan"], "verdict": f"V3 선정 {i}위", "verdict_reason": "V3B 상위 10 (20거래일 보유 규칙)"}
+        c["reasons"], c["warnings"], c["tags"] = [], [], []
+        c["v3"] = {"score": round(float(r["v3b"]), 1), "max": 60, "rank": i, "eligible": True, "status": f"V3 상위 10 ({i}위)",
+                   "why_not": [], "version": v3.VERSION,
                    "parts": {k: round(float(r[k]), 1) for k in v3.PARTS}, "labels": {k: v for k, (v, _) in v3.PARTS.items()},
                    "maxes": {k: m for k, (_, m) in v3.PARTS.items()}}
         cands.append(c)
@@ -54,7 +59,30 @@ def build_section(pit, x: pd.DataFrame, ev: pd.DataFrame, name_of: dict, theme_o
            "candidates": cands}
     meta = {"version": v3.VERSION, "locked_at": v3.LOCKED_AT, "rules": v3.RULES_TEXT, "eligible": int(sc["eligible"].sum()),
             "top": [{"code": c["code"], "name": c["name"], "score": c["v3"]["score"]} for c in cands]}
-    return {"list": lst, "meta": meta, "eligible": list(sc.index[sc["eligible"]])}
+    sc = sc.copy()
+    sc["blocks"] = ev["blocks"].reindex(sc.index) if "blocks" in ev else None
+    sc["rank"] = np.nan
+    sc.loc[t.index, "rank"] = range(1, len(t) + 1)
+    return {"list": lst, "meta": meta, "eligible": list(sc.index[sc["eligible"]]), "scores": sc}
+
+
+def info(row: pd.Series) -> dict:
+    """종목 상세용: V3B 점수 구성 + 오늘 상태 (상위 10 / 자격 있음 / 자격 없음 사유)"""
+    why = []
+    if bool(row.get("blocked")):
+        b = row.get("blocks")
+        why.append("매수 차단: " + (", ".join(b) if isinstance(b, (list, tuple)) and len(b) else "위험 사유"))
+    if bool(row.get("hot")):
+        why.append("과열 (5일 +20% / 20일 +30% / RSI 75 초과 / 거래량 급증+급등)")
+    if not bool(row.get("trend_ok")):
+        why.append("추세 필터 (60일선 아래 + 60일선 하락)")
+    rank = row.get("rank")
+    rank = int(rank) if rank == rank and rank is not None else None
+    status = f"V3 상위 10 ({rank}위)" if rank else ("자격 있음 · 상위 10 밖" if bool(row.get("eligible")) else "자격 없음")
+    return {"score": round(float(row["v3b"]), 1), "max": 60, "rank": rank, "eligible": bool(row.get("eligible")),
+            "status": status, "why_not": why, "version": v3.VERSION,
+            "parts": {k: round(float(row[k]), 1) for k in v3.PARTS}, "labels": {k: v for k, (v, _) in v3.PARTS.items()},
+            "maxes": {k: m for k, (_, m) in v3.PARTS.items()}}
 
 
 def _prices(pit, since: pd.Timestamp):

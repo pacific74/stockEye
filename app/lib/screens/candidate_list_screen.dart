@@ -15,7 +15,7 @@ class CandidateListScreen extends StatefulWidget {
   final String title;
 
   // v3 = V3 기준 전략 (🔒 고정) / now = 오늘 지금 가격 기준 / signal·buy·watch = 매수후보 V2 (참고)
-  static const keys = ['v3', 'now', 'signal', 'buy', 'watch'];
+  static const keys = ['v3']; // V2 목록(지금 매수구간·매수 신호·강력 후보·관심)은 숨김 — V3 로 통일
 
   @override
   State<CandidateListScreen> createState() => _CandidateListScreenState();

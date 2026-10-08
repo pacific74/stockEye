@@ -144,7 +144,6 @@ class _HomeScreenState extends State<HomeScreen> {
           final m = asMap(d['market']);
           final sectors = asList(d['sectors']);
           final top10 = asList(d['top10']);
-          final strat = asMap(d['strategies']);
           final clock = _clock;
           final repDate = '${d['date']}';
           final intraday = asMap(d['market'])['intraday'] as String?; // 장중 재분석 시각 ("11:00")
@@ -153,8 +152,7 @@ class _HomeScreenState extends State<HomeScreen> {
               : _dateLabel(repDate, clock.now);
           final repBasis = intraday != null ? repLabel : '$repLabel 마감'; // "오늘(10/8) 11:00 장중" / "10/7 마감"
           final quotes = _stk?.quotes ?? const <String, LiveQuote>{};
-          final weak = weakMarkets(m, _idx?.quotes ?? const {}); // 시장 하락장(C) → 신규 매수 중단
-          final picks = todayPicks(_pool, quotes, weak: weak);
+          const weak = <String>{}; // V3: 시장 필터 없음 (비중 고정)
           final t = Theme.of(context).textTheme;
           return RefreshIndicator(
             onRefresh: _pullRefresh,
@@ -171,33 +169,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
                 const SectionTitle('지금 시장'),
                 _LiveMarketCard(live: _idx, yesterday: m, busy: _liveBusy && _idx == null, weak: weak),
-                SectionTitle('오늘 살 만한 후보 · 지금 가격 기준',
-                    trailing: TextButton(onPressed: () => goTab(context, 1, list: 'now'), child: const Text('전체'))),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-                  child: Text('$repLabel 분석 후보 중 지금 가격이 매수구간 근처인 종목 (점수는 $repBasis 기준)',
-                      style: t.bodySmall),
-                ),
-                if (_stk == null)
-                  const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
-                else if (picks.isEmpty)
-                  _Notice(quotes.isEmpty
-                      ? '지금 시세를 받지 못해 계산할 수 없습니다.'
-                      : weak.length >= 2
-                          ? '코스피·코스닥 모두 60일선 아래(시장 약세)라 신규 매수를 쉬는 구간입니다.'
-                          : '지금 매수구간에 들어온 후보가 없습니다. 무리해서 살 필요 없는 날일 수 있어요.')
-                else
-                  ...picks.take(5).toList().asMap().entries.map((e) => TodayPickTile(p: e.value, rank: e.key + 1)),
-                SectionTitle('매수 후보 TOP 10 · 지금 시세', trailing: Text('$repLabel 분석', style: t.bodySmall)),
+                SectionTitle('V3 상위 10 · 지금 시세', trailing: Text('$repLabel 분석', style: t.bodySmall)),
                 if (_stk?.error != null && quotes.isEmpty)
                   _Notice('지금 시세를 가져오지 못해 $repBasis 가격으로 보여줍니다. (${_stk!.error})'),
-                ...top10.map((c) =>
-                    _LiveCandidateTile(c: c, q: quotes['${c['code']}'], clock: clock, weak: weak.contains(c['market']))),
+                ...top10.map((c) => _LiveCandidateTile(c: c, q: quotes['${c['code']}'], clock: clock)),
                 if (_holdings.isNotEmpty) ...[
                   SectionTitle('내 보유종목 · 지금',
                       trailing: TextButton(onPressed: () => goTab(context, 2), child: const Text('보유 탭'))),
-                  ..._holdings.map((h) =>
-                      _HoldingNowTile(h: h, q: quotes['${h['code']}'], meta: _meta['${h['code']}'] ?? const {})),
+                  ..._holdings.map((h) => _HoldingNowTile(
+                      h: h,
+                      q: quotes['${h['code']}'],
+                      meta: _meta['${h['code']}'] ?? const {},
+                      sellDate: holdingSellDate(asMap(m['v3']), '${h['entry_time'] ?? ''}'.length >= 10 ? '${h['entry_time']}'.substring(0, 10) : null),
+                      today: repDate)),
                 ],
                 SectionTitle('돈이 몰리는 업종',
                     trailing: TextButton(
@@ -209,8 +193,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     yesterday: sectors,
                     todayLabel: _liveAt == null ? '오늘' : '오늘 ${_hm(_liveAt!)}',
                     yesterdayLabel: repBasis),
-                SectionTitle('후보 보기 ($repLabel 분석 · 목록별 10개)'),
-                _ShortcutGrid(strat: strat),
                 const SizedBox(height: 16),
                 Text('규칙 기반 분석 결과이며 투자 권유가 아닙니다. 최종 판단과 책임은 본인에게 있습니다. '
                     '지금 시세는 네이버 금융 기준이며 약간 늦을 수 있습니다.',
@@ -305,18 +287,10 @@ class _LiveMarketCard extends StatelessWidget {
   final Set<String> weak; // 지수가 60일선 아래인 시장
 
   /// V2 시장 상태 {state: A/B/C, label, why}
-  Json? _state(String code) {
-    final v = asMap(asMap(yesterday['v2'])['market'])[code];
-    return v == null ? null : asMap(v);
-  }
+  Json? _state(String code) => null; // V3: 시장 상태로 매수를 막지 않음 (비중 고정)
 
   /// 어제 마감 기준 지수 60일선 값
-  double? _ma(String code) {
-    for (final i in asList(yesterday['indices'])) {
-      if (i['code'] == code) return (i['ma_filter'] as num?)?.toDouble();
-    }
-    return null;
-  }
+  double? _ma(String code) => null;
 
   @override
   Widget build(BuildContext context) {
@@ -446,9 +420,11 @@ class _LiveCandidateTile extends StatelessWidget {
     final score = (c['score'] as num?)?.toDouble() ?? 0;
     final verdict = '${plan['verdict'] ?? ''}';
     final t = Theme.of(context).textTheme;
-    final (posText0, posColor0) = _position(plan, q?.price);
-    final posText = weak && posText0 != null && !posText0.startsWith('손절') ? '시장 약세 — 신규 매수 쉬기' : posText0;
-    final posColor = posText == posText0 ? posColor0 : Colors.grey;
+    final v3 = asMap(c['v3']);
+    final posText = v3['entry_day'] == true
+        ? '매수 ${mdw(v3['buy_date'] as String?)} 시가 → 매도 예정 ${mdw(v3['sell_date'] as String?)}'
+        : (v3['next_entry'] != null ? '참고 순위 · 다음 선정일 ${mdw(v3['next_entry'] as String?)}' : null);
+    final posColor = v3['entry_day'] == true ? Colors.teal : Colors.grey;
     final nxt = q != null && !clock.open && q!.overStatus == 'OPEN' && q!.overPrice != null;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -456,7 +432,7 @@ class _LiveCandidateTile extends StatelessWidget {
         leading: CircleAvatar(child: Text('${c['rank']}')),
         title: StockName('${c['name']}', market: c['market'] as String?, score: score),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(verdict, style: t.bodySmall?.copyWith(color: verdictColor(verdict))),
+          Text(verdict, style: t.bodySmall?.copyWith(color: Colors.teal)),
           if (posText != null)
             Container(
               margin: const EdgeInsets.only(top: 3),
@@ -486,47 +462,31 @@ class _LiveCandidateTile extends StatelessWidget {
     );
   }
 
-  /// 지금 가격이 매매계획(매수구간·목표·손절)의 어디쯤인지
-  static (String?, Color) _position(Json plan, double? price) {
-    if (price == null) return (null, Colors.grey);
-    double? v(String k) => (plan[k] as num?)?.toDouble();
-    final stop = v('stop'), t1 = v('target1'), lo = v('entry_low'), hi = v('entry_high');
-    if (stop != null && price <= stop) return ('손절선 아래 — 계획 무효', downColor);
-    if (t1 != null && price >= t1) return ('1차 목표가 도달 — 추격 주의', upColor);
-    if (lo != null && hi != null) {
-      if (price >= lo && price <= hi) return ('매수구간 안 (${num0(lo)}~${num0(hi)})', Colors.green);
-      if (price > hi) return ('매수구간 위 — 눌림 기다리기', Colors.orange);
-      return ('매수구간 아래 — 지지 확인 필요', Colors.blueGrey);
-    }
-    return (null, Colors.grey);
-  }
 }
 
 /// 내 보유종목 지금 손익
 class _HoldingNowTile extends StatelessWidget {
-  const _HoldingNowTile({required this.h, required this.q, this.meta = const {}});
+  const _HoldingNowTile({required this.h, required this.q, this.meta = const {}, this.sellDate, this.today});
   final Json h;
   final LiveQuote? q;
   final Json meta; // {score, market}
+  final String? sellDate; // V3 기준 매도 예정일 (매수일 포함 20거래일째)
+  final String? today;
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final entry = (h['entry_price'] as num?)?.toDouble();
     final qty = (h['qty'] as num?)?.toDouble();
-    final stop = (h['stop'] as num?)?.toDouble();
-    final t1 = (h['target1'] as num?)?.toDouble();
     final price = q?.price;
     final pnl = (price != null && entry != null && entry > 0) ? (price / entry - 1) * 100 : null;
     final pnlWon = (price != null && entry != null && qty != null) ? (price - entry) * qty : null;
     String? warn;
     Color warnColor = Colors.grey;
-    if (price != null && stop != null && stop > 0 && price <= stop) {
-      warn = '손절가 ${num0(stop)} 이하';
-      warnColor = downColor;
-    } else if (price != null && t1 != null && t1 > 0 && price >= t1) {
-      warn = '목표가 ${num0(t1)} 도달';
-      warnColor = upColor;
+    if (sellDate != null) {
+      final due = today != null && sellDate!.compareTo(today!) <= 0;
+      warn = due ? '매도 예정일 도래 (${mdw(sellDate)})' : '매도 예정 ${mdw(sellDate)}';
+      warnColor = due ? Colors.orange : Colors.teal;
     }
     Color c(double v) => v >= 0 ? upColor : downColor;
     return Card(
@@ -627,40 +587,6 @@ class _SectorCompare extends StatelessWidget {
   }
 }
 
-class _ShortcutGrid extends StatelessWidget {
-  const _ShortcutGrid({required this.strat});
-  final Json strat;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = <(String, String, IconData, int?)>[
-      ('now', '지금 매수구간', Icons.shopping_cart_outlined, null),
-      ('signal', '매수 신호', Icons.notifications_active_outlined, _count('signal')),
-      ('buy', '강력·매수 후보', Icons.trending_up, _count('buy')),
-      ('watch', '관심', Icons.visibility_outlined, _count('watch')),
-    ];
-    return Wrap(spacing: 8, runSpacing: 8, children: [
-      ...items.map((it) => ActionChip(
-            avatar: Icon(it.$3, size: 18),
-            label: Text(it.$4 == null ? it.$2 : '${it.$2} ${it.$4}'),
-            onPressed: () => goTab(context, 1, list: it.$1),
-          )),
-      ActionChip(
-        avatar: const Icon(Icons.account_balance_wallet, size: 18),
-        label: const Text('보유종목 관리'),
-        onPressed: () => goTab(context, 2),
-      ),
-    ]);
-  }
-
-  int? _count(String k) {
-    final n = strat[k] == null ? null : (asMap(strat[k])['count'] as int?);
-    return n == null ? null : (n > 10 ? 10 : n); // 후보 탭은 목록마다 최대 10개
-  }
-}
-
-
-/// 매매 모드 + 승인 대기 주문 알림
 class _TradingBanner extends StatelessWidget {
   const _TradingBanner();
 

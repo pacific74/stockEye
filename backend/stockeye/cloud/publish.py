@@ -45,7 +45,11 @@ def publish_report(sb: Supabase, report: dict, keep_days: int = 60) -> None:
     old = (pd.Timestamp(d) - pd.Timedelta(days=keep_days)).strftime("%Y-%m-%d")
     sb.delete("candidates", {"date": f"lt.{old}"})
     sb.delete("daily_reports", {"date": f"lt.{old}"})
-    if report.get("engine") == "v2":
+    if report.get("v3"):
+        meta = [{"key": "V3B", "name": "V3 기준 전략", "short": "V3",
+                 "description": "V3B(변동성·재무·가격위치) 상위 10 → 다음 거래일 시가 매수 → 20거래일 보유 (다시 선정되면 연장)",
+                 "limitation": "규칙 고정 " + str(report["v3"].get("version"))}]
+    elif report.get("engine") == "v2":
         meta = [{"key": "V2", "name": "매수후보 V2 엔진", "short": "V2",
                  "description": "시장 → 업종 → 재무·공시 위험 → 기술 → 100점 → 가격위치 → 과열 → 매수 신호. "
                                 "분할 매수 30/30/40, 익절 +8%·+15%·20일선 이탈",
@@ -113,8 +117,13 @@ def publish_journal(sb: Supabase, cfg: dict, journal, pit=None, report: dict | N
     idx = {}
     for c in report["candidates"] + [c for v in report["strategies"].values() for c in v["candidates"]]:
         idx.setdefault(c["code"], {"score": c["score"], "tags": c.get("tags", [])})
-    reviews = pf.review(holds, x, report["date"], idx, cfg["backtest"]["max_hold_days"])
-    keep = ("price", "pnl_pct", "pnl", "ret1_pct", "alerts", "status", "hold_days", "today_score", "today_tags")
+    cal = (report.get("v3") or {}).get("calendar")
+    if cal is None and report.get("v3"):
+        from ..engine import v3 as _v3
+        cal = _v3.calendar(pit.trading_dates())
+    reviews = pf.review(holds, x, report["date"], idx, cfg["backtest"]["max_hold_days"], calendar=cal)
+    keep = ("price", "pnl_pct", "pnl", "ret1_pct", "alerts", "status", "hold_days", "today_score", "today_tags",
+            "sell_date", "days_left")
     sb.upsert("position_reviews", [{"position_id": r["id"], "user_id": uid, "payload": {k: r.get(k) for k in keep},
                                     "updated_at": datetime.utcnow().isoformat() + "Z"} for r in reviews],
               "position_id")
@@ -177,11 +186,22 @@ def process_backtest_requests(sb: Supabase, pit, cfg: dict, limit: int = 3, bt=N
     return len(reqs)
 
 
-ALERT_STATUSES = ("손절 검토", "익절 검토", "확인 필요")
+ALERT_STATUSES = ("매도 예정일", "매도 임박", "확인 필요", "손절 검토", "익절 검토")
 
 
 def report_summary(report: dict) -> str:
-    """알림 한 줄 요약: (V2) 시장 상태 · 매수 신호 수 · TOP3"""
+    """알림 요약 — V3: 선정일이면 매수·매도 예정일 + 상위 3, 아니면 다음 선정일 + 오늘 순위 상위 3 + 모의 보유"""
+    v3m = report.get("v3")
+    if v3m:
+        top = ", ".join(f"{t['name']}({t['score']:.0f})" for t in v3m.get("top", [])[:3]) or "후보 없음"
+        md = lambda d: f"{int(d[5:7])}/{int(d[8:10])}" if d else "-"  # noqa: E731
+        hold = (v3m.get("portfolio") or {}).get("holdings") or []
+        soon = sum(1 for h in hold if (h.get("days_left") or 99) <= 3)
+        tail = f" · 모의 보유 {len(hold)}종목" + (f" (3거래일 안 매도 {soon})" if soon else "")
+        if v3m.get("entry_day"):
+            return (f"V3 선정일 · {md(v3m.get('buy_date'))} 시가 매수 → {md(v3m.get('sell_date'))} 매도 예정 · "
+                    f"상위3 {top}{tail}")
+        return f"V3 다음 선정일 {md(v3m.get('next_entry'))} · 오늘 순위 상위3 {top}{tail}"
     m = report["market"]
     top = ", ".join(f"{c['name']}({c['score']:.0f})" for c in report["top10"][:3]) or "후보 없음"
     v2 = report.get("v2")

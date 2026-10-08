@@ -130,6 +130,13 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
                              plan=plan.to_dict()).to_dict()
             cand["sector"] = sector_of.get(code)
             apply_market_filter(cand, weak, report.get("market", {}).get("filter_ma", 60))
+        v3s = getattr(res, "v3_scores", None)
+        if v3s is not None:
+            from .engine.v3_report import info as v3_info
+            vi = v3_info(v3s.loc[code]) if code in v3s.index else {
+                "status": "자격 없음", "why_not": ["1차 필터 미통과 (거래대금·가격·관리종목·급락 등)"], "version": None}
+            cand = {**cand, "v3": {**(cand.get("v3") or {}), **vi}}
+            cand["score"] = cand["v3"].get("score")          # 앱의 점수 = V3B (60점)
         e = expl.get(code)
         if e is None:
             try:

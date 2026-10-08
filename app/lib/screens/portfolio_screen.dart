@@ -76,6 +76,10 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
 
   Color _statusColor(String s) {
     switch (s) {
+      case '매도 예정일':
+        return Colors.orange;
+      case '매도 임박':
+        return Colors.teal;
       case '손절 검토':
         return downColor;
       case '익절 검토':
@@ -170,7 +174,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                       ]),
                       const SizedBox(height: 6),
                       Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                        // 매수가 · 현재가 / 손절가 · 목표가
+                        // 매수가 · 현재가 (V3: 손절·목표 없이 20거래일 보유)
                         Expanded(
                           child: Table(
                             columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth(), 2: IntrinsicColumnWidth(), 3: FlexColumnWidth()},
@@ -182,12 +186,6 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                                 _val(num0(h['now_price'] as num?),
                                     sub: today == null ? null : pct(today),
                                     subColor: (today ?? 0) >= 0 ? upColor : downColor),
-                              ]),
-                              TableRow(children: [
-                                _lbl(t, '손절가'),
-                                _val(num0(h['stop'] as num?), color: downColor),
-                                _lbl(t, '목표가'),
-                                _val(num0(h['target'] as num?), color: upColor),
                               ]),
                             ],
                           ),
@@ -291,8 +289,6 @@ Future<void> showAddHoldingDialog(BuildContext context,
     {String? code, String? name, double? price, double? stop, double? target, String? strategy}) async {
   final qtyC = TextEditingController();
   final priceC = TextEditingController(text: price?.toStringAsFixed(0) ?? '');
-  final stopC = TextEditingController(text: stop?.toStringAsFixed(0) ?? '');
-  final targetC = TextEditingController(text: target?.toStringAsFixed(0) ?? '');
   final digits = [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))];
   TextEditingController? stockC; // 종목명/코드 입력칸
   Json? picked = code == null ? null : {'code': code, 'name': name ?? code};
@@ -370,16 +366,11 @@ Future<void> showAddHoldingDialog(BuildContext context,
                   onChanged: (_) {
                     if (priceErr != null) setS(() => priceErr = null);
                   }),
-              TextField(
-                  controller: stopC,
-                  decoration: const InputDecoration(labelText: '손절가 (비우면 자동)'),
-                  keyboardType: TextInputType.number,
-                  inputFormatters: digits),
-              TextField(
-                  controller: targetC,
-                  decoration: const InputDecoration(labelText: '목표가 (비우면 자동)'),
-                  keyboardType: TextInputType.number,
-                  inputFormatters: digits),
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text('V3 기준: 손절·목표가 없이 매수일 포함 20거래일째 종가에 매도 예정',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+              ),
             ]),
           ),
         ),
@@ -436,8 +427,8 @@ Future<void> showAddHoldingDialog(BuildContext context,
       'qty': double.tryParse(qtyC.text) ?? 0,
       'avg_price': double.tryParse(priceC.text) ?? 0,
       'buy_date': now,
-      'stop': double.tryParse(stopC.text),
-      'target': double.tryParse(targetC.text),
+      'stop': null, // V3: 손절·목표 없음
+      'target': null,
       'strategy': strategy,
     });
     if (context.mounted) {

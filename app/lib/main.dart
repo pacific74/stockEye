@@ -95,10 +95,10 @@ class _HomeShellState extends State<HomeShell> {
       CandidateListScreen(key: ValueKey('c${candidateListKey.value}'), list: candidateListKey.value),
       PortfolioScreen(key: ValueKey('p${_gen[2]}')),
       JournalScreen(key: ValueKey('j${_gen[3]}')),
-      const BacktestScreen(),
+      if (canSeeBacktest) const BacktestScreen(), // 관리자만
     ];
     return Scaffold(
-      body: IndexedStack(index: tabIndex.value, children: pages),
+      body: IndexedStack(index: tabIndex.value < pages.length ? tabIndex.value : 0, children: pages),
       bottomNavigationBar: const MainNavBar(),
     );
   }

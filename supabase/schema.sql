@@ -336,11 +336,11 @@ create policy "own update" on public.positions for update to authenticated
 drop policy if exists "own delete" on public.positions;
 create policy "own delete" on public.positions for delete to authenticated using (user_id = auth.uid() and public.is_approved());
 
--- 백테스트 요청: 앱에서 넣기
+-- 백테스트 요청: 앱에서 넣기 (관리자만)
 drop policy if exists "own insert" on public.backtest_requests;
--- 한 사람당 대기/실행 중인 요청은 1개까지 (여러 사람이 써도 배치 시간이 넘치지 않게)
+-- 대기/실행 중인 요청은 1개까지 (배치 시간이 넘치지 않게)
 create policy "own insert" on public.backtest_requests for insert to authenticated
-  with check (user_id = auth.uid() and public.is_approved() and not exists (
+  with check (user_id = auth.uid() and public.is_admin() and not exists (
     select 1 from public.backtest_requests b where b.user_id = auth.uid() and b.status in ('queued', 'running')));
 
 -- ---------------------------------------------------------------- 앱에서 부르는 함수 (RPC)

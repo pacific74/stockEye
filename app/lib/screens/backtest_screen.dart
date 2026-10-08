@@ -6,6 +6,7 @@ import '../api.dart';
 import '../format.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
+import '../widgets/top_actions.dart';
 
 class BacktestScreen extends StatefulWidget {
   const BacktestScreen({super.key});
@@ -93,7 +94,17 @@ class _BacktestScreenState extends State<BacktestScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const LogoTitle('백테스트')),
+      appBar: AppBar(
+          title: const LogoTitle('백테스트'),
+          actions: topActions(context, onRefresh: () {
+            setState(() {
+              _strategies = Api.strategies();
+              _reqs = backtestRequests();
+            });
+            Api.latestBacktest().then((r) {
+              if (mounted) setState(() => result = r);
+            }).catchError((_) {});
+          })),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [

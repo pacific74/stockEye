@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
+import '../widgets/top_actions.dart';
 
 /// 전략별 후보 목록 (탭으로 전환)
-class CandidateListScreen extends StatelessWidget {
+class CandidateListScreen extends StatefulWidget {
   const CandidateListScreen({super.key, this.list = 'overall', this.title = '후보'});
   final String list;
   final String title;
@@ -13,27 +14,37 @@ class CandidateListScreen extends StatelessWidget {
   static const keys = ['overall', 'A', 'B', 'C', 'D', 'E'];
 
   @override
+  State<CandidateListScreen> createState() => _CandidateListScreenState();
+}
+
+class _CandidateListScreenState extends State<CandidateListScreen> {
+  int _gen = 0; // 새로고침할 때마다 +1
+
+  @override
   Widget build(BuildContext context) {
+    const keys = CandidateListScreen.keys;
+    final list = widget.list;
     return DefaultTabController(
       length: keys.length,
       initialIndex: keys.contains(list) ? keys.indexOf(list) : 0,
       child: Scaffold(
         appBar: AppBar(
           title: const LogoTitle('매수 후보'),
+          actions: topActions(context, onRefresh: () => setState(() => _gen++)),
           bottom: TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             tabs: keys.map((k) => Tab(text: strategyLabels[k])).toList(),
           ),
         ),
-        body: TabBarView(children: keys.map((k) => _ListTab(listKey: k)).toList()),
+        body: TabBarView(children: keys.map((k) => _ListTab(key: ValueKey('$k$_gen'), listKey: k)).toList()),
       ),
     );
   }
 }
 
 class _ListTab extends StatefulWidget {
-  const _ListTab({required this.listKey});
+  const _ListTab({super.key, required this.listKey});
   final String listKey;
 
   @override

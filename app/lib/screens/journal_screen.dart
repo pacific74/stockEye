@@ -4,6 +4,7 @@ import '../api.dart';
 import '../format.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
+import '../widgets/top_actions.dart';
 
 const _modes = {null: '전체', 'paper': '모의', 'kis_paper': 'KIS 모의', 'real': '실전', 'manual': '직접 입력'};
 
@@ -17,6 +18,7 @@ class JournalScreen extends StatefulWidget {
 
 class _JournalScreenState extends State<JournalScreen> {
   String? _mode;
+  int _gen = 0; // 새로고침할 때마다 +1 → 기록·분석을 다시 불러옴
 
   @override
   Widget build(BuildContext context) {
@@ -25,19 +27,20 @@ class _JournalScreenState extends State<JournalScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const LogoTitle('매매일지'),
-          actions: [
+          actions: topActions(context, onRefresh: () => setState(() => _gen++), extra: [
             PopupMenuButton<String?>(
+              tooltip: '매매 구분',
               initialValue: _mode,
               icon: const Icon(Icons.filter_list),
               onSelected: (v) => setState(() => _mode = v),
               itemBuilder: (_) => _modes.entries.map((e) => PopupMenuItem(value: e.key, child: Text(e.value))).toList(),
             ),
-          ],
+          ]),
           bottom: const TabBar(tabs: [Tab(text: '기록'), Tab(text: '내 매매 분석')]),
         ),
         body: TabBarView(children: [
-          _Records(key: ValueKey('r$_mode'), mode: _mode),
-          _Analysis(key: ValueKey('a$_mode'), mode: _mode),
+          _Records(key: ValueKey('r$_mode$_gen'), mode: _mode),
+          _Analysis(key: ValueKey('a$_mode$_gen'), mode: _mode),
         ]),
       ),
     );

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
+import '../widgets/top_actions.dart';
 
 /// (관리자) 회원 관리: 가입 승인 / 거절 / 승인 취소
 class AdminUsersScreen extends StatefulWidget {
@@ -60,9 +61,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       bottomNavigationBar: const MainNavBar(),
-      appBar: AppBar(title: const LogoTitle('회원 관리'), actions: [
-        IconButton(icon: const Icon(Icons.refresh), onPressed: _reload),
-      ]),
+      appBar: AppBar(title: const LogoTitle('회원 관리'), actions: topActions(context, onRefresh: _reload)),
       body: Loader<List<Json>>(
         future: _f,
         onRetry: _reload,

@@ -5,6 +5,7 @@ import '../format.dart';
 import '../widgets/common.dart';
 import '../widgets/price_chart.dart';
 import '../widgets/nav.dart';
+import '../widgets/top_actions.dart';
 import 'portfolio_screen.dart';
 import 'similar_screen.dart';
 
@@ -35,7 +36,9 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       bottomNavigationBar: const MainNavBar(),
-      appBar: AppBar(title: LogoTitle('${widget.name} (${widget.code})')),
+      appBar: AppBar(
+          title: LogoTitle('${widget.name} (${widget.code})'),
+          actions: topActions(context, onRefresh: () => setState(() => _f = Api.stock(widget.code)))),
       body: Loader<Json>(
         future: _f,
         onRetry: () => setState(() => _f = Api.stock(widget.code)),

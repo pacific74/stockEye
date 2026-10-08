@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../api.dart';
 import '../widgets/nav.dart';
+import '../widgets/top_actions.dart';
 
 /// 내 휴대폰 알림 설정 (ntfy 앱 토픽)
 ///  - 승인되면 알림 / 매일 저녁 리포트 요약 / 내 보유종목 경고(손절·목표·확인 필요)
@@ -88,7 +89,9 @@ class _NotifySettingsScreenState extends State<NotifySettingsScreen> {
     final t = Theme.of(context).textTheme;
     return Scaffold(
       bottomNavigationBar: widget.showNav ? const MainNavBar() : null,
-      appBar: AppBar(title: widget.showNav ? const LogoTitle('알림 설정') : const Text('알림 설정')),
+      appBar: AppBar(
+          title: widget.showNav ? const LogoTitle('알림 설정') : const Text('알림 설정'),
+          actions: widget.showNav ? topActions(context) : null),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(padding: const EdgeInsets.all(16), children: [

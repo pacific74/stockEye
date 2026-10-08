@@ -4,18 +4,28 @@ import '../api.dart';
 import '../format.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
+import '../widgets/top_actions.dart';
 import 'stock_detail_screen.dart';
 
-class SectorListScreen extends StatelessWidget {
+class SectorListScreen extends StatefulWidget {
   const SectorListScreen({super.key});
+
+  @override
+  State<SectorListScreen> createState() => _SectorListScreenState();
+}
+
+class _SectorListScreenState extends State<SectorListScreen> {
+  late Future<Json> _f = Api.sectors();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       bottomNavigationBar: const MainNavBar(),
-      appBar: AppBar(title: const LogoTitle('업종 · 테마 강도')),
+      appBar: AppBar(
+          title: const LogoTitle('업종 · 테마 강도'),
+          actions: topActions(context, onRefresh: () => setState(() => _f = Api.sectors()))),
       body: Loader<Json>(
-        future: Api.sectors(),
+        future: _f,
         builder: (context, d) {
           final list = asList(d['sectors']);
           return ListView.separated(
@@ -61,7 +71,7 @@ class SectorDetailScreen extends StatelessWidget {
     final top = asList(g['top']);
     return Scaffold(
       bottomNavigationBar: const MainNavBar(),
-      appBar: AppBar(title: LogoTitle('${g['group']}  ${g['arrows']}')),
+      appBar: AppBar(title: LogoTitle('${g['group']}  ${g['arrows']}'), actions: topActions(context)),
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [

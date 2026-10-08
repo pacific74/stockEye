@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../widgets/nav.dart';
+import '../widgets/top_actions.dart';
 
 /// 회원 이용 안내 (로그인 화면 · 승인 대기 화면 · 홈 메뉴에서 열림)
 class HelpScreen extends StatelessWidget {
@@ -34,7 +35,7 @@ class HelpScreen extends StatelessWidget {
       '차트: 캔들 + 이동평균선(5·20·60·120일) + 아래 거래량, 오른쪽에 가격 눈금',
       '보유: 내가 산 종목 기록과 매일 저녁 점검 (손절·목표·추세)',
       '일지: 매매 기록과 내 매매 분석 (승률·손익비·습관)',
-      '백테스트: 각 전략을 과거 5년에 적용한 결과',
+      '백테스트(관리자만): 각 전략을 과거 5년에 적용한 결과',
       '어느 화면에서든 왼쪽 위 로고를 누르면 첫 화면으로 돌아갑니다.',
     ]),
     (Icons.insights_outlined, '종목 화면 읽는 법', [
@@ -62,7 +63,9 @@ class HelpScreen extends StatelessWidget {
     final t = Theme.of(context).textTheme;
     return Scaffold(
       bottomNavigationBar: showNav ? const MainNavBar() : null,
-      appBar: AppBar(title: showNav ? const LogoTitle('이용 안내') : const Text('이용 안내')),
+      appBar: AppBar(
+          title: showNav ? const LogoTitle('이용 안내') : const Text('이용 안내'),
+          actions: showNav ? topActions(context) : null),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 32),
         children: [
@@ -77,7 +80,7 @@ class HelpScreen extends StatelessWidget {
                   childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
                   expandedCrossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final l in lines)
+                    for (final l in lines.where((l) => canSeeBacktest || !l.startsWith('백테스트')))
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 3),
                         child: Text(l, style: t.bodyMedium?.copyWith(height: 1.4)),

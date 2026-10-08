@@ -1,18 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../api.dart';
 import '../format.dart';
 import '../live.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
+import '../widgets/top_actions.dart';
 import 'admin_screen.dart';
-import 'help_screen.dart';
-import 'notify_screen.dart';
 import 'orders_screen.dart';
-import 'search_screen.dart';
 import 'sector_screen.dart';
 import 'stock_detail_screen.dart';
 
@@ -124,37 +121,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const LogoTitle('StockEye', bold: true),
-        actions: [
-          IconButton(
-              icon: const Icon(Icons.search),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen()))),
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _reload),
-          if (useCloud)
-            PopupMenuButton<String>(
-              onSelected: (v) async {
-                if (v == 'logout') await Supabase.instance.client.auth.signOut();
-                if (v == 'help' && context.mounted) {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const HelpScreen()));
-                }
-                if (v == 'notify' && context.mounted) {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const NotifySettingsScreen()));
-                }
-                if (v == 'users' && context.mounted) {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminUsersScreen()));
-                }
-              },
-              itemBuilder: (_) => [
-                PopupMenuItem(
-                    enabled: false,
-                    child: Text(Supabase.instance.client.auth.currentUser?.email ?? '',
-                        style: Theme.of(context).textTheme.bodySmall)),
-                const PopupMenuItem(value: 'help', child: Text('이용 안내')),
-                const PopupMenuItem(value: 'notify', child: Text('알림 설정')),
-                if (isAdminUser) const PopupMenuItem(value: 'users', child: Text('회원 관리')),
-                const PopupMenuItem(value: 'logout', child: Text('로그아웃')),
-              ],
-            ),
-        ],
+        actions: topActions(context, onRefresh: _reload),
       ),
       body: Loader<Json>(
         future: _f,

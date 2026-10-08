@@ -4,6 +4,7 @@ import '../api.dart';
 import '../format.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
+import '../widgets/top_actions.dart';
 
 /// 5단계 반자동 매매: 신호 → 알림 → [여기서 승인] → 주문
 class OrdersScreen extends StatefulWidget {
@@ -60,9 +61,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       bottomNavigationBar: const MainNavBar(),
-      appBar: AppBar(title: const LogoTitle('승인 대기 주문'), actions: [
-        IconButton(icon: const Icon(Icons.refresh), onPressed: _reload),
-      ]),
+      appBar: AppBar(title: const LogoTitle('승인 대기 주문'), actions: topActions(context, onRefresh: _reload)),
       body: Loader<List<Json>>(
         future: _f,
         onRetry: _reload,

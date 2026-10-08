@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../widgets/nav.dart';
+import '../widgets/top_actions.dart';
 import 'stock_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -38,6 +39,7 @@ class _SearchScreenState extends State<SearchScreen> {
           decoration: const InputDecoration(hintText: '종목명 또는 코드', border: InputBorder.none),
           onSubmitted: _search,
         ),
+        actions: topActions(context, search: false),
       ),
       body: _error != null
           ? Center(child: Text(_error!))

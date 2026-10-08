@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../api.dart';
+
 /// 앱 전체 공통 이동: 하단 메뉴(어느 화면에서나) + 상단 로고(누르면 메인)
 final ValueNotifier<int> tabIndex = ValueNotifier<int>(0); // 지금 선택된 하단 탭
 final ValueNotifier<int> tabTap = ValueNotifier<int>(0); // 하단 탭을 누를 때마다 +1 (같은 탭 다시 눌러도 새로고침)
@@ -13,8 +15,16 @@ const navDestinations = [
   NavigationDestination(icon: Icon(Icons.history), label: '백테스트'),
 ];
 
+/// 백테스트 탭은 관리자만 (PC 서버 모드는 혼자 쓰므로 항상 보임)
+bool get canSeeBacktest => !useCloud || isAdminUser;
+
+/// 지금 사용자에게 보이는 하단 메뉴
+List<NavigationDestination> get visibleDestinations =>
+    canSeeBacktest ? navDestinations : navDestinations.sublist(0, 4);
+
 /// 하단 탭으로 이동 (열려 있는 하위 화면은 모두 닫고)
 void goTab(BuildContext context, int i, {String? list}) {
+  if (i >= visibleDestinations.length) i = 0;
   Navigator.of(context).popUntil((r) => r.isFirst);
   if (list != null) candidateListKey.value = list;
   tabIndex.value = i;
@@ -29,11 +39,14 @@ class MainNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<int>(
       valueListenable: tabIndex,
-      builder: (context, i, _) => NavigationBar(
-        selectedIndex: i,
-        onDestinationSelected: (n) => goTab(context, n),
-        destinations: navDestinations,
-      ),
+      builder: (context, i, _) {
+        final items = visibleDestinations;
+        return NavigationBar(
+          selectedIndex: i < items.length ? i : 0,
+          onDestinationSelected: (n) => goTab(context, n),
+          destinations: items,
+        );
+      },
     );
   }
 }

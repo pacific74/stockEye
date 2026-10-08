@@ -6,6 +6,7 @@ import '../api.dart';
 import '../format.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
+import '../widgets/top_actions.dart';
 import '../widgets/price_chart.dart';
 
 /// 비슷한 과거 패턴: 지금 종목 차트 ↔ 고른 과거 패턴 차트(+그 뒤 20일)를 나란히 비교
@@ -19,7 +20,7 @@ class SimilarScreen extends StatefulWidget {
 }
 
 class _SimilarScreenState extends State<SimilarScreen> {
-  late final Future<(Json, Json)> _f = _load();
+  late Future<(Json, Json)> _f = _load();
   final _scroll = ScrollController();
   int _sel = 0;
 
@@ -45,7 +46,9 @@ class _SimilarScreenState extends State<SimilarScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       bottomNavigationBar: const MainNavBar(),
-      appBar: AppBar(title: LogoTitle('${widget.name} 비슷한 과거 패턴')),
+      appBar: AppBar(
+          title: LogoTitle('${widget.name} 비슷한 과거 패턴'),
+          actions: topActions(context, onRefresh: () => setState(() => _f = _load()))),
       body: Loader<(Json, Json)>(
         future: _f,
         builder: (context, data) {

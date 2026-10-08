@@ -9,6 +9,8 @@
   index.parquet        date, code(KOSPI/KOSDAQ), close         (벤치마크)
   sectors.parquet      code, name, market, sector, as_of       (KRX 업종 분류)
   program.parquet      date, code, program                      (KIS 종목별 프로그램 순매수 금액)
+  financials.parquet   code, date(접수일=이용 가능 시각), year, reprt(Q1/H1/Q3/FY), fs, revenue, op_income,
+                       net_income(누적), assets, liabilities, equity, capital, cur_assets, cur_liab  (DART 주요계정)
 """
 from __future__ import annotations
 
@@ -16,11 +18,11 @@ from pathlib import Path
 
 import pandas as pd
 
-DATASETS = ("ohlcv", "flows", "fundamentals", "disclosures", "listing", "index", "sectors", "program")
+DATASETS = ("ohlcv", "flows", "fundamentals", "disclosures", "listing", "index", "sectors", "program", "financials")
 KEYS = {
     "ohlcv": ["date", "code"], "flows": ["date", "code"], "fundamentals": ["date", "code"],
     "disclosures": ["code", "published_at", "title"], "listing": ["code"], "index": ["date", "code"],
-    "sectors": ["code"], "program": ["date", "code"],
+    "sectors": ["code"], "program": ["date", "code"], "financials": ["code", "year", "reprt"],
 }
 
 

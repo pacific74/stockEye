@@ -26,7 +26,8 @@ from .client import Supabase
 log = logging.getLogger(__name__)
 
 PREFIX = "data"
-YEARLY = {"ohlcv": "date", "flows": "date", "fundamentals": "date", "program": "date", "disclosures": "published_at"}
+YEARLY = {"ohlcv": "date", "flows": "date", "fundamentals": "date", "program": "date", "disclosures": "published_at",
+          "financials": "date"}
 
 
 def _hash(df: pd.DataFrame) -> str:

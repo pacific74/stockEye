@@ -63,6 +63,8 @@ def collect(store: DataStore, cfg: dict, errors: list) -> None:
     if os.getenv("DART_API_KEY"):
         from stockeye.data.sources.dart_source import DartSource
         step("DART 공시 수집", lambda: collect_disclosures(store, DartSource(), start, today), errors)
+        from scripts.dart_backfill import update_financials_recent
+        step("DART 재무 갱신 (올해·작년)", lambda: update_financials_recent(store), errors)
     if os.getenv("KIS_APP_KEY") and os.getenv("KIS_APP_SECRET"):
         from stockeye.data.sources.kis_source import collect_program
         step("KIS 프로그램매매 수집", lambda: collect_program(store, cfg), errors)

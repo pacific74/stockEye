@@ -76,6 +76,7 @@ class DartSource:
                     "published_at": pd.Timestamp(it["rcept_dt"]) + pd.Timedelta(hours=23, minutes=59),
                     "title": it["report_nm"].strip(),
                     "source": "DART",
+                    "rcept_no": it.get("rcept_no"),
                 })
             if page >= int(js.get("total_page", 1)):
                 break

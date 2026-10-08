@@ -69,23 +69,29 @@ class Api {
   static Future<List<Json>> portfolioReview() =>
       useCloud ? _Cloud.portfolioReview() : _Http.getList('/api/portfolio/review');
   /// 종목별 최근 분석 점수 {code: score} (클라우드: 전 종목 상세에서, PC 모드: 종목 화면 API)
-  static Future<Map<String, double>> scores(List<String> codes) async {
+  static Future<Map<String, double>> scores(List<String> codes) async => {
+        for (final e in (await stockMeta(codes)).entries)
+          if (e.value['score'] is num) e.key: (e.value['score'] as num).toDouble()
+      };
+
+  /// 종목별 {score, market} (최근 분석 기준)
+  static Future<Map<String, Json>> stockMeta(List<String> codes) async {
     final want = codes.toSet().where((c) => c.isNotEmpty).toList();
     if (want.isEmpty) return {};
     try {
       if (useCloud) {
-        final rows = await Supabase.instance.client.from('stock_details').select('code,score').inFilter('code', want);
-        return {
-          for (final r in rows)
-            if (r['score'] != null) r['code'] as String: (r['score'] as num).toDouble()
-        };
+        final rows =
+            await Supabase.instance.client.from('stock_details').select('code,score,market').inFilter('code', want);
+        return {for (final r in rows) r['code'] as String: {'score': r['score'], 'market': r['market']}};
       }
       final res = await Future.wait(want.map((c) => _Http.get('/api/stocks/$c').then((d) => MapEntry(c, d),
           onError: (_) => MapEntry(c, <String, dynamic>{}))));
       return {
         for (final e in res)
-          if (asMap(e.value['candidate'])['score'] != null)
-            e.key: (asMap(e.value['candidate'])['score'] as num).toDouble()
+          e.key: {
+            'score': asMap(e.value['candidate'])['score'],
+            'market': asMap(e.value['candidate'])['market'],
+          }
       };
     } catch (_) {
       return {};

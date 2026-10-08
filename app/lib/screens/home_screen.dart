@@ -28,7 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<Json> _f;
   Json? _report;
   List<Json> _holdings = const [];
-  Map<String, double> _scores = const {}; // 보유종목 점수 (최근 분석)
+  Map<String, Json> _meta = const {}; // 보유종목 점수·시장 (최근 분석)
   List<Json> _pool = const []; // 어제 분석의 모든 후보 (지금 매수구간 계산용)
   LiveResult? _idx, _stk;
   bool _liveBusy = false;
@@ -71,7 +71,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {
       _holdings = const [];
     }
-    _scores = await Api.scores(_holdings.map((h) => '${h['code']}').toList());
+    _meta = await Api.stockMeta(_holdings.map((h) => '${h['code']}').toList());
     try {
       _pool = await Api.allCandidates();
     } catch (_) {
@@ -148,7 +148,8 @@ class _HomeScreenState extends State<HomeScreen> {
           final repDate = '${d['date']}';
           final repLabel = _dateLabel(repDate, clock.now);
           final quotes = _stk?.quotes ?? const <String, LiveQuote>{};
-          final picks = todayPicks(_pool, quotes);
+          final weak = weakMarkets(m, _idx?.quotes ?? const {}); // 시장 필터 (지수 60일선 아래)
+          final picks = todayPicks(_pool, quotes, weak: weak);
           final t = Theme.of(context).textTheme;
           return RefreshIndicator(
             onRefresh: _pullRefresh,
@@ -159,7 +160,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const PendingUsersBanner(),
                 const _TradingBanner(),
                 const SectionTitle('지금 시장'),
-                _LiveMarketCard(live: _idx, yesterday: m, busy: _liveBusy && _idx == null),
+                _LiveMarketCard(live: _idx, yesterday: m, busy: _liveBusy && _idx == null, weak: weak),
                 SectionTitle('오늘 살 만한 후보 · 지금 가격 기준',
                     trailing: TextButton(onPressed: () => goTab(context, 1, list: 'now'), child: const Text('전체'))),
                 Padding(
@@ -172,18 +173,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 else if (picks.isEmpty)
                   _Notice(quotes.isEmpty
                       ? '지금 시세를 받지 못해 계산할 수 없습니다.'
-                      : '지금 매수구간에 들어온 후보가 없습니다. 무리해서 살 필요 없는 날일 수 있어요.')
+                      : weak.length >= 2
+                          ? '코스피·코스닥 모두 60일선 아래(시장 약세)라 신규 매수를 쉬는 구간입니다.'
+                          : '지금 매수구간에 들어온 후보가 없습니다. 무리해서 살 필요 없는 날일 수 있어요.')
                 else
                   ...picks.take(5).toList().asMap().entries.map((e) => TodayPickTile(p: e.value, rank: e.key + 1)),
                 SectionTitle('TOP 10 · 지금 시세', trailing: Text('$repLabel 분석', style: t.bodySmall)),
                 if (_stk?.error != null && quotes.isEmpty)
                   _Notice('지금 시세를 가져오지 못해 $repLabel 종가로 보여줍니다. (${_stk!.error})'),
-                ...top10.map((c) => _LiveCandidateTile(c: c, q: quotes['${c['code']}'], clock: clock)),
+                ...top10.map((c) =>
+                    _LiveCandidateTile(c: c, q: quotes['${c['code']}'], clock: clock, weak: weak.contains(c['market']))),
                 if (_holdings.isNotEmpty) ...[
                   SectionTitle('내 보유종목 · 지금',
                       trailing: TextButton(onPressed: () => goTab(context, 2), child: const Text('보유 탭'))),
                   ..._holdings.map((h) =>
-                      _HoldingNowTile(h: h, q: quotes['${h['code']}'], score: _scores['${h['code']}'])),
+                      _HoldingNowTile(h: h, q: quotes['${h['code']}'], meta: _meta['${h['code']}'] ?? const {})),
                 ],
                 SectionTitle('돈이 몰리는 업종',
                     trailing: TextButton(
@@ -284,10 +288,19 @@ class _Notice extends StatelessWidget {
 
 /// 지금 시장: 코스피·코스닥 실시간 (못 받으면 지난 마감 값)
 class _LiveMarketCard extends StatelessWidget {
-  const _LiveMarketCard({required this.live, required this.yesterday, required this.busy});
+  const _LiveMarketCard({required this.live, required this.yesterday, required this.busy, this.weak = const {}});
   final LiveResult? live;
   final Json yesterday;
   final bool busy;
+  final Set<String> weak; // 지수가 60일선 아래인 시장
+
+  /// 어제 마감 기준 지수 60일선 값
+  double? _ma(String code) {
+    for (final i in asList(yesterday['indices'])) {
+      if (i['code'] == code) return (i['ma_filter'] as num?)?.toDouble();
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -303,7 +316,9 @@ class _LiveMarketCard extends StatelessWidget {
                   Text('지금 지수를 가져오지 못했습니다', style: t.titleSmall),
                   if (live?.error != null) Text('${live!.error}', style: t.bodySmall),
                   const SizedBox(height: 8),
-                  Text('아래 "참고"에 지난 장 마감 시장이 있습니다.', style: t.bodySmall),
+                  if (weak.isNotEmpty)
+                    Text('시장 필터: ${weak.map(marketName).join('·')} 60일선 아래 (마감 기준) → 신규 매수 쉬기',
+                        style: t.bodySmall?.copyWith(color: Colors.orange)),
                 ]),
         ),
       );
@@ -320,7 +335,14 @@ class _LiveMarketCard extends StatelessWidget {
           ...list.map((i) => Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3),
                 child: Row(children: [
-                  Expanded(child: Text(i.code, style: const TextStyle(fontWeight: FontWeight.w600))),
+                  Expanded(
+                      child: Row(children: [
+                    Text(i.code, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 6),
+                    if (_ma(i.code) != null)
+                      Text(weak.contains(i.code) ? '60일선 아래' : '60일선 위',
+                          style: TextStyle(fontSize: 11, color: weak.contains(i.code) ? downColor : Colors.green)),
+                  ])),
                   Text(i.price.toStringAsFixed(2), style: const TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(width: 10),
                   SizedBox(
@@ -341,6 +363,23 @@ class _LiveMarketCard extends StatelessWidget {
             const Expanded(child: Text('지금 분위기')),
             Text('$moodIcon $mood', style: TextStyle(color: moodColor, fontWeight: FontWeight.bold, fontSize: 16)),
           ]),
+          if (weak.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
+              child: Row(children: [
+                const Icon(Icons.pause_circle_outline, size: 18, color: Colors.orange),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                      '시장 필터: ${weak.map(marketName).join('·')} 지수가 60일선 아래 → '
+                      '${weak.map(marketName).join('·')} 종목은 신규 매수 쉬기 (보유 종목 관리는 그대로)',
+                      style: const TextStyle(fontSize: 12)),
+                ),
+              ]),
+            ),
           if (live!.stale)
             Align(
               alignment: Alignment.centerLeft,
@@ -354,10 +393,11 @@ class _LiveMarketCard extends StatelessWidget {
 
 /// TOP 10 한 줄: 지금 가격 · 오늘 등락 · 매매계획 대비 위치
 class _LiveCandidateTile extends StatelessWidget {
-  const _LiveCandidateTile({required this.c, required this.q, required this.clock});
+  const _LiveCandidateTile({required this.c, required this.q, required this.clock, this.weak = false});
   final Json c;
   final LiveQuote? q;
   final MarketClock clock;
+  final bool weak; // 이 종목의 시장이 60일선 아래 (시장 필터)
 
   @override
   Widget build(BuildContext context) {
@@ -365,19 +405,15 @@ class _LiveCandidateTile extends StatelessWidget {
     final score = (c['score'] as num?)?.toDouble() ?? 0;
     final verdict = '${plan['verdict'] ?? ''}';
     final t = Theme.of(context).textTheme;
-    final (posText, posColor) = _position(plan, q?.price);
+    final (posText0, posColor0) = _position(plan, q?.price);
+    final posText = weak && posText0 != null && !posText0.startsWith('손절') ? '시장 약세 — 신규 매수 쉬기' : posText0;
+    final posColor = posText == posText0 ? posColor0 : Colors.grey;
     final nxt = q != null && !clock.open && q!.overStatus == 'OPEN' && q!.overPrice != null;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
         leading: CircleAvatar(child: Text('${c['rank']}')),
-        title: Row(children: [
-          Flexible(
-              child: Text('${c['name']}',
-                  style: const TextStyle(fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
-          const SizedBox(width: 6),
-          ScoreBadge(score),
-        ]),
+        title: StockName('${c['name']}', market: c['market'] as String?, score: score),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(verdict, style: t.bodySmall?.copyWith(color: verdictColor(verdict))),
           if (posText != null)
@@ -427,10 +463,10 @@ class _LiveCandidateTile extends StatelessWidget {
 
 /// 내 보유종목 지금 손익
 class _HoldingNowTile extends StatelessWidget {
-  const _HoldingNowTile({required this.h, required this.q, this.score});
+  const _HoldingNowTile({required this.h, required this.q, this.meta = const {}});
   final Json h;
   final LiveQuote? q;
-  final double? score;
+  final Json meta; // {score, market}
 
   @override
   Widget build(BuildContext context) {
@@ -441,6 +477,7 @@ class _HoldingNowTile extends StatelessWidget {
     final t1 = (h['target1'] as num?)?.toDouble();
     final price = q?.price;
     final pnl = (price != null && entry != null && entry > 0) ? (price / entry - 1) * 100 : null;
+    final pnlWon = (price != null && entry != null && qty != null) ? (price - entry) * qty : null;
     String? warn;
     Color warnColor = Colors.grey;
     if (price != null && stop != null && stop > 0 && price <= stop) {
@@ -450,33 +487,39 @@ class _HoldingNowTile extends StatelessWidget {
       warn = '목표가 ${num0(t1)} 도달';
       warnColor = upColor;
     }
+    Color c(double v) => v >= 0 ? upColor : downColor;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
         dense: true,
-        title: Row(children: [
-          Flexible(
-              child: Text('${h['name'] ?? h['code']}',
-                  style: const TextStyle(fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
-          const SizedBox(width: 6),
-          ScoreBadge(score),
-        ]),
+        title: StockName('${h['name'] ?? h['code']}',
+            market: (meta['market'] ?? h['market']) as String?, score: meta['score'] as num?),
         subtitle: Text(
             [
-              '평단 ${num0(entry)}${qty == null ? '' : ' · ${num0(qty)}주'}',
-              if (q != null) '오늘 ${pct(q!.ratio)}',
+              '매수가 ${num0(entry)}${qty == null ? '' : ' · ${num0(qty)}주'}',
               if (warn != null) warn,
             ].join(' · '),
             style: warn != null ? t.bodySmall?.copyWith(color: warnColor) : t.bodySmall),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          // 오늘 시세
+          Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
             Text(price == null ? '-' : num0(price), style: const TextStyle(fontWeight: FontWeight.bold)),
-            if (pnl != null)
-              Text(pct(pnl), style: TextStyle(color: pnl >= 0 ? upColor : downColor, fontWeight: FontWeight.bold)),
-          ],
-        ),
+            Text(q == null ? '오늘 -' : '오늘 ${pct(q!.ratio)}',
+                style: TextStyle(fontSize: 11, color: q == null ? Colors.grey : c(q!.ratio))),
+          ]),
+          Container(
+              width: 1, height: 30, margin: const EdgeInsets.symmetric(horizontal: 10), color: Colors.grey.withValues(alpha: 0.3)),
+          // 매수가 대비
+          SizedBox(
+            width: 70,
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text(pct(pnl),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: pnl == null ? null : c(pnl))),
+              Text(pnlWon == null ? '매수가 대비' : '${pnlWon >= 0 ? '+' : ''}${num0(pnlWon.round())}',
+                  style: TextStyle(fontSize: 11, color: pnlWon == null ? Colors.grey : c(pnlWon))),
+            ]),
+          ),
+        ]),
         onTap: () => goTab(context, 2),
       ),
     );

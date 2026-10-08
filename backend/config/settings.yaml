@@ -76,6 +76,14 @@ backtest:
   same_bar_rule: stop_first  # 같은 날 손절/목표 모두 닿으면 손절 우선 (보수적)
   limit_up_skip: 0.29        # 시가가 전일 대비 +29% 이상(상한가 근처)이면 매수 불가로 처리
   oos_ratio: 0.3             # 마지막 30% 기간은 표본 외(Out-of-sample)로 따로 성과 표시
+  regime_ma: 60              # 시장 필터: 종목이 속한 지수가 60일선 아래면 신규 매수 쉼 (0 = 끔)
+  regime_index: own          # own = 종목의 시장(코스피/코스닥) 지수 | KOSPI | KOSDAQ
+
+# ---------------- 시장 필터 (실전) ----------------
+# 2026-10-08 실험: 5개 전략 모두 손실·낙폭이 크게 줄어듦 (docs: 프로젝트 backtest-experiments 문서)
+market_filter:
+  enabled: true
+  ma: 60                     # 종목이 속한 시장 지수가 N일선 아래면 '매수 고려/눌림 대기' → '관망'
 
 # ---------------- 전략별 후보 ----------------
 strategies:

@@ -85,6 +85,8 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
         for code, g in disc.sort_values("published_at", ascending=False).groupby("code", sort=False)}
 
     from .data.company import build_profiles
+    from .report import apply_market_filter, weak_markets
+    weak = weak_markets(report.get("market", {}), cfg)
     try:
         profiles = build_profiles(view, company, sectors, names, list(x.index))
     except Exception as ex:  # noqa: BLE001  (개요는 참고용 — 실패해도 상세는 만든다)
@@ -114,6 +116,7 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
                              missing=sr.missing, reasons=sr.reasons, warnings=sr.warnings + extra,
                              plan=plan.to_dict()).to_dict()
             cand["sector"] = sector_of.get(code)
+            apply_market_filter(cand, weak, report.get("market", {}).get("filter_ma", 60))
         e = expl.get(code)
         if e is None:
             try:

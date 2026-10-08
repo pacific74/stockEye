@@ -44,7 +44,8 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
     sectors = getattr(pit, "sectors", pd.DataFrame())
     groups, unmatched = build_groups(names, sectors, load_themes())
     strength = group_strength(x, groups, uni_scores, names)
-    market = market_overview(view.index(), x)
+    mf = cfg.get("market_filter", {})
+    market = market_overview(view.index(), x, int(mf.get("ma", 60)))
 
     # 종목 → 소속 테마(가장 강한 것) 표시
     best_group = {}
@@ -56,10 +57,12 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
     sector_of = dict(zip(sectors["code"], sectors["sector"])) if not sectors.empty else {}
 
     d = res.to_dict()
+    weak = weak_markets(market, cfg)
     for c in d["candidates"] + [c for v in d["strategies"].values() for c in v["candidates"]]:
         g = best_group.get(c["code"])
         c["theme"] = g["group"] if g else None
         c["sector"] = sector_of.get(c["code"])
+        apply_market_filter(c, weak, market.get("filter_ma", 60))
 
     report = {
         "date": d["date"], "as_of": d["as_of"], "funnel": d["funnel"], "dropped": d["dropped"],
@@ -84,6 +87,30 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
         log.info("설명 %d건 (%s)", len(report["explanations"]),
                  "AI" if ex.enabled else "규칙 기반 — ANTHROPIC_API_KEY 없음")
     return report, res, view
+
+
+def weak_markets(market: dict, cfg: dict) -> set[str]:
+    """시장 필터: 지수가 N일선 아래인 시장 {'KOSPI', 'KOSDAQ'}"""
+    if not cfg.get("market_filter", {}).get("enabled", True):
+        return set()
+    return {i["code"] for i in market.get("indices", []) if i.get("above_ma_filter") is False}
+
+
+def apply_market_filter(c: dict, weak: set[str], ma: int = 60) -> dict:
+    """약세 시장 종목: '매수 고려/눌림 대기' → '관망' + 경고 (실전 매매 엔진·알림도 이 판정을 따른다)"""
+    m = c.get("market")
+    if m not in weak or c.get("market_weak"):
+        return c
+    name = {"KOSPI": "코스피", "KOSDAQ": "코스닥"}.get(m, m)
+    c["market_weak"] = True
+    c["warnings"] = [f"시장 약세: {name} 지수가 {ma}일선 아래 → 신규 매수 쉬기"] + list(c.get("warnings") or [])
+    plan = c.get("plan") or {}
+    if plan.get("verdict") in ("매수 고려", "눌림 대기"):
+        plan["verdict_before_filter"] = plan["verdict"]
+        plan["verdict"] = "관망"
+        plan["verdict_reason"] = (f"{name} 지수가 {ma}일선 아래(시장 약세) — 지수가 회복할 때까지 신규 매수 쉬기 "
+                                  f"(시장 필터 전 판정: {plan['verdict_before_filter']})")
+    return c
 
 
 def save_report(report: dict, cfg: dict) -> Path:

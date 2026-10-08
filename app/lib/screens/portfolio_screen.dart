@@ -23,11 +23,15 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   Future<List<Json>> _load() async {
     final rows = await Api.portfolioReview();
     final codes = rows.map((h) => '${h['code']}').toList();
-    final r = await Future.wait([Api.scores(codes), Live.stocks(codes)]);
-    final sc = r[0] as Map<String, double>;
+    final r = await Future.wait([Api.stockMeta(codes), Live.stocks(codes)]);
+    final meta = r[0] as Map<String, Json>;
     final live = (r[1] as LiveResult).quotes;
     return [
-      for (final h in rows) _withPnl(h, live['${h['code']}'], sc['${h['code']}']),
+      for (final h in rows)
+        {
+          ..._withPnl(h, live['${h['code']}'], (meta['${h['code']}']?['score'] as num?)?.toDouble()),
+          'market': meta['${h['code']}']?['market'] ?? h['market'],
+        },
     ];
   }
 
@@ -51,6 +55,17 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   }
 
   void _reload() => setState(() => _f = _load());
+
+  static Widget _lbl(TextTheme t, String s) =>
+      Padding(padding: const EdgeInsets.only(right: 6, top: 3, bottom: 3), child: Text(s, style: t.bodySmall));
+
+  static Widget _val(String v, {Color? color, String? sub, Color? subColor}) => Padding(
+        padding: const EdgeInsets.only(right: 8, top: 3, bottom: 3),
+        child: Text.rich(TextSpan(children: [
+          TextSpan(text: v, style: TextStyle(fontWeight: FontWeight.w600, color: color)),
+          if (sub != null) TextSpan(text: ' $sub', style: TextStyle(fontSize: 11, color: subColor)),
+        ])),
+      );
 
   Color _statusColor(String s) {
     switch (s) {
@@ -132,13 +147,13 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                     padding: const EdgeInsets.all(14),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
-                        Flexible(
-                            child: Text('${h['name']}',
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+                        Expanded(
+                          child: StockName('${h['name']}',
+                              market: h['market'] as String?,
+                              score: h['score_now'] as num?,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        ),
                         const SizedBox(width: 6),
-                        ScoreBadge(h['score_now'] as num?),
-                        const Spacer(),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
@@ -147,18 +162,35 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                         ),
                       ]),
                       const SizedBox(height: 6),
-                      Row(children: [
+                      Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                        // 매수가 · 현재가 / 손절가 · 목표가
                         Expanded(
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text('매수가 ${won(h['avg_price'] as num?)}'
-                                '${h['qty'] == null ? '' : ' · ${num0(h['qty'] as num)}주'}'),
-                            Text(
-                                '${h['now_live'] == true ? '지금' : '최근'} ${won(h['now_price'] as num?)}'
-                                '${today == null ? '' : '  (오늘 ${pct(today)})'}',
-                                style: t.bodySmall),
-                          ]),
+                          child: Table(
+                            columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth(), 2: IntrinsicColumnWidth(), 3: FlexColumnWidth()},
+                            children: [
+                              TableRow(children: [
+                                _lbl(t, '매수가'),
+                                _val('${num0(h['avg_price'] as num?)}${h['qty'] == null ? '' : ' ×${num0(h['qty'] as num)}'}'),
+                                _lbl(t, h['now_live'] == true ? '현재가' : '최근가'),
+                                _val(num0(h['now_price'] as num?),
+                                    sub: today == null ? null : pct(today),
+                                    subColor: (today ?? 0) >= 0 ? upColor : downColor),
+                              ]),
+                              TableRow(children: [
+                                _lbl(t, '손절가'),
+                                _val(num0(h['stop'] as num?), color: downColor),
+                                _lbl(t, '목표가'),
+                                _val(num0(h['target'] as num?), color: upColor),
+                              ]),
+                            ],
+                          ),
                         ),
+                        // 매수가 대비 수익률
+                        Container(
+                            width: 1, height: 40, margin: const EdgeInsets.symmetric(horizontal: 10),
+                            color: Colors.grey.withValues(alpha: 0.3)),
                         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                          Text('매수가 대비', style: t.bodySmall),
                           Text(pct(pnl),
                               style: TextStyle(
                                   fontSize: 18,
@@ -169,8 +201,6 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                                 style: TextStyle(fontSize: 12, color: pnlWon >= 0 ? upColor : downColor)),
                         ]),
                       ]),
-                      Text('손절 ${won(h['stop'] as num?)} · 목표 ${won(h['target'] as num?)}',
-                          style: Theme.of(context).textTheme.bodySmall),
                       ...alerts.map((a) => Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text('⚠ $a', style: const TextStyle(color: Colors.orange)),

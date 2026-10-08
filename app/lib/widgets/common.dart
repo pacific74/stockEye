@@ -55,6 +55,45 @@ class ErrorView extends StatelessWidget {
   }
 }
 
+/// 시장 표시: 코스피 / 코스닥
+class MarketBadge extends StatelessWidget {
+  const MarketBadge(this.market, {super.key});
+  final String? market;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = market;
+    if (m == null || m.isEmpty) return const SizedBox.shrink();
+    final kospi = m == 'KOSPI';
+    final label = kospi ? '코스피' : (m == 'KOSDAQ' ? '코스닥' : m);
+    final color = kospi ? Colors.blueGrey : Colors.purple;
+    return Container(
+      margin: const EdgeInsets.only(left: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+      decoration: BoxDecoration(border: Border.all(color: color.withValues(alpha: 0.6)), borderRadius: BorderRadius.circular(4)),
+      child: Text(label, style: TextStyle(fontSize: 10, color: color.shade200)),
+    );
+  }
+}
+
+/// 종목명 + 코스피/코스닥 + (점수)
+class StockName extends StatelessWidget {
+  const StockName(this.name, {super.key, this.market, this.score, this.style});
+  final String name;
+  final String? market;
+  final num? score;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        Flexible(
+            child: Text(name,
+                overflow: TextOverflow.ellipsis, style: style ?? const TextStyle(fontWeight: FontWeight.w600))),
+        MarketBadge(market),
+        if (score != null) ...[const SizedBox(width: 6), ScoreBadge(score)],
+      ]);
+}
+
 /// 점수 배지 (100점 만점) — 80↑ 빨강 / 65↑ 주황 / 50↑ 청록 / 그 아래 회색
 class ScoreBadge extends StatelessWidget {
   const ScoreBadge(this.score, {super.key, this.label});
@@ -122,7 +161,7 @@ class CandidateTile extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
         leading: CircleAvatar(child: Text('${rank ?? c['rank']}')),
-        title: Text('${c['name']}', style: const TextStyle(fontWeight: FontWeight.w600)),
+        title: StockName('${c['name']}', market: c['market'] as String?),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('${stars(c['stars'] as int)}  ${won(plan['price'] as num)}'),
           if (tags.isNotEmpty || theme != null)

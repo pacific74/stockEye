@@ -23,16 +23,20 @@ STRENGTH_WEIGHTS = {
 }
 
 
-def market_overview(index_df: pd.DataFrame, x: pd.DataFrame) -> dict:
-    out: dict = {"indices": []}
+def market_overview(index_df: pd.DataFrame, x: pd.DataFrame, filter_ma: int = 60) -> dict:
+    out: dict = {"indices": [], "filter_ma": filter_ma}
     for code in ("KOSPI", "KOSDAQ"):
         s = index_df[index_df["code"] == code].sort_values("date")["close"] if not index_df.empty else pd.Series()
         if len(s) >= 2:
             chg = s.iloc[-1] / s.iloc[-2] - 1
             ma20 = s.tail(20).mean()
+            maf = float(s.tail(filter_ma).mean()) if len(s) >= filter_ma else None
             out["indices"].append({"code": code, "close": round(float(s.iloc[-1]), 2),
                                    "change_pct": round(float(chg) * 100, 2),
-                                   "above_ma20": bool(s.iloc[-1] > ma20)})
+                                   "above_ma20": bool(s.iloc[-1] > ma20),
+                                   # 시장 필터: 지수가 N일선 위인지 (앱은 지금 지수와 이 값을 다시 비교)
+                                   "ma_filter": round(maf, 2) if maf is not None else None,
+                                   "above_ma_filter": bool(s.iloc[-1] >= maf) if maf is not None else True})
     live = x[(x["volume"] > 0) & x["ret1"].notna()]
     adv, dec = int((live["ret1"] > 0).sum()), int((live["ret1"] < 0).sum())
     above20 = float((live["close"] > live["sma20"]).mean()) if len(live) else 0.0

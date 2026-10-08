@@ -166,12 +166,14 @@ class _NowTab extends StatefulWidget {
 }
 
 class _NowTabState extends State<_NowTab> with AutomaticKeepAliveClientMixin {
-  late Future<(List<Json>, LiveResult)> _f = _load();
+  late Future<(List<Json>, LiveResult, Set<String>)> _f = _load();
 
-  Future<(List<Json>, LiveResult)> _load() async {
-    final pool = await Api.allCandidates();
+  Future<(List<Json>, LiveResult, Set<String>)> _load() async {
+    final r = await Future.wait([Api.allCandidates(), Api.dashboard(), Live.indices()]);
+    final pool = r[0] as List<Json>;
+    final weak = weakMarkets(asMap((r[1] as Json)['market']), (r[2] as LiveResult).quotes);
     final live = await Live.stocks(pool.map((c) => '${c['code']}').toList());
-    return (pool, live);
+    return (pool, live, weak);
   }
 
   @override
@@ -181,12 +183,12 @@ class _NowTabState extends State<_NowTab> with AutomaticKeepAliveClientMixin {
   Widget build(BuildContext context) {
     super.build(context);
     final t = Theme.of(context).textTheme;
-    return Loader<(List<Json>, LiveResult)>(
+    return Loader<(List<Json>, LiveResult, Set<String>)>(
       future: _f,
       onRetry: () => setState(() => _f = _load()),
       builder: (context, d) {
-        final (pool, live) = d;
-        final picks = todayPicks(pool, live.quotes, limit: maxShow);
+        final (pool, live, weak) = d;
+        final picks = todayPicks(pool, live.quotes, limit: maxShow, weak: weak);
         final at = live.fetchedAt;
         return RefreshIndicator(
           onRefresh: () async {
@@ -209,6 +211,11 @@ class _NowTabState extends State<_NowTab> with AutomaticKeepAliveClientMixin {
                     Text('※ 손절가 아래 · 1차 목표 도달 · 오늘 +15% 이상 급등 · -5% 이상 급락 종목은 뺐습니다. '
                         '점수는 어제 마감 기준이며 장중 거래량·수급은 반영되지 않습니다.',
                         style: t.bodySmall),
+                    if (weak.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text('시장 필터: ${weak.map(marketName).join('·')} 지수가 60일선 아래 → 그 시장 종목은 제외했습니다.',
+                          style: t.bodySmall?.copyWith(color: Colors.orange)),
+                    ],
                   ]),
                 ),
               ),

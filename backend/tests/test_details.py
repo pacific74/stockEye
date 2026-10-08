@@ -65,3 +65,24 @@ def test_company_profile(monkeypatch):
     assert p["industry"] == "반도체 제조업" and p["ceo"] == "홍길동"
     assert p["market_cap"] == int(1_000_000 * r["chart"][-1]["close"])
     json.loads(_dumps(clean(r)))
+
+
+def test_market_filter():
+    from stockeye.report import apply_market_filter, weak_markets
+    from stockeye.analysis.market import market_overview
+    dates = pd.bdate_range("2024-01-01", periods=80)
+    idx = pd.concat([
+        pd.DataFrame({"date": dates, "code": "KOSPI", "close": [100 + i for i in range(80)]}),      # 상승
+        pd.DataFrame({"date": dates, "code": "KOSDAQ", "close": [200 - i for i in range(80)]}),     # 하락
+    ])
+    x = pd.DataFrame({"volume": [1], "ret1": [0.01], "close": [10], "sma20": [9]}, index=["000001"])
+    m = market_overview(idx, x, 60)
+    weak = weak_markets(m, CFG)
+    assert weak == {"KOSDAQ"}
+    c = {"code": "1", "market": "KOSDAQ", "warnings": [], "plan": {"verdict": "매수 고려", "verdict_reason": ""}}
+    apply_market_filter(c, weak)
+    assert c["plan"]["verdict"] == "관망" and c["market_weak"] and "시장 약세" in c["warnings"][0]
+    apply_market_filter(c, weak)   # 두 번 적용해도 경고는 하나
+    assert len(c["warnings"]) == 1
+    k = {"code": "2", "market": "KOSPI", "warnings": [], "plan": {"verdict": "매수 고려"}}
+    assert apply_market_filter(k, weak)["plan"]["verdict"] == "매수 고려"

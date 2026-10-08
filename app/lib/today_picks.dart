@@ -13,6 +13,7 @@ import 'widgets/common.dart';
 ///  - 손절가 아래 / 1차 목표가 도달 / 오늘 +15% 넘게 급등 / -5% 넘게 급락 → 제외
 ///  - 매수구간 안 → 먼저, 그다음 구간 바로 위(+2% 이내)·바로 아래(-1.5% 이내)
 ///  - 같은 묶음 안에서는 점수(어제 마감 분석) 높은 순
+///  - 시장 필터: 종목이 속한 지수가 60일선 아래면 제외 (2026-10-08 백테스트 실험 결과 반영)
 ///  - '지금 사면' 목표·손절까지 남은 %와 손익비를 지금 가격으로 다시 계산
 class TodayPick {
   TodayPick(this.c, this.q, this.zone, this.order, this.up, this.down);
@@ -28,9 +29,30 @@ class TodayPick {
   Json get plan => asMap(c['plan']);
 }
 
-List<TodayPick> todayPicks(List<Json> cands, Map<String, LiveQuote> quotes, {int limit = 10}) {
+/// 시장 필터: 지수가 N일선(어제 마감 기준 값) 아래인 시장 {'KOSPI','KOSDAQ'}
+///   지금 지수가 있으면 지금 값으로, 없으면 어제 마감 판정으로
+Set<String> weakMarkets(Json market, Map<String, LiveQuote> indexQuotes) {
+  final out = <String>{};
+  for (final i in asList(market['indices'])) {
+    final code = '${i['code']}';
+    final ma = (i['ma_filter'] as num?)?.toDouble();
+    final now = indexQuotes[code]?.price;
+    if (ma != null && now != null) {
+      if (now < ma) out.add(code);
+    } else if (i['above_ma_filter'] == false) {
+      out.add(code);
+    }
+  }
+  return out;
+}
+
+String marketName(String m) => m == 'KOSPI' ? '코스피' : (m == 'KOSDAQ' ? '코스닥' : m);
+
+List<TodayPick> todayPicks(List<Json> cands, Map<String, LiveQuote> quotes,
+    {int limit = 10, Set<String> weak = const {}}) {
   final out = <TodayPick>[];
   for (final c in cands) {
+    if (weak.contains(c['market'])) continue; // 시장 필터: 약세 시장 종목은 신규 매수 쉬기
     final q = quotes['${c['code']}'];
     if (q == null || q.price <= 0) continue;
     final plan = asMap(c['plan']);
@@ -75,13 +97,7 @@ class TodayPickTile extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
         leading: CircleAvatar(child: Text('$rank')),
-        title: Row(children: [
-          Flexible(
-              child: Text('${c['name']}',
-                  style: const TextStyle(fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
-          const SizedBox(width: 6),
-          ScoreBadge(p.score),
-        ]),
+        title: StockName('${c['name']}', market: c['market'] as String?, score: p.score),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Wrap(spacing: 4, runSpacing: 2, children: [
             _chip(p.zone, zoneColor),

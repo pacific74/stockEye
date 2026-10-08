@@ -59,6 +59,8 @@ class Position:
     score: float
     value_ma20: float
     days: int = 0
+    risk: float = 0.0        # 진입가 - 처음 손절가 (1R)
+    peak: float = 0.0        # 보유 중 최고 종가 (추적 손절용)
 
 
 @dataclass
@@ -123,6 +125,19 @@ class Backtester:
             dates = dates[dates <= pd.Timestamp(end)]
         if len(dates) < 2:
             raise ValueError("백테스트 기간에 데이터가 부족합니다")
+
+        # ---- 실험 옵션 (기본값 = 꺼짐 → 예전과 같은 결과) ----
+        regime_ma = int(bt.get("regime_ma", 0) or 0)            # 지수가 N일선 아래면 신규 매수 쉼
+        regime_index = bt.get("regime_index", "KOSPI")         # KOSPI | KOSDAQ | own(종목의 시장 지수)
+        trail_r = float(bt.get("trail_r", 0) or 0)              # 최고 종가 - trail_r × 1R 로 손절 끌어올림
+        breakeven_r = float(bt.get("breakeven_r", 0) or 0)      # 종가가 +breakeven_r × 1R 넘으면 손절 = 본전
+        target_r = bt.get("target_r")                           # None = 전략 목표가 / 0 = 목표가 없음 / k = 진입가 + k×1R
+        max_new = int(bt.get("max_new_per_day", 0) or 0)        # 하루 신규 매수 최대 개수 (0 = 제한 없음)
+        min_sig = float(bt.get("min_signal_score", 0) or 0)     # 신호 점수 하한
+        regime_ok = self._regime(regime_ma, regime_index) if regime_ma > 0 else None
+        market_of = {}
+        if regime_ok is not None and regime_index == "own" and not self.data.listing.empty:
+            market_of = dict(zip(self.data.listing["code"], self.data.listing["market"]))
 
         cash = float(bt["initial_capital"])
         positions: dict[str, Position] = {}
@@ -190,20 +205,28 @@ class Backtester:
                     continue
                 px, cost = self.costs.buy(op, shares, o["value_ma20"])
                 cash -= cost
+                risk = max(op - o["stop"], op * 0.01)
+                target = o["target"]
+                if target_r is not None:
+                    target = float("inf") if float(target_r) <= 0 else op + float(target_r) * risk
                 positions[code] = Position(code, o["signal_date"], d, px, shares, cost,
-                                           o["stop"], o["target"], o["score"], o["value_ma20"])
+                                           o["stop"], target, o["score"], o["value_ma20"], risk=risk, peak=op)
             pending = []
 
             # ---------- ② 장중 손절/목표, ③ 종가 ----------
             for code in list(positions):
                 p = positions[code]
+                split_r = 1.0
                 if prev is not None and p.entry_date != d:
                     c0, c1 = bars.get("split_factor", prev, code), bars.get("split_factor", d, code)
                     if c0 and c1 and not math.isnan(c0) and not math.isnan(c1) and abs(c1 / c0 - 1) > 1e-6:
-                        r = c1 / c0          # 액면분할 등: 가격 × r, 주식수 ÷ r
+                        r = c1 / c0
+                        split_r = r          # 액면분할 등: 가격 × r, 주식수 ÷ r
                         p.entry_px *= r
                         p.stop *= r
                         p.target *= r
+                        p.peak *= r
+                        p.risk *= r
                         p.shares = int(round(p.shares / r))
                 op, hi, lo, cl = (bars.get(f, d, code) for f in ("open", "high", "low", "close"))
                 vol = bars.get("volume", d, code)
@@ -217,6 +240,15 @@ class Backtester:
                 if vol <= 0:
                     p.days += 1
                     continue  # 거래정지: 매도 불가
+                # 가격 불연속: 하루 가격제한(±30%)을 넘는 변화인데 분할 정보가 없음 = 병합·감자·재상장 등
+                # → 실제 손익을 알 수 없으므로 직전 종가로 청산 (가짜 대박/쪽박 방지)
+                if prev is not None and p.entry_date != d:
+                    pcl = bars.get("close_ff", prev, code)
+                    if pcl and not math.isnan(pcl) and pcl > 0 and abs(op / (pcl * split_r) - 1) > 0.35:
+                        close_pos(p, d, pcl * split_r, "가격 불연속(병합·감자 추정)")
+                        warnings.add("가격제한폭을 넘는 가격 불연속(병합·감자 등)은 직전 종가로 청산")
+                        del positions[code]
+                        continue
                 p.days += 1
                 exit_px, reason = None, None
                 if p.entry_date != d and op <= p.stop:
@@ -226,7 +258,7 @@ class Backtester:
                 elif lo <= p.stop and hi >= p.target:
                     exit_px, reason = (p.stop, "손절(동시터치)") if bt["same_bar_rule"] == "stop_first" else (p.target, "목표")
                 elif lo <= p.stop:
-                    exit_px, reason = p.stop, "손절"
+                    exit_px, reason = p.stop, ("추적 손절" if p.stop > p.entry_px else "손절")
                 elif hi >= p.target:
                     exit_px, reason = p.target, "목표가"
                 elif p.days >= bt["max_hold_days"]:
@@ -234,6 +266,15 @@ class Backtester:
                 if exit_px is not None:
                     close_pos(p, d, exit_px, reason)
                     del positions[code]
+                    continue
+                # 종가 기준으로 다음 날 손절선 끌어올리기 (오늘 종가까지만 사용 → 미래참조 없음)
+                if trail_r > 0 or breakeven_r > 0:
+                    p.peak = max(p.peak, cl)
+                    entry_raw = p.entry_px / (1 + self.costs.slip(p.value_ma20))
+                    if breakeven_r > 0 and cl >= entry_raw + breakeven_r * p.risk:
+                        p.stop = max(p.stop, entry_raw)
+                    if trail_r > 0:
+                        p.stop = max(p.stop, p.peak - trail_r * p.risk)
 
             equity[d] = cash + sum(p.shares * bars.get("close_ff", d, p.code) for p in positions.values())
 
@@ -246,8 +287,13 @@ class Backtester:
                 except KeyError:
                     continue
                 slots = bt["max_positions"] - len(positions)
-                if slots > 0:
-                    sigs = [s for s in strategy.signals(x, view) if s["code"] not in positions]
+                if max_new > 0:
+                    slots = min(slots, max_new)
+                market_ok = True if regime_ok is None or regime_index == "own" else bool(regime_ok.get(regime_index, {}).get(d, True))
+                if slots > 0 and market_ok:
+                    sigs = [s for s in strategy.signals(x, view) if s["code"] not in positions and s["score"] >= min_sig]
+                    if regime_ok is not None and regime_index == "own":
+                        sigs = [s for s in sigs if regime_ok.get(market_of.get(s["code"], "KOSPI"), {}).get(d, True)]
                     for s in sigs[:slots]:
                         s["signal_date"] = d
                         pending.append(s)
@@ -276,6 +322,18 @@ class Backtester:
             warnings.add(f"매수 적정구간에 오지 않아 체결되지 않은 신호 {missed}건 (실전 감시와 같은 규칙)")
         res.warnings = sorted(warnings)
         return res
+
+    def _regime(self, ma: int, which: str) -> dict:
+        """{지수: {날짜: 종가 >= N일선}} — 그날 종가까지로 계산 (18:00 신호 시점에 알 수 있음)"""
+        ix = self.data.index
+        out = {}
+        if ix.empty:
+            return out
+        for name, g in ix.groupby("code"):
+            c = g.sort_values("date").set_index("date")["close"]
+            m = c.rolling(ma, min_periods=ma).mean()
+            out[name] = ((c >= m) | m.isna()).to_dict()
+        return out
 
     def _benchmark(self, idx) -> pd.Series | None:
         ix = self.data.index

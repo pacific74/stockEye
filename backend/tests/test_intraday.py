@@ -39,3 +39,17 @@ def test_report_with_partial_today_bar():
     if c:
         code = c["code"]
         assert abs(c["plan"]["price"] - float(live.set_index("code").loc[code, "close"])) <= 1
+
+
+def test_is_trading_day(monkeypatch):
+    import pandas as pd
+    from stockeye.data.sources import naver_live as nl
+    sat = pd.Timestamp("2026-10-10")
+    assert nl.is_trading_day(sat) is False                     # 주말은 시세 확인 없이 False
+    def fake(codes=("KOSPI",)):
+        return pd.DataFrame([{"code": "KOSPI", "traded_at": pd.Timestamp("2026-10-08 15:30")}])
+    monkeypatch.setattr(nl, "indices", fake)
+    assert nl.is_trading_day(pd.Timestamp("2026-10-08")) is True
+    assert nl.is_trading_day(pd.Timestamp("2026-10-09")) is False   # 한글날: 마지막 체결이 전날
+    monkeypatch.setattr(nl, "indices", lambda codes=("KOSPI",): pd.DataFrame())
+    assert nl.is_trading_day(pd.Timestamp("2026-10-08")) is None    # 확인 불가 → 평소대로

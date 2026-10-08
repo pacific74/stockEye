@@ -99,6 +99,16 @@ def main():
     logging.getLogger("stockeye").setLevel(logging.INFO)
 
     t0 = time.time()
+    # 주말·공휴일(휴장일)은 아무것도 하지 않음 (수동 실행 --force / --as-of / --skip-collect 는 그대로 진행)
+    if not (args.force or args.as_of or args.skip_collect):
+        from stockeye.data.sources.naver_live import is_trading_day
+        open_today = is_trading_day()
+        if open_today is False:
+            log.info("오늘은 휴장일(주말·공휴일) → 일일 배치 생략")
+            print("오늘은 휴장일(주말·공휴일) → 일일 배치 생략")
+            return
+        if open_today is None:
+            log.warning("휴장일 여부를 확인하지 못해 평소대로 진행 (새 데이터가 없으면 분석은 자동 생략)")
     cfg = load_config()
     store = DataStore(data_dir(cfg))
     sb = Supabase()

@@ -90,3 +90,20 @@ def stocks(codes: list[str], chunk: int = 50, workers: int = 6) -> pd.DataFrame:
 
 def indices(codes=("KOSPI", "KOSDAQ")) -> pd.DataFrame:
     return pd.DataFrame(_get("index", list(codes)))
+
+
+def is_trading_day(day: pd.Timestamp | None = None) -> bool | None:
+    """오늘(또는 day) 한국 증시가 열렸나 — 주말 False, 지수 마지막 체결일이 그날이면 True, 아니면 False (휴장일).
+    시세를 못 받으면 None (판단 불가 → 부르는 쪽에서 평소대로 진행)"""
+    day = (day or pd.Timestamp.now(tz="Asia/Seoul").tz_localize(None)).normalize()
+    if day.weekday() >= 5:
+        return False
+    try:
+        ix = indices(("KOSPI",))
+        t = ix.iloc[0]["traded_at"] if not ix.empty else None
+    except Exception as e:  # noqa: BLE001
+        log.warning("휴장일 확인 실패: %s", e)
+        return None
+    if t is None or pd.isna(t):
+        return None
+    return pd.Timestamp(t).normalize() == day

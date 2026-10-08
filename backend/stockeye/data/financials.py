@@ -58,22 +58,30 @@ class FinIndex:
     def __init__(self, metrics: pd.DataFrame):
         self.m = metrics
         self.by = {} if metrics.empty else {c: g.reset_index(drop=True) for c, g in metrics.groupby("code", sort=False)}
+        # 빠른 조회용 배열 (백테스트: 하루 수백 종목 × 수백 일)
+        self._arr = {c: (g["date"].values.astype("datetime64[ns]"), g[self.COLS].to_numpy(dtype=object))
+                     for c, g in self.by.items()}
 
     @classmethod
     def from_raw(cls, fin: pd.DataFrame) -> "FinIndex":
         return cls(build_metrics(fin))
 
     def at(self, codes, as_of: pd.Timestamp) -> pd.DataFrame:
-        rows = {}
+        t = np.datetime64(pd.Timestamp(as_of).to_datetime64(), "ns")
+        limit = np.timedelta64(550, "D")
+        idx, vals = [], []
         for c in codes:
-            g = self.by.get(c)
-            if g is None:
+            a = self._arr.get(c)
+            if a is None:
                 continue
-            k = int(np.searchsorted(g["date"].values, np.datetime64(as_of), side="left")) - 1
+            dates, v = a
+            k = int(np.searchsorted(dates, t, side="left")) - 1
             if k < 0:
                 continue
-            r = g.iloc[k]
-            if (as_of - r["date"]).days > 550:        # 1년 반 넘게 새 보고서가 없음 → 모름
-                continue
-            rows[c] = r[self.COLS]
-        return pd.DataFrame.from_dict(rows, orient="index") if rows else pd.DataFrame(columns=self.COLS)
+            if t - dates[k] > limit + np.timedelta64(1, "D") - np.timedelta64(1, "ns"):
+                continue                                  # 1년 반 넘게 새 보고서가 없음 → 모름 (일수 기준 > 550)
+            idx.append(c)
+            vals.append(v[k])
+        if not idx:
+            return pd.DataFrame(columns=self.COLS)
+        return pd.DataFrame(np.vstack(vals), index=idx, columns=self.COLS).infer_objects()

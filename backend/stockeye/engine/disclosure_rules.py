@@ -82,7 +82,12 @@ class DisclosureIndex:
             return cls({})
         ev = pd.DataFrame(rows, columns=["code", "date", "name", "score", "days", "block", "title"])
         ev = ev.sort_values(["code", "date"])
-        return cls({c: g.reset_index(drop=True) for c, g in ev.groupby("code", sort=False)})
+        # 백테스트에서 하루 수백 종목 × 수백 일 조회 → pandas 대신 순수 배열로 (같은 결과, 수십 배 빠름)
+        out = {}
+        for c, g in ev.groupby("code", sort=False):
+            out[c] = (g["date"].values.astype("datetime64[ns]"), g["name"].tolist(), g["score"].tolist(),
+                      g["days"].tolist(), g["block"].tolist(), g["title"].tolist())
+        return cls(out)
 
     def at(self, code: str, as_of: pd.Timestamp) -> dict:
         """{score(0~15), block(사유 목록), pos(제목), neg(제목)}  — as_of 이전에 공개된 것만"""
@@ -90,26 +95,34 @@ class DisclosureIndex:
         out = {"score": BASE, "block": [], "pos": [], "neg": []}
         if g is None:
             return out
-        g = g[g["date"] < as_of]
-        if g.empty:
+        dates, names, scores, days, blocks, titles = g
+        t = np.datetime64(pd.Timestamp(as_of).to_datetime64(), "ns")
+        n = int(np.searchsorted(dates, t, side="left"))     # date < as_of 인 것만
+        if n == 0:
             return out
-        age = (as_of - g["date"]).dt.days
-        live = g[age <= g["days"]]
-        # 관리종목: 지정 뒤 해제가 있으면 차단 풀림
-        admin = g[g["name"].isin(["관리종목", "관리해제"])]
-        admin_on = not admin.empty and admin.iloc[-1]["name"] == "관리종목"
+        # 관리종목: 지정 뒤 해제가 있으면 차단 풀림 (가장 최근 지정/해제 기준)
+        admin_on = False
+        for k in range(n - 1, -1, -1):
+            if names[k] in ("관리종목", "관리해제"):
+                admin_on = names[k] == "관리종목"
+                break
         seen = set()
         score = BASE
-        for _, e in live.iloc[::-1].iterrows():        # 최근 것부터, 같은 종류는 한 번만
-            if e["name"] in seen or e["name"] == "관리해제":
+        day_ns = np.timedelta64(1, "D")
+        for k in range(n - 1, -1, -1):                       # 최근 것부터, 같은 종류는 한 번만
+            age = int((t - dates[k]) // day_ns)
+            if age > days[k]:
                 continue
-            seen.add(e["name"])
-            if e["name"] == "관리종목" and not admin_on:
+            nm = names[k]
+            if nm in seen or nm == "관리해제":
                 continue
-            score += e["score"]
-            if e["block"]:
-                out["block"].append(e["block"])
-            (out["pos"] if e["score"] > 0 else out["neg"]).append(e["title"])
+            seen.add(nm)
+            if nm == "관리종목" and not admin_on:
+                continue
+            score += scores[k]
+            if blocks[k]:
+                out["block"].append(blocks[k])
+            (out["pos"] if scores[k] > 0 else out["neg"]).append(titles[k])
         if admin_on and "관리종목" not in out["block"]:
             out["block"].append("관리종목")
         out["score"] = float(np.clip(score, 0, MAX))

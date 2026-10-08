@@ -16,7 +16,7 @@ List<Widget> topActions(BuildContext context, {VoidCallback? onRefresh, bool sea
         IconButton(
           tooltip: '종목 검색',
           icon: const Icon(Icons.search),
-          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen())),
+          onPressed: () => showStockSearch(context),
         ),
       if (onRefresh != null) IconButton(tooltip: '새로고침', icon: const Icon(Icons.refresh), onPressed: onRefresh),
       const AppMenu(),

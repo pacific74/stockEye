@@ -58,11 +58,15 @@ jobs:
         run: dart run flutter_launcher_icons
       - name: 코드 점검
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: 버전 정보 (화면 하단에 표시)
+        run: |
+          echo "APP_TIME=$(TZ=Asia/Seoul date '+%m/%d %H:%M')" >> "$GITHUB_ENV"
+          echo "APP_DEFINES=--dart-define=APP_BUILD=${{ github.run_number }} --dart-define=APP_COMMIT=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
       - name: 웹 빌드
-        run: flutter build web --release --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=WEB_URL=$WEB_URL
+        run: flutter build web --release --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=WEB_URL=$WEB_URL $APP_DEFINES "--dart-define=APP_TIME=$APP_TIME"
       - name: 안드로이드 APK 빌드
         run: |
-          flutter build apk --release --split-per-abi --build-number=${{ github.run_number }} --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=WEB_URL=$WEB_URL
+          flutter build apk --release --split-per-abi --build-number=${{ github.run_number }} --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=WEB_URL=$WEB_URL $APP_DEFINES "--dart-define=APP_TIME=$APP_TIME"
       - name: APK 고정 키로 서명 (설치된 앱에 덮어쓰기 업데이트 가능)
         if: env.KS_B64 != ''
         env:

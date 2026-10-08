@@ -45,6 +45,12 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements.txt
+      - name: 원본 데이터 캐시 (Storage 에서 바뀐 조각만 받기 → Supabase 트래픽 절약)
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: stockeye-data-${{ github.run_id }}
+          restore-keys: stockeye-data-
       - name: 패키지 설치
         run: pip install -r backend/requirements.txt
       - name: 일일 배치

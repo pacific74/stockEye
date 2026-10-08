@@ -1,0 +1,40 @@
+# 장중 재분석: 평일 11:00 · 14:00(한국시간) 지금 시세로 V2 점수·후보·매수 신호를 다시 계산해 앱에 발행
+#   (GitHub 사정으로 10~30분 늦게 시작될 수 있음. 휴장일·장외 시간이면 스스로 건너뜀)
+name: intraday
+
+on:
+  schedule:
+    - cron: "0 2,5 * * 1-5"       # UTC 02:00 · 05:00 = 한국 11:00 · 14:00
+  workflow_dispatch:
+
+concurrency:
+  group: stockeye-intraday
+  cancel-in-progress: true
+
+jobs:
+  intraday:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      TZ: Asia/Seoul
+      PYTHONUTF8: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: 원본 데이터 캐시 (Storage 에서 바뀐 조각만 받기 → Supabase 트래픽 절약)
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: stockeye-data-${{ github.run_id }}
+          restore-keys: stockeye-data-
+      - name: 패키지 설치
+        run: pip install -r backend/requirements.txt
+      - name: 장중 재분석
+        working-directory: backend
+        run: python -m scripts.intraday

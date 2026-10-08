@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../version.dart';
 
 /// 앱 전체 공통 이동: 하단 메뉴(어느 화면에서나) + 상단 로고(누르면 메인)
 final ValueNotifier<int> tabIndex = ValueNotifier<int>(0); // 지금 선택된 하단 탭
@@ -31,7 +32,7 @@ void goTab(BuildContext context, int i, {String? list}) {
   tabTap.value++;
 }
 
-/// 모든 화면 아래에 붙는 하단 메뉴
+/// 모든 화면 아래에 붙는 하단 메뉴 (+ 앱 버전)
 class MainNavBar extends StatelessWidget {
   const MainNavBar({super.key});
 
@@ -41,11 +42,19 @@ class MainNavBar extends StatelessWidget {
       valueListenable: tabIndex,
       builder: (context, i, _) {
         final items = visibleDestinations;
-        return NavigationBar(
-          selectedIndex: i < items.length ? i : 0,
-          onDestinationSelected: (n) => goTab(context, n),
-          destinations: items,
-        );
+        // 하단 메뉴 + 그 밑에 앱 버전 한 줄 (폰 하단 여백은 버전 줄이 맡음)
+        return Column(mainAxisSize: MainAxisSize.min, children: [
+          MediaQuery.removePadding(
+            context: context,
+            removeBottom: true,
+            child: NavigationBar(
+              selectedIndex: i < items.length ? i : 0,
+              onDestinationSelected: (n) => goTab(context, n),
+              destinations: items,
+            ),
+          ),
+          const VersionFooter(),
+        ]);
       },
     );
   }

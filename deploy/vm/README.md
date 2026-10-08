@@ -6,7 +6,7 @@ GitHub Actions(미국)에서 KRX/KIS 접속이 막히거나, 장중 실시간 �
 ## 서버 고르기
 | | 메모리 | 비고 |
 |---|---|---|
-| Oracle Cloud Always Free (Ampere A1, 춘천/서울) | 최대 24GB | 무료. 리전 자원이 모자라 생성이 잘 안 될 때가 있음 |
+| Oracle Cloud Always Free (Ampere A1, **서울** 리전) | 2 OCPU · 12GB (2026.6 축소) | 무료. 자원이 모자라 생성이 잘 안 될 때가 많음, 7일간 한가하면 회수될 수 있음 |
 | AWS Lightsail / EC2 서울, 네이버·KT 클라우드 등 | **4GB 이상** 권장 | 유료 (요금은 각 사이트 확인) |
 
 - 일일 배치는 메모리를 최대 약 3.5GB 씁니다. 2GB 서버면 `setup.sh` 가 스왑 4GB 를 붙이지만 느립니다.

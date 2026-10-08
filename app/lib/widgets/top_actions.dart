@@ -6,6 +6,7 @@ import '../screens/admin_screen.dart';
 import '../screens/help_screen.dart';
 import '../screens/notify_screen.dart';
 import '../screens/search_screen.dart';
+import '../version.dart';
 
 /// 모든 화면 상단 오른쪽 공통 버튼: [검색] [새로고침] [⋮ 메뉴]
 ///   AppBar(actions: topActions(context, onRefresh: _reload))
@@ -58,6 +59,8 @@ class AppMenu extends StatelessWidget {
         if (useCloud) const PopupMenuItem(value: 'notify', child: Text('알림 설정')),
         if (useCloud && isAdminUser) const PopupMenuItem(value: 'users', child: Text('회원 관리')),
         if (useCloud) const PopupMenuItem(value: 'logout', child: Text('로그아웃')),
+        const PopupMenuDivider(),
+        PopupMenuItem(enabled: false, child: Text(versionText, style: Theme.of(context).textTheme.bodySmall)),
       ],
     );
   }

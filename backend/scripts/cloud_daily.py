@@ -111,7 +111,8 @@ def main():
         if not args.no_push:
             step("원본 데이터 → Storage 올리기", sync.push, errors)
         last = store.last_date("ohlcv").strftime("%Y-%m-%d")
-        done = sb.select("daily_reports", {"select": "date", "date": f"eq.{last}"})
+        done = sb.select("daily_reports", {"select": "date,market", "date": f"eq.{last}"})
+        done = [d for d in done if not (d.get("market") or {}).get("intraday")]   # 장중 재분석 결과는 '아직 발행 안 됨'
         if done and not args.as_of and not args.force:
             log.info("새 거래일 데이터가 없습니다 (휴장일이거나 이미 발행됨: %s) → 분석 생략", last)
             if not args.no_requests:

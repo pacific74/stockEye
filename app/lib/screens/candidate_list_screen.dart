@@ -110,7 +110,8 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
             Padding(
               padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
               child: Text(
-                  '${d['date'] == null ? '최근' : _md('${d['date']}')} 장 마감 분석 · '
+                  '${d['date'] == null ? '최근' : _md('${d['date']}')} '
+                  '${d['intraday'] != null ? '${d['intraday']} 장중 분석 (지금 가격 반영, 수급은 어제까지)' : '장 마감 분석'} · '
                   '${all.length > maxShow ? '조건 통과 ${all.length}개 중 ' : ''}상위 ${cands.length}개',
                   style: Theme.of(context).textTheme.bodySmall),
             ),

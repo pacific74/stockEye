@@ -115,7 +115,8 @@ def backfill_financials(store: DataStore, years: list[int], sync=None, force=Fal
                 state.fin.add(key)
             else:
                 complete = False
-            log.info("재무 %s: %d건 (실패 묶음 %d)", key, len(df), src.failed)
+            log.info("재무 %s: %d건 %s", key, len(df),
+                     "✅ 전부 성공" if src.failed == 0 else f"⚠ {src.failed}묶음 실패 → 다시 실행하면 그 부분만 받음")
             if src.limit_hit:
                 log.warning("DART 하루 호출 한도 → 내일 다시 실행하면 이어서 받습니다.")
                 break
@@ -150,7 +151,8 @@ def backfill_disclosures(store: DataStore, start: pd.Timestamp, end: pd.Timestam
         if frames:
             store.upsert("disclosures", pd.concat(frames, ignore_index=True))
         for p, df, failed, lim in res:
-            log.info("공시 %s: %d건%s", p, len(df), f" (실패 {failed})" if failed else "")
+            log.info("공시 %s: %d건 %s", p, len(df),
+                     "✅" if not failed else f"⚠ {failed}건 실패 → 다시 실행하면 이 달만 다시 받음")
             if failed == 0 and not lim:
                 state.disc.add(str(p))
             else:

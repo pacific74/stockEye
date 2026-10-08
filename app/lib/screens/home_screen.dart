@@ -146,7 +146,11 @@ class _HomeScreenState extends State<HomeScreen> {
           final strat = asMap(d['strategies']);
           final clock = _clock;
           final repDate = '${d['date']}';
-          final repLabel = _dateLabel(repDate, clock.now);
+          final intraday = asMap(d['market'])['intraday'] as String?; // 장중 재분석 시각 ("11:00")
+          final repLabel = intraday != null
+              ? '${_dateLabel(repDate, clock.now)} $intraday 장중'
+              : _dateLabel(repDate, clock.now);
+          final repBasis = intraday != null ? repLabel : '$repLabel 마감'; // "오늘(10/8) 11:00 장중" / "10/7 마감"
           final quotes = _stk?.quotes ?? const <String, LiveQuote>{};
           final weak = weakMarkets(m, _idx?.quotes ?? const {}); // 시장 하락장(C) → 신규 매수 중단
           final picks = todayPicks(_pool, quotes, weak: weak);
@@ -165,7 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     trailing: TextButton(onPressed: () => goTab(context, 1, list: 'now'), child: const Text('전체'))),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-                  child: Text('$repLabel 분석 후보 중 지금 가격이 매수구간 근처인 종목 (점수는 $repLabel 마감 기준)',
+                  child: Text('$repLabel 분석 후보 중 지금 가격이 매수구간 근처인 종목 (점수는 $repBasis 기준)',
                       style: t.bodySmall),
                 ),
                 if (_stk == null)
@@ -180,7 +184,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ...picks.take(5).toList().asMap().entries.map((e) => TodayPickTile(p: e.value, rank: e.key + 1)),
                 SectionTitle('매수 후보 TOP 10 · 지금 시세', trailing: Text('$repLabel 분석', style: t.bodySmall)),
                 if (_stk?.error != null && quotes.isEmpty)
-                  _Notice('지금 시세를 가져오지 못해 $repLabel 종가로 보여줍니다. (${_stk!.error})'),
+                  _Notice('지금 시세를 가져오지 못해 $repBasis 가격으로 보여줍니다. (${_stk!.error})'),
                 ...top10.map((c) =>
                     _LiveCandidateTile(c: c, q: quotes['${c['code']}'], clock: clock, weak: weak.contains(c['market']))),
                 if (_holdings.isNotEmpty) ...[
@@ -198,7 +202,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     today: sectorsToday(sectors, quotes),
                     yesterday: sectors,
                     todayLabel: _liveAt == null ? '오늘' : '오늘 ${_hm(_liveAt!)}',
-                    yesterdayLabel: '$repLabel 마감'),
+                    yesterdayLabel: repBasis),
                 SectionTitle('후보 보기 ($repLabel 분석 · 목록별 10개)'),
                 _ShortcutGrid(strat: strat),
                 const SizedBox(height: 16),

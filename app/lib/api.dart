@@ -175,12 +175,19 @@ class _Cloud {
         .limit(top);
     final cands = rows.map((e) => asMap(e['payload'])).toList();
     if (list == 'overall') {
-      return {'list': 'overall', 'date': r['date'], 'name': '상승 후보 (종합 점수)', 'candidates': cands};
+      return {
+        'list': 'overall',
+        'date': r['date'],
+        'intraday': asMap(r['market'])['intraday'],
+        'name': '상승 후보 (종합 점수)',
+        'candidates': cands
+      };
     }
     final s = asMap(asMap(r['strategies'])[list]);
     return {
       'list': list,
       'date': r['date'],
+      'intraday': asMap(r['market'])['intraday'], // 장중 재분석이면 "11:00" 같은 시각
       'name': s['name'] ?? list,
       'description': s['description'],
       'limitation': s['limitation'],

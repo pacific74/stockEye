@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../version.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
 
@@ -67,7 +68,7 @@ class HelpScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     return Scaffold(
-      bottomNavigationBar: showNav ? const MainNavBar() : null,
+      bottomNavigationBar: showNav ? const MainNavBar() : const VersionFooter(),
       appBar: AppBar(
           title: showNav ? const LogoTitle('이용 안내') : const Text('이용 안내'),
           actions: showNav ? topActions(context) : null),

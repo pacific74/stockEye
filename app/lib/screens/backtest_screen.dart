@@ -333,7 +333,7 @@ class _StrategyCompare extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('전략별 백테스트 비교 (비용 반영)', style: t.titleSmall),
               const SizedBox(height: 6),
-              Row(children: const [
+              const Row(children: [
                 Expanded(flex: 3, child: Text('전략', style: TextStyle(fontSize: 12))),
                 Expanded(flex: 2, child: Text('승률', textAlign: TextAlign.right, style: TextStyle(fontSize: 12))),
                 Expanded(flex: 2, child: Text('기대값', textAlign: TextAlign.right, style: TextStyle(fontSize: 12))),

@@ -70,7 +70,7 @@ class _SimilarScreenState extends State<SimilarScreen> {
               const SizedBox(height: 8),
               // ① 지금 이 종목
               _ChartCard(
-                title: '지금 ${widget.name} · 최근 ${win}일',
+                title: '지금 ${widget.name} · 최근 $win일',
                 subtitle: '오른쪽 빈칸 = 앞으로의 $slots일 중 남은 기간 (아직 모름)',
                 trailing: pct(q.isEmpty ? 0 : q.last * 100),
                 child: PriceChart(bars: curBars, slots: slots, markIndex: win),

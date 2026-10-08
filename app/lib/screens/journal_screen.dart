@@ -131,7 +131,7 @@ class _Analysis extends StatefulWidget {
 }
 
 class _AnalysisState extends State<_Analysis> {
-  late Future<Json> _f = Api.journalAnalysis(mode: widget.mode);
+  late final Future<Json> _f = Api.journalAnalysis(mode: widget.mode);
   Json? _ai;
   bool _aiLoading = false;
 

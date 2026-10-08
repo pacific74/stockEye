@@ -56,7 +56,8 @@ def _report_index(report: dict) -> dict[str, dict]:
 
 
 def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120,
-                  similar: bool = True, similar_top: int = 10, company: dict | None = None) -> list[dict]:
+                  similar: bool = True, similar_top: int = 10, company: dict | None = None,
+                  similar_codes=None) -> list[dict]:
     """company = data.company.fetch_company_meta() 결과 (없으면 KRX 업종·밸류에이션만으로 개요)"""
     x, uni = res.x, res.universe
     date = report["date"]
@@ -146,14 +147,16 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
     if failed:
         log.info("지표 부족으로 상세를 만들지 못한 종목 %d개", failed)
 
-    if similar and rep_idx:
+    # 비슷한 패턴: 리포트 후보 + 회원들의 보유종목 (similar_codes)
+    sim_targets = list(dict.fromkeys(list(rep_idx) + [c for c in (similar_codes or []) if c]))
+    if similar and sim_targets:
         from .analysis.similar import PatternIndex
-        log.info("비슷한 패턴 계산 (후보 %d종목)...", len(rep_idx))
+        log.info("비슷한 패턴 계산 (후보 %d + 보유 %d종목)...", len(rep_idx), len(sim_targets) - len(rep_idx))
         pi = PatternIndex(pit.ohlcv, window=20)
         name_of = dict(zip(names["code"], names["name"]))
         by_code = {r["code"]: r for r in rows}
         results = {}
-        for code in rep_idx:
+        for code in sim_targets:
             if code not in by_code:
                 continue
             try:

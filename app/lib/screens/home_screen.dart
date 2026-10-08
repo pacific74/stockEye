@@ -551,7 +551,8 @@ class _HoldingNowTile extends StatelessWidget {
             ]),
           ),
         ]),
-        onTap: () => goTab(context, 2),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => StockDetailScreen(code: '${h['code']}', name: '${h['name'] ?? h['code']}'))),
       ),
     );
   }

@@ -86,3 +86,15 @@ def test_market_filter():
     assert len(c["warnings"]) == 1
     k = {"code": "2", "market": "KOSPI", "warnings": [], "plan": {"verdict": "매수 고려"}}
     assert apply_market_filter(k, weak)["plan"]["verdict"] == "매수 고려"
+
+
+def test_similar_for_holdings():
+    g = generate(n_stocks=30, start="2022-01-03", end="2024-12-30", seed=9)
+    pit = PointInTimeData(g["ohlcv"], g["flows"], g["fundamentals"], g["disclosures"], g["index"], g["listing"])
+    report, res, view = build_report_full(pit, CFG, None)
+    cand = {c["code"] for c in report["candidates"]} | {c["code"] for v in report["strategies"].values() for c in v["candidates"]}
+    rows = build_details(pit, CFG, report, res, view)
+    other = next(r["code"] for r in rows if r["code"] not in cand)
+    assert next(r for r in rows if r["code"] == other)["similar_patterns"] is None
+    rows2 = build_details(pit, CFG, report, res, view, similar_codes=[other])
+    assert next(r for r in rows2 if r["code"] == other)["similar_patterns"] is not None   # 보유종목도 계산

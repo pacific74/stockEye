@@ -128,8 +128,10 @@ def main():
                                        sync.put_json(f"reports/{report['date']}.json", report)), errors)
     step("리포트 발행", lambda: pub.publish_report(sb, report), errors, required=True)
     company = step("기업 개요 (주 1회 갱신)", lambda: load_company(sync, report["date"]), errors)
+    held = step("보유종목 목록 (비슷한 패턴용)", lambda: sorted({r["code"] for r in sb.select(
+        "positions", {"select": "code", "status": "eq.open", "limit": "100000"})}), errors) or []
     rows = step("종목 상세 만들기", lambda: build_details(pit, cfg, report, res, view, similar=not args.no_similar,
-                                                         company=company), errors)
+                                                         company=company, similar_codes=held), errors)
     if rows:
         step("종목 상세 발행", lambda: pub.publish_details(sb, rows, report["date"]), errors)
 

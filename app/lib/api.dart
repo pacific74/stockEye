@@ -247,7 +247,8 @@ class _Cloud {
     final r = await _detail(code, 'similar_patterns');
     final s = r['similar_patterns'];
     if (s == null) {
-      throw Exception('비슷한 패턴은 매일 저녁 배치에서 "매수 후보" 종목만 미리 계산합니다.');
+      throw Exception('비슷한 패턴은 매일 저녁 배치에서 "매수 후보"와 "보유종목"만 미리 계산합니다.\n'
+          '오늘 보유종목에 추가했다면 오늘 저녁 배치 뒤에 볼 수 있어요.');
     }
     final m = asMap(s);
     if (m['error'] != null) throw Exception('${m['error']}');

@@ -32,7 +32,10 @@ int? tradingDaysLeft(List<String> cal, String today, String? until) {
   return cal.where((d) => d.compareTo(today) > 0 && d.compareTo(until) <= 0).length;
 }
 
-List<String> v3Calendar(Json meta) => asList(meta['calendar']).map((e) => '$e').toList();
+/// 문자열 목록 (asList 는 항목을 Map 으로 바꾸므로 날짜·문장 목록에는 쓰면 안 됨)
+List<String> strList(dynamic v) => v is List ? v.map((e) => '$e').toList() : <String>[];
+
+List<String> v3Calendar(Json meta) => strList(meta['calendar']);
 
 /// 내 보유종목의 V3 규칙 기준 매도 예정일 (매수일 포함 20거래일째)
 String? holdingSellDate(Json meta, String? buyDate) {
@@ -207,7 +210,7 @@ class _V3ScreenState extends State<V3Screen> {
                     Text('규칙 고정 ${meta['version']} (${meta['locked_at']})', style: const TextStyle(fontWeight: FontWeight.bold)),
                   ]),
                   const SizedBox(height: 4),
-                  ...asList(meta['rules']).map((s) => Text('• $s', style: t.bodySmall)),
+                  ...strList(meta['rules']).map((s) => Text('• $s', style: t.bodySmall)),
                   const SizedBox(height: 4),
                   Text('검증 기간 동안 점수·조건을 바꾸지 않고 결과만 기록합니다 (진짜 표본 외 검증).', style: t.bodySmall),
                 ]),

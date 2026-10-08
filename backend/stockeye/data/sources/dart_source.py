@@ -22,6 +22,8 @@ class DartSource:
     def __init__(self, api_key: str | None = None, sleep: float = 0.2):
         self.key = api_key or os.getenv("DART_API_KEY")
         self.sleep = sleep
+        self.limit_hit = False   # 하루 호출 한도(020) 걸림
+        self.failed = 0          # 실패한 요청 수
 
     def disclosures(self, start, end) -> pd.DataFrame:
         """코스피(Y)·코스닥(K) 공시만, 1개월 단위로 받는다.
@@ -96,6 +98,7 @@ class DartSource:
     def month(self, ms, me, kinds=("A", "B", "F", "I")) -> tuple[pd.DataFrame, int]:
         """백필용: 한 달 · 점수에 쓰는 공시 유형만 (지분공시 D 등 대량·무관 공시 제외). (결과, 실패 수)"""
         self.failed = 0
+        self.limit_hit = False
         parts = [self._fetch(ms, me, cls, k) for cls in ("Y", "K") for k in kinds]
         parts = [p for p in parts if not p.empty]
         df = pd.concat(parts, ignore_index=True).drop_duplicates(["code", "published_at", "title"]) if parts else pd.DataFrame()

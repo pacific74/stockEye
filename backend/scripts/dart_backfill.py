@@ -140,8 +140,12 @@ def backfill_disclosures(store: DataStore, start: pd.Timestamp, end: pd.Timestam
         src = DartSource()
         if (deadline and time.time() > deadline):
             return p, pd.DataFrame(), 1, False
-        df, failed = src.month(p.start_time, min(p.end_time.normalize(), end))
-        return p, df, failed, src.limit_hit
+        try:
+            df, failed = src.month(p.start_time, min(p.end_time.normalize(), end))
+        except Exception as e:  # noqa: BLE001  한 달이 실패해도 나머지는 계속 (다음 실행 때 이 달만 다시)
+            log.warning("공시 %s 받기 실패: %s", p, e)
+            return p, pd.DataFrame(), 1, False
+        return p, df, failed, getattr(src, "limit_hit", False)
 
     for i in range(0, len(months), workers):
         batch = months[i:i + workers]

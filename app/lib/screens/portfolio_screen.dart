@@ -16,9 +16,18 @@ class PortfolioScreen extends StatefulWidget {
 }
 
 class _PortfolioScreenState extends State<PortfolioScreen> {
-  late Future<List<Json>> _f = Api.portfolioReview();
+  late Future<List<Json>> _f = _load();
 
-  void _reload() => setState(() => _f = Api.portfolioReview());
+  /// 보유종목 + 각 종목의 최근 분석 점수
+  Future<List<Json>> _load() async {
+    final rows = await Api.portfolioReview();
+    final sc = await Api.scores(rows.map((h) => '${h['code']}').toList());
+    return [
+      for (final h in rows) {...h, 'score_now': h['today_score'] ?? sc['${h['code']}']}
+    ];
+  }
+
+  void _reload() => setState(() => _f = _load());
 
   Color _statusColor(String s) {
     switch (s) {
@@ -70,7 +79,13 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                     padding: const EdgeInsets.all(14),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
-                        Expanded(child: Text('${h['name']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+                        Flexible(
+                            child: Text('${h['name']}',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+                        const SizedBox(width: 6),
+                        ScoreBadge(h['score_now'] as num?),
+                        const Spacer(),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
@@ -85,8 +100,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                             style: TextStyle(
                                 fontWeight: FontWeight.bold, color: (pnl ?? 0) >= 0 ? upColor : downColor)),
                       ]),
-                      Text('손절 ${won(h['stop'] as num?)} · 목표 ${won(h['target'] as num?)}'
-                          '${h['today_score'] != null ? ' · 오늘 점수 ${(h['today_score'] as num).toStringAsFixed(0)}' : ''}',
+                      Text('손절 ${won(h['stop'] as num?)} · 목표 ${won(h['target'] as num?)}',
                           style: Theme.of(context).textTheme.bodySmall),
                       ...alerts.map((a) => Padding(
                             padding: const EdgeInsets.only(top: 4),

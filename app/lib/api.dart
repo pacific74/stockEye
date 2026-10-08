@@ -66,6 +66,30 @@ class Api {
       : _Http.get('/api/journal/analysis/ai${mode == null ? '' : '?mode=$mode'}');
   static Future<List<Json>> portfolioReview() =>
       useCloud ? _Cloud.portfolioReview() : _Http.getList('/api/portfolio/review');
+  /// 종목별 최근 분석 점수 {code: score} (클라우드: 전 종목 상세에서, PC 모드: 종목 화면 API)
+  static Future<Map<String, double>> scores(List<String> codes) async {
+    final want = codes.toSet().where((c) => c.isNotEmpty).toList();
+    if (want.isEmpty) return {};
+    try {
+      if (useCloud) {
+        final rows = await Supabase.instance.client.from('stock_details').select('code,score').inFilter('code', want);
+        return {
+          for (final r in rows)
+            if (r['score'] != null) r['code'] as String: (r['score'] as num).toDouble()
+        };
+      }
+      final res = await Future.wait(want.map((c) => _Http.get('/api/stocks/$c').then((d) => MapEntry(c, d),
+          onError: (_) => MapEntry(c, <String, dynamic>{}))));
+      return {
+        for (final e in res)
+          if (asMap(e.value['candidate'])['score'] != null)
+            e.key: (asMap(e.value['candidate'])['score'] as num).toDouble()
+      };
+    } catch (_) {
+      return {};
+    }
+  }
+
   static Future<Json> addHolding(Json h) => useCloud ? _Cloud.addHolding(h) : _Http.post('/api/portfolio', h);
   static Future<void> deleteHolding(String id) =>
       useCloud ? _Cloud.deleteHolding(id) : _Http.send('DELETE', '/api/portfolio/$id');
@@ -188,8 +212,10 @@ class _Cloud {
   }
 
   static Future<Json> stock(String code) async {
-    final r = await _detail(code, 'candidate,chart,disclosures,explanation');
+    final r = await _detail(code, 'candidate,chart,disclosures,explanation,sector,market');
     return {
+      'sector': r['sector'],
+      'market': r['market'],
       'candidate': r['candidate'],
       'chart': r['chart'] ?? [],
       'explanation': r['explanation'],

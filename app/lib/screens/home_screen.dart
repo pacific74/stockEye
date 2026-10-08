@@ -26,6 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<Json> _f;
   Json? _report;
   List<Json> _holdings = const [];
+  Map<String, double> _scores = const {}; // 보유종목 점수 (최근 분석)
   LiveResult? _idx, _stk;
   bool _liveBusy = false;
   DateTime? _liveAt; // 마지막으로 시세를 받은 기기 시각
@@ -67,6 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {
       _holdings = const [];
     }
+    _scores = await Api.scores(_holdings.map((h) => '${h['code']}').toList());
     await _refreshLive();
   }
 
@@ -154,7 +156,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (_holdings.isNotEmpty) ...[
                   SectionTitle('내 보유종목 · 지금',
                       trailing: TextButton(onPressed: () => goTab(context, 2), child: const Text('보유 탭'))),
-                  ..._holdings.map((h) => _HoldingNowTile(h: h, q: quotes['${h['code']}'])),
+                  ..._holdings.map((h) =>
+                      _HoldingNowTile(h: h, q: quotes['${h['code']}'], score: _scores['${h['code']}'])),
                 ],
                 const SizedBox(height: 12),
                 const Divider(),
@@ -340,9 +343,15 @@ class _LiveCandidateTile extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
         leading: CircleAvatar(child: Text('${c['rank']}')),
-        title: Text('${c['name']}', style: const TextStyle(fontWeight: FontWeight.w600)),
+        title: Row(children: [
+          Flexible(
+              child: Text('${c['name']}',
+                  style: const TextStyle(fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+          const SizedBox(width: 6),
+          ScoreBadge(score),
+        ]),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('${score.toStringAsFixed(0)}점 · $verdict', style: t.bodySmall),
+          Text(verdict, style: t.bodySmall?.copyWith(color: verdictColor(verdict))),
           if (posText != null)
             Container(
               margin: const EdgeInsets.only(top: 3),
@@ -390,9 +399,10 @@ class _LiveCandidateTile extends StatelessWidget {
 
 /// 내 보유종목 지금 손익
 class _HoldingNowTile extends StatelessWidget {
-  const _HoldingNowTile({required this.h, required this.q});
+  const _HoldingNowTile({required this.h, required this.q, this.score});
   final Json h;
   final LiveQuote? q;
+  final double? score;
 
   @override
   Widget build(BuildContext context) {
@@ -416,7 +426,13 @@ class _HoldingNowTile extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
         dense: true,
-        title: Text('${h['name'] ?? h['code']}', style: const TextStyle(fontWeight: FontWeight.w600)),
+        title: Row(children: [
+          Flexible(
+              child: Text('${h['name'] ?? h['code']}',
+                  style: const TextStyle(fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+          const SizedBox(width: 6),
+          ScoreBadge(score),
+        ]),
         subtitle: Text(
             [
               '평단 ${num0(entry)}${qty == null ? '' : ' · ${num0(qty)}주'}',

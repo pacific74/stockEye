@@ -1,6 +1,6 @@
 """전 종목 상세 미리 만들기 (앱의 종목 화면 = 서버 없이 Supabase 에서 바로 읽기).
 
-종목마다:  점수·매매계획·근거·주의 / 최근 120일 차트(이평선 5·20·60·120 포함) / 최근 30일 공시 / 설명 / (후보만) 비슷한 과거 패턴
+종목마다:  기업 개요(업종·주요제품·시총·PER) / 점수·매매계획·근거·주의 / 최근 120일 차트(이평선 5·20·60·120 포함) / 최근 30일 공시 / 설명 / (후보만) 비슷한 과거 패턴
 리포트와 같은 스크리닝 결과(피처 단면)를 그대로 쓰므로 미래 데이터는 들어가지 않는다.
 """
 from __future__ import annotations
@@ -56,7 +56,8 @@ def _report_index(report: dict) -> dict[str, dict]:
 
 
 def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120,
-                  similar: bool = True, similar_top: int = 10) -> list[dict]:
+                  similar: bool = True, similar_top: int = 10, company: dict | None = None) -> list[dict]:
+    """company = data.company.fetch_company_meta() 결과 (없으면 KRX 업종·밸류에이션만으로 개요)"""
     x, uni = res.x, res.universe
     date = report["date"]
     names = pit.listing if not pit.listing.empty else pd.DataFrame(columns=["code", "name", "market"])
@@ -82,6 +83,13 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
     discs = {} if disc.empty else {
         code: [{"published_at": str(t), "title": ti} for t, ti in zip(g["published_at"], g["title"])]
         for code, g in disc.sort_values("published_at", ascending=False).groupby("code", sort=False)}
+
+    from .data.company import build_profiles
+    try:
+        profiles = build_profiles(view, company, sectors, names, list(x.index))
+    except Exception as ex:  # noqa: BLE001  (개요는 참고용 — 실패해도 상세는 만든다)
+        log.warning("기업 개요 만들기 실패: %s", ex)
+        profiles = {}
 
     rows, failed = [], 0
     for code, r in x.iterrows():
@@ -115,7 +123,9 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
                 e = None
         rows.append({"code": code, "name": cand.get("name", code), "market": cand.get("market", ""),
                      "sector": sector_of.get(code), "date": date, "score": cand.get("score"),
-                     "in_universe": code in in_uni, "candidate": {**cand, "theme": theme_of.get(code, cand.get("theme"))},
+                     "in_universe": code in in_uni,
+                     "candidate": {**cand, "theme": theme_of.get(code, cand.get("theme")),
+                                   "profile": profiles.get(code) or None},
                      "chart": charts.get(code, []), "disclosures": discs.get(code, []),
                      "explanation": e, "similar_patterns": None})
     if failed:

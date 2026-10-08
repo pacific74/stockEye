@@ -5,6 +5,7 @@ pyyaml>=6
 pykrx>=1.0.48
 finance-datareader>=0.9.90
 requests>=2.31
+lxml>=5          # 기업 개요(KIND 표) 읽기
 fastapi>=0.110
 uvicorn[standard]>=0.29
 pytest>=8

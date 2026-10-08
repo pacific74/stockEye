@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../format.dart';
+import '../live.dart';
 import '../widgets/common.dart';
 import '../widgets/price_chart.dart';
 import '../widgets/nav.dart';
@@ -31,6 +32,45 @@ class StockDetailScreen extends StatefulWidget {
 
 class _StockDetailScreenState extends State<StockDetailScreen> {
   late Future<Json> _f = Api.stock(widget.code);
+  LiveQuote? _q; // 지금 시세 (오늘 봉)
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLive();
+  }
+
+  Future<void> _loadLive() async {
+    final r = await Live.stocks([widget.code]);
+    if (mounted) setState(() => _q = r.quotes[widget.code]);
+  }
+
+  void _refresh() {
+    setState(() => _f = Api.stock(widget.code));
+    _loadLive();
+  }
+
+  static String _hm(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  /// 저녁 배치 차트(어제까지) + 오늘 시세로 만든 봉 1개
+  static List<Json> _withToday(List<Json> chart, LiveQuote? q) {
+    if (q == null || q.tradedAt == null || chart.isEmpty) return chart;
+    final today = q.tradedAt!.toIso8601String().substring(0, 10);
+    if (today.compareTo('${chart.last['date']}') <= 0) return chart; // 이미 들어 있음
+    final o = q.open ?? q.price;
+    return [
+      ...chart,
+      {
+        'date': today,
+        'open': o,
+        'high': q.high ?? (o > q.price ? o : q.price),
+        'low': q.low ?? (o < q.price ? o : q.price),
+        'close': q.price,
+        'volume': q.volume ?? 0,
+        'live': true,
+      },
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,13 +78,15 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
       bottomNavigationBar: const MainNavBar(),
       appBar: AppBar(
           title: LogoTitle('${widget.name} (${widget.code})'),
-          actions: topActions(context, onRefresh: () => setState(() => _f = Api.stock(widget.code)))),
+          actions: topActions(context, onRefresh: _refresh)),
       body: Loader<Json>(
         future: _f,
-        onRetry: () => setState(() => _f = Api.stock(widget.code)),
+        onRetry: _refresh,
         builder: (context, d) {
           final c = asMap(d['candidate']);
-          final chart = asList(d['chart']);
+          final q = _q;
+          final chart = _withToday(asList(d['chart']), q);
+          final hasToday = chart.isNotEmpty && chart.last['live'] == true;
           final p = asMap(c['plan']);
           final reasons = List<String>.from(c['reasons'] as List);
           final sreasons = List<String>.from(c['strategy_reasons'] as List? ?? []);
@@ -60,6 +102,16 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
+              // ---- 기업 개요 ----
+              _ProfileCard(
+                profile: {
+                  'market': d['market'] ?? c['market'],
+                  'sector': d['sector'] ?? c['sector'],
+                  ...asMap(c['profile']),
+                },
+                theme: c['theme'] as String?,
+              ),
+
               // ---- 판정 ----
               Card(
                 color: verdictColor(verdict).withValues(alpha: 0.12),
@@ -96,7 +148,10 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(children: [
-                    _row('현재가', won(p['price'] as num), bold: true),
+                    if (q != null)
+                      _row('지금 가격', won(q.price),
+                          sub: '오늘 ${pct(q.ratio)}', color: q.ratio >= 0 ? upColor : downColor, bold: true),
+                    _row(q != null ? '분석 기준가' : '현재가', won(p['price'] as num), bold: q == null),
                     const Divider(),
                     _row('매수 적정구간', '${num0(p['entry_low'] as num)} ~ ${won(p['entry_high'] as num)}'),
                     _row('1차 목표가', won(p['target1'] as num), sub: pct(p['target1_pct'] as num), color: upColor),
@@ -115,15 +170,23 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(12),
-                    child: SizedBox(
-                      height: 300,
-                      child: PriceChart(bars: chart, levels: [
-                        PriceLevel('2차', (p['target2'] as num).toDouble(), upColor.withValues(alpha: 0.5)),
-                        PriceLevel('1차', (p['target1'] as num).toDouble(), upColor),
-                        PriceLevel('현재', (p['price'] as num).toDouble(), Colors.grey),
-                        PriceLevel('손절', (p['stop'] as num).toDouble(), downColor),
-                      ]),
-                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(
+                          hasToday
+                              ? '최근 ${chart.length}일 · 맨 오른쪽 봉 = 오늘 ${_hm(q!.tradedAt!)} 시세 (장중엔 계속 바뀜)'
+                              : '최근 ${chart.length}일 (일봉)',
+                          style: Theme.of(context).textTheme.bodySmall),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: 300,
+                        child: PriceChart(bars: chart, levels: [
+                          PriceLevel('2차', (p['target2'] as num).toDouble(), upColor.withValues(alpha: 0.5)),
+                          PriceLevel('1차', (p['target1'] as num).toDouble(), upColor),
+                          PriceLevel('현재', q?.price ?? (p['price'] as num).toDouble(), Colors.grey),
+                          PriceLevel('손절', (p['stop'] as num).toDouble(), downColor),
+                        ]),
+                      ),
+                    ]),
                   ),
                 ),
 
@@ -231,6 +294,110 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
           Expanded(child: Text(text)),
         ]),
       );
+}
+
+/// 기업 개요: 시장 · 업종 · 주요제품 · 시가총액 · PER/PBR · 상장일 등
+class _ProfileCard extends StatelessWidget {
+  const _ProfileCard({required this.profile, this.theme});
+  final Json profile;
+  final String? theme;
+
+  static String _cap(num v) {
+    if (v >= 1e12) return '${(v / 1e12).toStringAsFixed(v >= 1e13 ? 0 : 1)}조원';
+    return '${num0((v / 1e8).round())}억원';
+  }
+
+  static String _x(num? v, {String unit = '배'}) => v == null ? '-' : '${v.toStringAsFixed(v.abs() >= 100 ? 0 : 1)}$unit';
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final p = profile;
+    String? s(String k) {
+      final v = p[k];
+      return v == null || '$v'.trim().isEmpty ? null : '$v'.trim();
+    }
+
+    final market = s('market');
+    final chips = <(String, MaterialColor)>[
+      if (market != null) (market == 'KOSPI' ? '코스피' : (market == 'KOSDAQ' ? '코스닥' : market), Colors.blueGrey),
+      if (s('sector') != null) (s('sector')!, Colors.indigo),
+      if (theme != null && theme!.isNotEmpty) ('테마 · $theme', Colors.deepPurple),
+    ];
+    final info = <(String, String)>[
+      if (s('industry') != null) ('업종', s('industry')!),
+      if (s('products') != null) ('주요제품', s('products')!),
+    ];
+    final nums = <(String, String)>[
+      if (p['market_cap'] is num) ('시가총액', _cap(p['market_cap'] as num)),
+      if (p['per'] is num) ('PER', _x(p['per'] as num)),
+      if (p['pbr'] is num) ('PBR', _x(p['pbr'] as num)),
+      if (p['div'] is num) ('배당', _x(p['div'] as num, unit: '%')),
+    ];
+    final etc = [
+      if (s('listed') != null) '상장 ${s('listed')}',
+      if (s('fiscal_month') != null) '결산 ${s('fiscal_month')}',
+      if (s('ceo') != null) '대표 ${s('ceo')}',
+      if (s('region') != null) s('region')!,
+    ];
+    if (chips.isEmpty && info.isEmpty && nums.isEmpty) return const SizedBox.shrink();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.business, size: 18),
+            const SizedBox(width: 6),
+            Text('기업 개요', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+          ]),
+          if (chips.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(spacing: 6, runSpacing: 4, children: [
+              for (final (label, color) in chips)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration:
+                      BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
+                  child: Text(label, style: TextStyle(fontSize: 12, color: color.shade200)),
+                ),
+            ]),
+          ],
+          for (final (k, v) in info)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                SizedBox(width: 64, child: Text(k, style: t.bodySmall)),
+                Expanded(child: Text(v, style: const TextStyle(fontWeight: FontWeight.w500))),
+              ]),
+            ),
+          if (nums.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Row(children: [
+              for (final (k, v) in nums)
+                Expanded(
+                  child: Column(children: [
+                    Text(k, style: t.bodySmall),
+                    const SizedBox(height: 2),
+                    Text(v, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ]),
+                ),
+            ]),
+          ],
+          if (etc.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(etc.join(' · '), style: t.bodySmall),
+          ],
+          if (s('homepage') != null) SelectableText(s('homepage')!, style: t.bodySmall?.copyWith(color: Colors.lightBlue)),
+          if (info.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text('주요제품·시가총액 등은 오늘 저녁 배치 뒤부터 나옵니다.', style: t.bodySmall),
+            ),
+        ]),
+      ),
+    );
+  }
 }
 
 /// AI 설명 카드: 리포트에 미리 만든 설명이 없으면 버튼으로 요청

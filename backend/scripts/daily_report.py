@@ -79,7 +79,16 @@ def main():
         from stockeye.details import build_details
         sbc = Supabase()
         pub.publish_report(sbc, rep)
-        pub.publish_details(sbc, build_details(pit, cfg, rep, res, view), rep["date"])
+        company = None
+        try:
+            from stockeye.cloud.sync import DataSync
+            from stockeye.data.store import DataStore
+            from stockeye.config import data_dir
+            from scripts.cloud_daily import load_company
+            company = load_company(DataSync(DataStore(data_dir(cfg)), sbc), rep["date"])
+        except Exception as e:  # noqa: BLE001  (기업 개요는 참고용)
+            print(f"기업 개요 생략: {e}")
+        pub.publish_details(sbc, build_details(pit, cfg, rep, res, view, company=company), rep["date"])
         if hasattr(j, "uid"):
             pub.publish_journal(sbc, cfg, j, pit, rep)
         pub.publish_status(sbc, "trading", pub.trading_status(cfg))

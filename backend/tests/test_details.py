@@ -33,3 +33,35 @@ def test_details_chart_has_moving_averages():
     mb = [m for s in sims for m in s["matches"] if m.get("bars")]
     assert mb and all("ma60" in b for b in mb[0]["bars"])
     json.loads(_dumps(clean(rows[:5])))  # JSON 으로 올릴 수 있어야
+
+
+def test_company_profile(monkeypatch):
+    from stockeye.data import company as co
+
+    html = ("<table><tr><th>회사명</th><th>시장구분</th><th>종목코드</th><th>업종</th><th>주요제품</th>"
+            "<th>상장일</th><th>결산월</th><th>대표자명</th><th>홈페이지</th><th>지역</th></tr>"
+            "<tr><td>테스트전자</td><td>유가</td><td>100000</td><td>반도체 제조업</td><td>메모리, 파운드리</td>"
+            "<td>2001-01-02</td><td>12월</td><td>홍길동</td><td>http://t.co</td><td>경기도</td></tr></table>")
+
+    class R:
+        content = html.encode("euc-kr")
+
+        def raise_for_status(self):
+            pass
+
+    import requests
+    monkeypatch.setattr(requests, "get", lambda *a, **k: R())
+    monkeypatch.setattr(co, "fetch_shares", lambda d: {"100000": 1_000_000})
+    meta = co.fetch_company_meta("2024-12-30")
+    assert meta["rows"]["100000"]["products"] == "메모리, 파운드리"
+    assert not co.is_stale(meta)
+
+    g = generate(n_stocks=10, start="2023-01-02", end="2024-12-30", seed=1)
+    pit = PointInTimeData(g["ohlcv"], g["flows"], g["fundamentals"], g["disclosures"], g["index"], g["listing"])
+    report, res, view = build_report_full(pit, CFG, None)
+    rows = build_details(pit, CFG, report, res, view, similar=False, company=meta)
+    r = next(r for r in rows if r["code"] == "100000")
+    p = r["candidate"]["profile"]
+    assert p["industry"] == "반도체 제조업" and p["ceo"] == "홍길동"
+    assert p["market_cap"] == int(1_000_000 * r["chart"][-1]["close"])
+    json.loads(_dumps(clean(r)))

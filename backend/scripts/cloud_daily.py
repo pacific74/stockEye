@@ -68,6 +68,22 @@ def collect(store: DataStore, cfg: dict, errors: list) -> None:
         step("KIS 프로그램매매 수집", lambda: collect_program(store, cfg), errors)
 
 
+def load_company(sync, date) -> dict | None:
+    """기업 개요(업종·주요제품·상장주식수): Storage 캐시가 7일 넘었으면 새로 받아 저장"""
+    from stockeye.data.company import fetch_company_meta, is_stale
+    meta = None
+    try:
+        meta = sync.get_json("meta/company.json")
+    except Exception as e:  # noqa: BLE001
+        log.warning("기업 개요 캐시 읽기 실패: %s", e)
+    if is_stale(meta):
+        fresh = fetch_company_meta(date)
+        if fresh["rows"]:
+            sync.put_json("meta/company.json", fresh)
+            meta = fresh
+    return meta
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--skip-collect", action="store_true")
@@ -109,8 +125,9 @@ def main():
     step("리포트 → Storage", lambda: (sync.put_json("reports/latest.json", report),
                                        sync.put_json(f"reports/{report['date']}.json", report)), errors)
     step("리포트 발행", lambda: pub.publish_report(sb, report), errors, required=True)
-    rows = step("종목 상세 만들기", lambda: build_details(pit, cfg, report, res, view, similar=not args.no_similar),
-                errors)
+    company = step("기업 개요 (주 1회 갱신)", lambda: load_company(sync, report["date"]), errors)
+    rows = step("종목 상세 만들기", lambda: build_details(pit, cfg, report, res, view, similar=not args.no_similar,
+                                                         company=company), errors)
     if rows:
         step("종목 상세 발행", lambda: pub.publish_details(sb, rows, report["date"]), errors)
 

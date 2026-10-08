@@ -55,6 +55,29 @@ class ErrorView extends StatelessWidget {
   }
 }
 
+/// 점수 배지 (100점 만점) — 80↑ 빨강 / 65↑ 주황 / 50↑ 청록 / 그 아래 회색
+class ScoreBadge extends StatelessWidget {
+  const ScoreBadge(this.score, {super.key, this.label});
+  final num? score;
+  final String? label; // 예: '오늘'
+
+  @override
+  Widget build(BuildContext context) {
+    if (score == null) return const SizedBox.shrink();
+    final v = score!.toDouble();
+    final color = v >= 80 ? upColor : (v >= 65 ? Colors.orange : (v >= 50 ? Colors.teal : Colors.grey));
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withValues(alpha: 0.5))),
+      child: Text('${label == null ? '' : '$label '}${v.toStringAsFixed(0)}점',
+          style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+    );
+  }
+}
+
 class SectionTitle extends StatelessWidget {
   const SectionTitle(this.text, {super.key, this.trailing});
   final String text;

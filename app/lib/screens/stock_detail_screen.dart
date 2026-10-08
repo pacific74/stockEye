@@ -89,6 +89,11 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
           final hasToday = chart.isNotEmpty && chart.last['live'] == true;
           final p = asMap(c['plan']);
           final disc = asList(d['disclosures']);
+          final reasons = (c['reasons'] is List) ? (c['reasons'] as List).map((e) => '$e').toList() : <String>[];
+          final warnings = (c['warnings'] is List) ? (c['warnings'] as List).map((e) => '$e').toList() : <String>[];
+          final explanation = d['explanation'] == null ? null : asMap(d['explanation']);
+          final v3 = asMap(c['v3']);
+          num? pv(String k) => p[k] as num?;
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
@@ -104,7 +109,39 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
               ),
 
               // ---- V3 기준 전략: 오늘 상태 · 점수 · 매수/매도 예정 ----
-              _V3Head(v: asMap(c['v3']), price: q?.price, ratio: q?.ratio, basePrice: (p['price'] as num?)?.toDouble()),
+              _V3Head(v: v3, price: q?.price, ratio: q?.ratio, basePrice: (p['price'] as num?)?.toDouble()),
+
+              // ---- 설명 (V3 기준) ----
+              if (explanation != null) _ExplainCard(code: widget.code, initial: explanation),
+
+              // ---- 매매 계획 ----
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('매매 계획', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    if (v3['rank'] != null && v3['entry_day'] == true) ...[
+                      _row('매수', '${v3['buy_date']} 시가', bold: true),
+                      _row('매도 예정', '${v3['sell_date']} 종가 (20거래일째)', bold: true),
+                    ] else if (v3['rank'] != null)
+                      _row('매수', '다음 선정일 ${v3['next_entry'] ?? '-'} 에 상위 10 이면 다음 거래일 시가')
+                    else
+                      _row('매수', 'V3B 상위 10 에 들 때만 (5거래일마다 선정)'),
+                    const Divider(),
+                    Text('참고 가격 (V3 규칙엔 손절·익절이 없습니다 — 검증에서 손절이 수익을 깎음)',
+                        style: Theme.of(context).textTheme.bodySmall),
+                    if (pv('entry_low') != null && pv('entry_high') != null)
+                      _row('참고 매수구간', '${num0(pv('entry_low'))} ~ ${won(pv('entry_high'))}'),
+                    if (pv('target1') != null)
+                      _row('참고 1차 목표가', won(pv('target1')), sub: pct(pv('target1_pct')), color: upColor),
+                    if (pv('target2') != null)
+                      _row('참고 2차 목표가', won(pv('target2')), sub: pct(pv('target2_pct')), color: upColor),
+                    if (pv('stop') != null)
+                      _row('참고 손절가', won(pv('stop')), sub: pct(pv('loss_pct')), color: downColor),
+                  ]),
+                ),
+              ),
 
               // ---- 차트 ----
               if (chart.isNotEmpty)
@@ -121,8 +158,10 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                       SizedBox(
                         height: 300,
                         child: PriceChart(bars: chart, levels: [
+                          if (pv('target1') != null) PriceLevel('참고 목표', pv('target1')!.toDouble(), upColor),
                           if (q?.price != null || p['price'] != null)
                             PriceLevel('현재', q?.price ?? (p['price'] as num).toDouble(), Colors.grey),
+                          if (pv('stop') != null) PriceLevel('참고 손절', pv('stop')!.toDouble(), downColor),
                         ]),
                       ),
                     ]),
@@ -152,10 +191,20 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 ),
               ]),
 
-              // ---- V3B 점수 구성 ----
-              if (asMap(c['v3']).isNotEmpty) ...[
-                const SectionTitle('V3B 점수 구성'),
-                _V3Score(v: asMap(c['v3'])),
+              // ---- 근거 / 주의 (V3B) ----
+              if (reasons.isNotEmpty) ...[
+                const SectionTitle('매수 근거'),
+                ...reasons.map((r) => _bullet('✓', r, Colors.green)),
+              ],
+              if (warnings.isNotEmpty) ...[
+                const SectionTitle('주의사항'),
+                ...warnings.map((w) => _bullet('⚠', w, Colors.orange)),
+              ],
+
+              // ---- 점수 구성 ----
+              if (v3.isNotEmpty) ...[
+                const SectionTitle('점수 구성'),
+                _V3Score(v: v3),
               ],
 
               if (disc.isNotEmpty) ...[
@@ -370,55 +419,50 @@ class _ExplainCardState extends State<_ExplainCard> {
 }
 
 
-/// V3B 점수 구성: 변동성 15 · 재무 25 · 가격위치 20 (60점) + 오늘 상태 (상위 10 / 자격 없음 사유)
+/// 점수 구성: V3B 반영 3항목(변동성·재무·가격위치) + 참고 5항목(추세·거래량·거래대금·수급·공시, 점수 미반영)
 class _V3Score extends StatelessWidget {
   const _V3Score({required this.v});
   final Json v;
 
+  Widget _bar(String label, num? got, num max, {required bool counted}) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(children: [
+          SizedBox(
+              width: 96,
+              child: Text(label, style: TextStyle(color: counted ? null : Colors.grey))),
+          Expanded(
+            child: LinearProgressIndicator(
+              value: got == null ? 0 : (got / max).clamp(0, 1).toDouble(),
+              minHeight: 8,
+              color: counted ? Colors.teal : Colors.grey,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          SizedBox(
+            width: 70,
+            child: Text(got == null ? '데이터없음' : '${got.toStringAsFixed(1)}/$max',
+                textAlign: TextAlign.right, style: TextStyle(fontSize: 12, color: counted ? null : Colors.grey)),
+          ),
+        ]),
+      );
+
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
-    final parts = asMap(v['parts']);
-    final labels = asMap(v['labels']);
-    final maxes = asMap(v['maxes']);
-    final why = (v['why_not'] is List) ? (v['why_not'] as List).map((e) => '$e').toList() : <String>[];
-    final top = v['rank'] != null;
-    final color = top ? Colors.teal : (v['eligible'] == true ? Colors.blueGrey : Colors.orange);
+    final parts = asMap(v['parts']), labels = asMap(v['labels']), maxes = asMap(v['maxes']);
+    final rp = asMap(v['ref_parts']), rl = asMap(v['ref_labels']), rm = asMap(v['ref_maxes']);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        Text(v['score'] == null ? '-' : '${v['score']}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-        Text(' / 60', style: t.bodySmall),
-        const SizedBox(width: 10),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
-          child: Text('${v['status'] ?? ''}', style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
-        ),
-      ]),
+      Text('V3B ${v['score'] == null ? '-' : (v['score'] as num).toStringAsFixed(0)}점 = (변동성 + 재무 + 가격위치) ÷ 60 × 100'
+          '${v['raw'] == null ? '' : '  · 원점수 ${v['raw']}/60'}',
+          style: t.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
       for (final k in ['vola15', 'fin25', 'pos20'])
-        if (parts[k] != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: Row(children: [
-              SizedBox(width: 96, child: Text('${labels[k] ?? k}')),
-              Expanded(
-                child: LinearProgressIndicator(
-                  value: ((parts[k] as num) / ((maxes[k] as num?) ?? 1)).clamp(0, 1).toDouble(),
-                  minHeight: 8,
-                  color: Colors.teal,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              SizedBox(
-                width: 70,
-                child: Text('${(parts[k] as num).toStringAsFixed(1)}/${maxes[k] ?? ''}',
-                    textAlign: TextAlign.right, style: const TextStyle(fontSize: 12)),
-              ),
-            ]),
-          ),
-      ...why.map((w) => Text('· $w', style: t.bodySmall?.copyWith(color: Colors.orange))),
-      if (top && v['sell_date'] != null)
-        Text('선정일 매수 ${v['buy_date']} 시가 → 매도 예정 ${v['sell_date']} 종가', style: t.bodySmall),
+        _bar('${labels[k] ?? k}', parts[k] as num?, (maxes[k] as num?) ?? 1, counted: true),
+      if (rp.isNotEmpty) ...[
+        const SizedBox(height: 6),
+        Text('참고 (점수 미반영) — 검증에서 예측력이 없거나 반대였던 항목', style: t.bodySmall?.copyWith(color: Colors.grey)),
+        for (final k in ['trend5', 'vol5', 'value5', 'flow10', 'news15'])
+          _bar('${rl[k] ?? k}', rp[k] as num?, (rm[k] as num?) ?? 1, counted: false),
+      ],
       Padding(
         padding: const EdgeInsets.only(top: 4),
         child: Text('변동성 낮을수록 · 재무 좋을수록 · 20·60일선/지지선 근처 조정일수록 높음. 규칙 고정 ${v['version'] ?? ''}',
@@ -427,7 +471,6 @@ class _V3Score extends StatelessWidget {
     ]);
   }
 }
-
 
 /// 상단 카드: V3 상태 (상위 10 n위 / 자격 있음 / 자격 없음+사유) · V3B 점수 · 지금 가격 · 매수/매도 예정
 class _V3Head extends StatelessWidget {
@@ -463,8 +506,8 @@ class _V3Head extends StatelessWidget {
               ]),
             ),
             Column(children: [
-              Text(score == null ? '-' : score.toStringAsFixed(1), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-              Text('/ 60', style: t.bodySmall),
+              Text(score == null ? '-' : '${score.toStringAsFixed(0)}점', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              if (v['raw'] != null) Text('원점수 ${v['raw']}/60', style: t.bodySmall),
             ]),
           ]),
           const Divider(),

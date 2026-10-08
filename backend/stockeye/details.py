@@ -131,13 +131,24 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
             cand["sector"] = sector_of.get(code)
             apply_market_filter(cand, weak, report.get("market", {}).get("filter_ma", 60))
         v3s = getattr(res, "v3_scores", None)
+        v3text = None
         if v3s is not None:
-            from .engine.v3_report import info as v3_info
-            vi = v3_info(v3s.loc[code]) if code in v3s.index else {
-                "status": "자격 없음", "why_not": ["1차 필터 미통과 (거래대금·가격·관리종목·급락 등)"], "version": None}
-            cand = {**cand, "v3": {**(cand.get("v3") or {}), **vi}}
-            cand["score"] = cand["v3"].get("score")          # 앱의 점수 = V3B (60점)
-        e = expl.get(code)
+            from .engine.v3_report import apply as v3_apply
+            if code in v3s.index:
+                cand = v3_apply(cand, v3s.loc[code])         # 점수 = V3B 100점 환산, 판정·근거·주의 = V3
+                v3text = cand["v3"].get("text")
+            else:
+                cand = {**cand, "score": None, "reasons": [], "tags": [],
+                        "warnings": ["1차 필터 미통과 (거래대금·가격·관리종목·급락 등)"],
+                        "plan": {**(cand.get("plan") or {}), "verdict": "V3 자격 없음",
+                                 "verdict_reason": "1차 필터 미통과", "reference_only": True},
+                        "v3": {"status": "자격 없음", "why_not": ["1차 필터 미통과 (거래대금·가격·관리종목·급락 등)"],
+                               "version": None}}
+                v3text = "1차 필터(거래대금·가격·관리종목·급락)를 통과하지 못해 V3 점수를 매기지 않았습니다."
+        e = expl.get(code) if v3s is None else None
+        if v3text:
+            e = {"text": v3text, "source": "rule", "model": None, "verified": True,
+                 "disclaimer": "V3B 점수와 규칙을 풀어 쓴 참고용 설명이며 투자 권유가 아닙니다."}
         if e is None:
             try:
                 e = {"text": rule_based(cand), "source": "rule", "model": None, "verified": True,

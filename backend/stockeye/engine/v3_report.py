@@ -35,39 +35,123 @@ def _fin_at(pit, codes, as_of):
     return fi.at(list(codes), pd.Timestamp(as_of))
 
 
+RAW_X = ["close", "atr_pct", "dist_sma20", "sma60", "low20", "high20_prev", "ret5", "ret20", "per", "pbr"]
+RAW_F = ["op_pos", "roe", "op_margin", "debt_ratio", "current_ratio", "rev_yoy", "op_yoy", "impaired"]
+
+
+def to100(v) -> float | None:
+    """V3B 원점수(60점 만점) → 100점 환산 (표시용 — 순위·규칙은 원점수 그대로)"""
+    return None if v is None or v != v else round(float(v) * 100 / 60, 1)
+
+
 def build_section(pit, x: pd.DataFrame, ev: pd.DataFrame, name_of: dict, theme_of: dict, as_of) -> dict:
     """오늘 V3B 점수 (1차 필터 통과 종목) → {'list': strategies 항목, 'meta': report['v3']}"""
     s1 = ev[ev["stage1"]].index
     xs = x.loc[x.index.intersection(s1)]
     sec = getattr(pit, "sectors", pd.DataFrame())
     sector_of = dict(zip(sec["code"], sec["sector"])) if not sec.empty else {}
-    sc = v3.score(xs, ev["blocked"], _fin_at(pit, xs.index, as_of), sector_of)
+    fin = _fin_at(pit, xs.index, as_of)
+    sc = v3.score(xs, ev["blocked"], fin, sector_of)
     t = v3.top(sc, x=xs)
+    # 근거 문장용 원자료 (점수 계산에는 쓰지 않음)
+    sc = sc.copy()
+    sc["blocks"] = ev["blocks"].reindex(sc.index) if "blocks" in ev else None
+    for c_ in RAW_X:
+        sc["x_" + c_] = xs[c_] if c_ in xs else np.nan
+    for c_ in RAW_F:
+        sc["f_" + c_] = fin[c_].reindex(sc.index) if len(fin) and c_ in fin else np.nan
+    # 표시용 참고 항목 (V3 표 배점, V3B 점수에는 들어가지 않음)
+    c_ = xs["close"]
+    sc["ref_trend5"] = (2 * (c_ > xs["sma60"]).astype(float) + 2 * (xs["sma60_slope"] > 0).astype(float)
+                        + (xs["sma20"] > xs["sma60"]).astype(float))
+    v5 = xs["vol5_ratio"]
+    sc["ref_vol5"] = np.select([v5.isna(), v5 > 2, v5 > 1.3, v5 < 0.6], [2.5, 0, 3, 3], default=5)
+    for k_, src, mul in (("ref_value5", "value", 1.0), ("ref_flow10", "flow", 10 / 15), ("ref_news15", "news", 1.0)):
+        sc[k_] = ev[src].reindex(sc.index).astype(float) * mul if src in ev else np.nan
+    sc["rank"] = np.nan
+    sc.loc[t.index, "rank"] = range(1, len(t) + 1)
     cands = []
-    for i, (code, r) in enumerate(t.iterrows(), 1):
+    for i, code in enumerate(t.index, 1):
         c = candidate_dict(code, ev.loc[code], x.loc[code], name_of.get(code, code), i, theme_of.get(code))
-        c["v2_score"] = c.get("score")
-        c["score"], c["max_score"], c["stars"] = round(float(r["v3b"]), 1), 60, None
-        c["plan"] = {**c["plan"], "verdict": f"V3 선정 {i}위", "verdict_reason": "V3B 상위 10 (20거래일 보유 규칙)"}
-        c["reasons"], c["warnings"], c["tags"] = [], [], []
-        c["v3"] = {"score": round(float(r["v3b"]), 1), "max": 60, "rank": i, "eligible": True, "status": f"V3 상위 10 ({i}위)",
-                   "why_not": [], "version": v3.VERSION,
-                   "parts": {k: round(float(r[k]), 1) for k in v3.PARTS}, "labels": {k: v for k, (v, _) in v3.PARTS.items()},
-                   "maxes": {k: m for k, (_, m) in v3.PARTS.items()}}
+        c = apply(c, sc.loc[code])
         cands.append(c)
     lst = {"name": "V3 기준 전략", "short": "V3 기준", "description": DESC, "count": int(sc["eligible"].sum()),
            "candidates": cands}
     meta = {"version": v3.VERSION, "locked_at": v3.LOCKED_AT, "rules": v3.RULES_TEXT, "eligible": int(sc["eligible"].sum()),
-            "top": [{"code": c["code"], "name": c["name"], "score": c["v3"]["score"]} for c in cands]}
-    sc = sc.copy()
-    sc["blocks"] = ev["blocks"].reindex(sc.index) if "blocks" in ev else None
-    sc["rank"] = np.nan
-    sc.loc[t.index, "rank"] = range(1, len(t) + 1)
+            "top": [{"code": c["code"], "name": c["name"], "score": c["score"], "raw": c["v3"]["raw"]} for c in cands]}
     return {"list": lst, "meta": meta, "eligible": list(sc.index[sc["eligible"]]), "scores": sc}
 
 
+def apply(c: dict, row: pd.Series) -> dict:
+    """후보 dict 를 V3 로: 점수(100점 환산)·판정·근거·주의·설명. 매수구간·목표·손절은 '참고'로 남김"""
+    vi = info(row)
+    rank = vi["rank"]
+    c = {**c, "v2_score": c.get("score"), "score": vi["score"], "max_score": 100, "stars": None, "tags": [],
+         "reasons": vi["reasons"], "warnings": vi["warnings"], "v3": {**(c.get("v3") or {}), **vi}}
+    verdict = f"V3 선정 {rank}위" if rank else ("V3 자격 있음" if vi["eligible"] else "V3 자격 없음")
+    why = "V3B 상위 10 — 다음 거래일 시가 매수 · 20거래일 보유" if rank else (
+        "상위 10 에 들면 매수 (5거래일마다 선정)" if vi["eligible"] else " · ".join(vi["why_not"]) or "조건 미달")
+    c["plan"] = {**(c.get("plan") or {}), "verdict": verdict, "verdict_reason": why, "reference_only": True}
+    return c
+
+
+def _pct(v, nd=1):
+    return None if v is None or v != v else round(float(v) * 100, nd)
+
+
+def reasons_v3(row: pd.Series) -> tuple[list[str], list[str]]:
+    """V3B 근거(✓)와 주의(⚠) 문장 — 점수를 매긴 실제 값으로"""
+    g = row.get
+    R, W = [], []
+    atr = g("x_atr_pct")
+    if atr == atr and atr is not None:
+        (R if g("vola15", 0) >= 9 else W).append(
+            f"{'변동성 낮음' if g('vola15', 0) >= 9 else '변동성 큼'} (하루 평균 변동폭 {_pct(atr)}%) → 변동성 {g('vola15'):.0f}/15")
+    if g("f_op_pos") == g("f_op_pos") and g("f_op_pos") is not None:
+        bits = ["영업이익 흑자" if bool(g("f_op_pos")) else "영업적자"]
+        for k, lab, cut in (("f_roe", "ROE", 0.08), ("f_op_margin", "영업이익률", 0.05)):
+            v = g(k)
+            if v == v and v is not None:
+                bits.append(f"{lab} {_pct(v)}%")
+        dr = g("f_debt_ratio")
+        if dr == dr and dr is not None:
+            bits.append(f"부채비율 {_pct(dr, 0)}%")
+        for k, lab in (("f_rev_yoy", "매출"), ("f_op_yoy", "영업이익")):
+            v = g(k)
+            if v == v and v is not None:
+                bits.append(f"{lab} {'+' if v >= 0 else ''}{_pct(v)}% (전년 대비)")
+        (R if g("fin25", 0) >= 15 else W).append(" · ".join(bits) + f" → 재무 {g('fin25'):.1f}/25")
+        if dr == dr and dr is not None and dr >= 2:
+            W.append(f"부채비율 높음 ({_pct(dr, 0)}%)")
+        if bool(g("f_impaired")):
+            W.append("자본잠식")
+    else:
+        W.append("재무 자료 없음 → 재무 중립 10/25")
+    pos = []
+    d20 = g("x_dist_sma20")
+    if d20 == d20 and d20 is not None and abs(d20) <= 0.03:
+        pos.append(f"20일선 근처 (이격 {'+' if d20 >= 0 else ''}{_pct(d20)}%)")
+    c, s60 = g("x_close"), g("x_sma60")
+    if c and s60 and s60 == s60 and abs(c / s60 - 1) <= 0.03:
+        pos.append(f"60일선 근처 ({'+' if c >= s60 else ''}{_pct(c / s60 - 1)}%)")
+    h20 = g("x_high20_prev")
+    if c and h20 and h20 == h20 and -0.15 <= c / h20 - 1 <= -0.04:
+        pos.append(f"최근 20일 고점 대비 {_pct(c / h20 - 1)}% 조정")
+    l20 = g("x_low20")
+    if c and l20 and l20 == l20 and c <= l20 * 1.05:
+        pos.append("20일 저점(지지선) 근처")
+    if pos:
+        R.append(" · ".join(pos) + f" → 가격위치 {g('pos20'):.0f}/20")
+    r5, r20 = g("x_ret5"), g("x_ret20")
+    if (r5 == r5 and r5 is not None and r5 > 0.10) or (r20 == r20 and r20 is not None and r20 > 0.20):
+        W.append(f"최근 급등 (5일 {_pct(r5)}% · 20일 {_pct(r20)}%) → 가격위치 최대 5점")
+    elif not pos:
+        W.append(f"좋은 매수 위치 아님 (이평선·지지선에서 멂) → 가격위치 {g('pos20'):.0f}/20")
+    return R, W
+
+
 def info(row: pd.Series) -> dict:
-    """종목 상세용: V3B 점수 구성 + 오늘 상태 (상위 10 / 자격 있음 / 자격 없음 사유)"""
+    """종목 상세용: V3B 점수(100점 환산 + 원점수) · 구성 · 오늘 상태 · 근거/주의 · 설명"""
     why = []
     if bool(row.get("blocked")):
         b = row.get("blocks")
@@ -79,10 +163,25 @@ def info(row: pd.Series) -> dict:
     rank = row.get("rank")
     rank = int(rank) if rank == rank and rank is not None else None
     status = f"V3 상위 10 ({rank}위)" if rank else ("자격 있음 · 상위 10 밖" if bool(row.get("eligible")) else "자격 없음")
-    return {"score": round(float(row["v3b"]), 1), "max": 60, "rank": rank, "eligible": bool(row.get("eligible")),
-            "status": status, "why_not": why, "version": v3.VERSION,
+    R, W = reasons_v3(row)
+    raw = round(float(row["v3b"]), 1)
+    s100 = to100(raw)
+    text = (f"V3B {s100:.0f}점 (원점수 {raw}/60) · {status}. "
+            + ("근거: " + "; ".join(R) + ". " if R else "")
+            + ("주의: " + "; ".join(W + why) + ". " if (W or why) else "")
+            + ("V3 규칙: 선정 다음 거래일 시가 매수 → 20거래일째 종가 매도 (손절·익절 없음, 다시 선정되면 연장)."
+               if rank else "V3B 상위 10 에 들 때만 매수합니다."))
+    return {"score": s100, "raw": raw, "max": 100, "raw_max": 60, "rank": rank, "eligible": bool(row.get("eligible")),
+            "status": status, "why_not": why, "version": v3.VERSION, "reasons": R, "warnings": W, "text": text,
             "parts": {k: round(float(row[k]), 1) for k in v3.PARTS}, "labels": {k: v for k, (v, _) in v3.PARTS.items()},
-            "maxes": {k: m for k, (_, m) in v3.PARTS.items()}}
+            "maxes": {k: m for k, (_, m) in v3.PARTS.items()},
+            # 점수 미반영 참고 항목 (V3 표 배점): 추세·거래량·거래대금·수급·공시
+            "ref_parts": {k: (None if row.get("ref_" + k) != row.get("ref_" + k) or row.get("ref_" + k) is None
+                              else round(float(row["ref_" + k]), 1)) for k in REF},
+            "ref_labels": {k: v for k, (v, _) in REF.items()}, "ref_maxes": {k: m for k, (_, m) in REF.items()}}
+
+
+REF = {"trend5": ("추세", 5), "vol5": ("거래량", 5), "value5": ("거래대금", 5), "flow10": ("수급", 10), "news15": ("공시", 15)}
 
 
 def _prices(pit, since: pd.Timestamp):

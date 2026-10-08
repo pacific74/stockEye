@@ -101,8 +101,9 @@ class V3PickTile extends StatelessWidget {
         ]),
         isThreeLine: true,
         trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text('${v['score'] ?? '-'}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          Text('/ 60', style: t.bodySmall),
+          Text(v['score'] == null ? '-' : '${(v['score'] as num).toStringAsFixed(0)}점',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          if (v['raw'] != null) Text('원 ${v['raw']}/60', style: t.bodySmall),
         ]),
         onTap: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}'))),

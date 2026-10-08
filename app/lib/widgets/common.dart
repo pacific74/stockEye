@@ -94,7 +94,7 @@ class StockName extends StatelessWidget {
       ]);
 }
 
-/// 점수 배지 (V3B 60점 만점) — 45↑ 빨강 / 38↑ 주황 / 30↑ 청록 / 그 아래 회색
+/// 점수 배지 (V3B 100점 환산) — 80↑ 빨강 / 65↑ 주황 / 50↑ 청록 / 그 아래 회색
 class ScoreBadge extends StatelessWidget {
   const ScoreBadge(this.score, {super.key, this.label});
   final num? score;
@@ -104,7 +104,7 @@ class ScoreBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     if (score == null) return const SizedBox.shrink();
     final v = score!.toDouble();
-    final color = v >= 45 ? upColor : (v >= 38 ? Colors.orange : (v >= 30 ? Colors.teal : Colors.grey));
+    final color = v >= 80 ? upColor : (v >= 65 ? Colors.orange : (v >= 50 ? Colors.teal : Colors.grey));
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(

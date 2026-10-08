@@ -208,7 +208,7 @@ class _ChartCard extends StatelessWidget {
           ]),
           Text(subtitle, style: t.bodySmall),
           const SizedBox(height: 8),
-          SizedBox(height: 170, child: child),
+          SizedBox(height: 230, child: child),
         ]),
       ),
     );

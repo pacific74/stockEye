@@ -113,7 +113,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: SizedBox(
-                      height: 220,
+                      height: 300,
                       child: PriceChart(bars: chart, levels: [
                         PriceLevel('2차', (p['target2'] as num).toDouble(), upColor.withValues(alpha: 0.5)),
                         PriceLevel('1차', (p['target1'] as num).toDouble(), upColor),

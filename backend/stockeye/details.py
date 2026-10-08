@@ -1,6 +1,6 @@
 """전 종목 상세 미리 만들기 (앱의 종목 화면 = 서버 없이 Supabase 에서 바로 읽기).
 
-종목마다:  점수·매매계획·근거·주의 / 최근 120일 차트 / 최근 30일 공시 / 설명 / (후보만) 비슷한 과거 패턴
+종목마다:  점수·매매계획·근거·주의 / 최근 120일 차트(이평선 5·20·60·120 포함) / 최근 30일 공시 / 설명 / (후보만) 비슷한 과거 패턴
 리포트와 같은 스크리닝 결과(피처 단면)를 그대로 쓰므로 미래 데이터는 들어가지 않는다.
 """
 from __future__ import annotations
@@ -16,6 +16,32 @@ from .engine.scoring import score_row
 from .engine.trade_plan import make_plan
 
 log = logging.getLogger(__name__)
+
+MA_WINDOWS = (5, 20, 60, 120)
+
+
+def _add_ma(df: pd.DataFrame) -> pd.DataFrame:
+    """종목별 이동평균 (code, date 로 정렬된 df). 앞쪽 기간이 모자라면 NaN."""
+    df = df.sort_values(["code", "date"]).reset_index(drop=True)
+    g = df.groupby("code", sort=False)["close"]
+    for n in MA_WINDOWS:
+        df[f"ma{n}"] = g.rolling(n, min_periods=n).mean().reset_index(level=0, drop=True)
+    return df
+
+
+def _bars(g: pd.DataFrame) -> list[dict]:
+    """일봉 → 앱 차트용 [{date, open, high, low, close, volume, ma5, ma20, ma60, ma120}]"""
+    cols = [g[c].tolist() for c in ("date", "open", "high", "low", "close", "volume")]
+    mas = [g[f"ma{n}"].tolist() if f"ma{n}" in g else [None] * len(g) for n in MA_WINDOWS]
+    out = []
+    for i, (d, o, h, lo, c, v) in enumerate(zip(*cols)):
+        b = {"date": str(pd.Timestamp(d).date()), "open": float(o), "high": float(h), "low": float(lo),
+             "close": float(c), "volume": float(v)}
+        for n, m in zip(MA_WINDOWS, mas):
+            x = m[i]
+            b[f"ma{n}"] = None if x is None or pd.isna(x) else round(float(x), 1)
+        out.append(b)
+    return out
 
 
 def _report_index(report: dict) -> dict[str, dict]:
@@ -44,14 +70,13 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
     expl = report.get("explanations", {})
     theme_of = {c["code"]: c.get("theme") for c in rep_idx.values()}
 
-    # 차트: 최근 chart_days 영업일
+    # 차트: 최근 chart_days 영업일 (+ 이평선 계산용으로 그 앞 119일을 더 읽어서 계산)
     oh = view.ohlcv()
     dates = sorted(oh["date"].unique())
-    oh = oh[oh["date"] >= dates[max(0, len(dates) - chart_days)]].sort_values(["code", "date"])
-    charts = {code: [{"date": str(pd.Timestamp(d).date()), "open": float(o), "high": float(h), "low": float(lo),
-                      "close": float(c), "volume": float(v)}
-                     for d, o, h, lo, c, v in zip(g["date"], g["open"], g["high"], g["low"], g["close"], g["volume"])]
-              for code, g in oh.groupby("code", sort=False)}
+    warm = max(MA_WINDOWS) - 1
+    oh = _add_ma(oh[oh["date"] >= dates[max(0, len(dates) - chart_days - warm)]])
+    oh = oh[oh["date"] >= dates[max(0, len(dates) - chart_days)]]
+    charts = {code: _bars(g) for code, g in oh.groupby("code", sort=False)}
 
     disc = view.disclosures(list(x.index), since_days=30) if not view._disc.empty else pd.DataFrame()
     discs = {} if disc.empty else {
@@ -117,7 +142,7 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
             results[code] = s
         # 비교 화면용: 각 유사 구간의 실제 일봉 (패턴 20일 + 그 뒤 20일)
         need = {m["code"] for s in results.values() if "error" not in s for m in s["matches"]}
-        oh = pit.ohlcv[pit.ohlcv["code"].isin(need)].sort_values(["code", "date"])
+        oh = _add_ma(pit.ohlcv[pit.ohlcv["code"].isin(need)])
         groups = {c: g.reset_index(drop=True) for c, g in oh.groupby("code", sort=False)}
         for code, s in results.items():
             if "error" not in s:
@@ -129,9 +154,6 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
                     if len(pos) == 0:
                         continue
                     seg = g.iloc[int(pos[0]): int(pos[0]) + s["window"] + len(m.get("future", []))]
-                    m["bars"] = [{"date": str(pd.Timestamp(d).date()), "open": float(o), "high": float(h),
-                                  "low": float(lo), "close": float(c), "volume": float(v)}
-                                 for d, o, h, lo, c, v in zip(seg["date"], seg["open"], seg["high"], seg["low"],
-                                                              seg["close"], seg["volume"])]
+                    m["bars"] = _bars(seg)
             by_code[code]["similar_patterns"] = s
     return rows

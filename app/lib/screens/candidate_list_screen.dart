@@ -42,6 +42,9 @@ class _ListTab extends StatefulWidget {
 
 enum _Sort { score, strategy, rank }
 
+/// 목록마다 최대 몇 개까지 보여줄지
+const maxShow = 10;
+
 class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
   late Future<Json> _f = Api.candidates(widget.listKey);
   _Sort _sort = _Sort.score; // 기본: 종합 점수 높은 순
@@ -65,6 +68,11 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
     return out;
   }
 
+  static String _md(String ymd) {
+    final t = DateTime.tryParse(ymd);
+    return t == null ? ymd : '${t.month}/${t.day}';
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -75,10 +83,18 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
       future: _f,
       onRetry: () => setState(() => _f = Api.candidates(widget.listKey)),
       builder: (context, d) {
-        final cands = _sorted(asList(d['candidates']));
+        final all = _sorted(asList(d['candidates']));
+        final cands = all.take(maxShow).toList(); // 정렬한 뒤 상위 10개만
         return ListView(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
           children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+              child: Text(
+                  '${d['date'] == null ? '최근' : _md('${d['date']}')} 장 마감 분석 · '
+                  '${all.length > maxShow ? '조건 통과 ${all.length}개 중 ' : ''}상위 ${cands.length}개',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ),
             if (d['description'] != null)
               Card(
                 child: Padding(

@@ -1,7 +1,7 @@
-"""주간 백테스트 (클라우드): 전략 A~E + 종합 엔진을 5년치로 검증 → 앱의 백테스트 화면에 발행.
+"""주간 백테스트 (클라우드): 매수후보 V2 엔진을 5년치로 검증 → 앱의 백테스트 화면(관리자)에 발행.
 
-  python -m scripts.cloud_backtest
-  python -m scripts.cloud_backtest --only A,D
+  python -m scripts.cloud_backtest              # V2
+  python -m scripts.cloud_backtest --only A,D   # (예전) V1 전략
 """
 from __future__ import annotations
 
@@ -39,8 +39,22 @@ def main():
     pit = PointInTimeData.from_store(store)
     t0 = time.time()
     log.info("지표 계산 중 (전 종목 × 전 기간)...")
+    if not args.only:
+        from stockeye.backtest.engine_v2 import BacktesterV2
+        from stockeye.indicators import compute_features
+        feat = compute_features(pit.ohlcv, pit.flows, pit.fund)
+        res = BacktesterV2(pit, cfg, feat).run()
+        d = res.to_dict()
+        pub.publish_backtest(sb, "V2", "매수후보 V2 엔진", d)
+        m = d["metrics"]
+        log.info("[V2] %s회 승률 %s%% 기대값 %s%% PF %s 총 %s%% MDD %s%% (%.0f분)", m.get("trades"), m.get("win_rate"),
+                 m.get("expectancy_pct"), m.get("profit_factor"), m.get("total_return_pct"), m.get("mdd_pct"),
+                 (time.time() - t0) / 60)
+        pub.process_backtest_requests(sb, pit, cfg, limit=5, features=feat)
+        pub.publish_status(sb, "backtest", {"done": ["V2"], "minutes": round((time.time() - t0) / 60, 1)})
+        return
     bt = Backtester(pit, cfg)
-    keys = args.only.split(",") if args.only else list(STRATEGIES) + ["engine"]
+    keys = args.only.split(",")
     done = []
     for k in keys:
         strat = ScreenerStrategy(cfg, args.min_score) if k == "engine" else NamedStrategy(k, cfg)

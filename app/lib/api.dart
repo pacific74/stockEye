@@ -457,7 +457,7 @@ class _Http {
 
   static Future<Json> dashboard() => get('/api/dashboard');
   static Future<List<Json>> allCandidates() async {
-    final lists = await Future.wait(['overall', 'A', 'B', 'C', 'D', 'E']
+    final lists = await Future.wait(['overall', 'signal', 'buy', 'watch']
         .map((k) => candidates(k, 30).then((d) => asList(d['candidates']), onError: (_) => <Json>[])));
     return _uniqueByCode(lists.expand((l) => l));
   }

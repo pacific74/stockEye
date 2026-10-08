@@ -95,7 +95,21 @@ def rule_based(c: dict) -> str:
     risk = ""
     if w:
         risk = f"다만 {', '.join(x.split(' (')[0] for x in w[:2])} 신호가 있어 "
-    if p["verdict"] == "눌림 대기":
+    v = p["verdict"]
+    if c.get("engine") == "v2":
+        ms = {"A": "상승장", "B": "중립", "C": "하락장"}.get(c.get("market_state"), "")
+        head = f"시장 {ms}, " if ms else ""
+        if v == "매수 신호":
+            act = (f"{head}지지선 반등이 확인돼 매수 신호다. 매수구간 {p['entry_low']:,}~{p['entry_high']:,}원, "
+                   f"손절 {p['stop']:,}원 기준으로 1차 30%만 사고, 반등이 이어지면 30%, 고점을 넘으면 40%를 더하는 분할 매수가 좋다.")
+        elif v in ("강력 후보", "매수 후보"):
+            act = f"{head}{v}지만 아직 매수 자리는 아니다. 20일선이나 지지선 부근에서 양봉 반등과 거래량을 확인한 뒤 진입하는 편이 낫다."
+        elif v == "매수 차단":
+            act = f"점수와 관계없이 매수를 피해야 한다 ({', '.join(c.get('blocks') or [])})."
+        else:
+            act = f"{head}{p.get('verdict_reason', '현재는 관망이 적절해 보인다')}."
+        return " ".join(x for x in [s1 + ".", s2, risk + act] if x).replace("..", ".")
+    if v == "눌림 대기":
         act = f"추격매수보다는 {p['entry_low']:,}원 부근 눌림목 진입이 유리해 보인다."
     elif p["verdict"] == "매수 고려":
         act = (f"매수구간은 {p['entry_low']:,}~{p['entry_high']:,}원, 손절 {p['stop']:,}원 기준으로 "

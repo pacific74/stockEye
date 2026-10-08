@@ -93,10 +93,22 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
         log.warning("기업 개요 만들기 실패: %s", ex)
         profiles = {}
 
+    v2ev = getattr(res, "v2", None)          # V2 엔진이면 리포트가 전 종목을 이미 평가해 둠
+    if v2ev is not None:
+        from .engine.v2_report import candidate_dict
+        bg_theme = {c["code"]: c.get("theme") for c in rep_idx.values()}
+
     rows, failed = [], 0
     for code, r in x.iterrows():
         if code in rep_idx:
             cand = rep_idx[code]
+        elif v2ev is not None:
+            if code not in v2ev.index:
+                failed += 1
+                continue
+            n = nm.loc[code] if code in nm.index else None
+            cand = candidate_dict(code, v2ev.loc[code], r, str(n["name"]) if n is not None else code, 0,
+                                  bg_theme.get(code))
         else:
             try:
                 sr = score_row(code, r, cfg["score_weights"], titles.get(code, []) if titles else None)

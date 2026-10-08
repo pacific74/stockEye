@@ -13,7 +13,8 @@ class CandidateListScreen extends StatefulWidget {
   final String list;
   final String title;
 
-  static const keys = ['now', 'overall', 'A', 'B', 'C', 'D', 'E']; // now = 오늘 지금 가격 기준
+  // now = 오늘 지금 가격 기준 / signal·buy·watch = 매수후보 V2 (어제 장 마감 분석)
+  static const keys = ['now', 'signal', 'buy', 'watch'];
 
   @override
   State<CandidateListScreen> createState() => _CandidateListScreenState();
@@ -67,7 +68,7 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
   late Future<Json> _f = Api.candidates(widget.listKey);
   _Sort _sort = _Sort.score; // 기본: 종합 점수 높은 순
 
-  bool get _isStrategy => widget.listKey != 'overall';
+  bool get _isStrategy => const ['A', 'B', 'C', 'D', 'E'].contains(widget.listKey); // (예전 V1 전략)
 
   List<Json> _sorted(List<Json> cands) {
     final out = List<Json>.from(cands);
@@ -143,7 +144,14 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
                 ),
               ),
             if (cands.isEmpty)
-              const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('오늘 조건을 만족한 종목이 없습니다'))),
+              Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Center(
+                      child: Text(
+                          widget.listKey == 'signal'
+                              ? '오늘은 매수 신호가 없습니다.\n무리해서 살 필요 없는 날일 수 있어요.'
+                              : '오늘 조건을 만족한 종목이 없습니다',
+                          textAlign: TextAlign.center))),
             ...cands.asMap().entries.map((e) => CandidateTile(
                 c: e.value,
                 rank: e.key + 1,

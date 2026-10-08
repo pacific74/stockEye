@@ -15,10 +15,10 @@ const _labels = {
   'volume': '거래량',
   'trading_value': '거래대금',
   'supply': '수급',
-  'breakout': '돌파/가격위치',
-  'volatility': '변동성',
+  'breakout': '가격위치',
+  'volatility': '변동성·위험',
   'financial': '재무',
-  'news': '뉴스/공시',
+  'news': '공시',
 };
 
 class StockDetailScreen extends StatefulWidget {
@@ -128,6 +128,26 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                           const SizedBox(height: 6),
                           Text('해당 전략: ${tags.map((t) => strategyLabels[t] ?? t).join(', ')}',
                               style: Theme.of(context).textTheme.bodySmall),
+                        ],
+                        if (c['engine'] == 'v2') ...[
+                          const SizedBox(height: 8),
+                          Wrap(spacing: 6, runSpacing: 4, children: [
+                            if (c['grade'] != null) _pill('${c['grade_icon'] ?? ''} ${c['grade']}', verdictColor('${c['grade']}')),
+                            if (c['market_state_label'] != null)
+                              _pill(
+                                  '시장 ${c['market_state'] == 'A' ? '🟢' : c['market_state'] == 'C' ? '🔴' : '🟡'} ${c['market_state_label']}',
+                                  c['market_state'] == 'A'
+                                      ? Colors.green
+                                      : (c['market_state'] == 'C' ? downColor : Colors.orange)),
+                            if (c['sector_score'] != null)
+                              _pill('업종 ${c['sector'] ?? ''} ${(c['sector_score'] as num).toStringAsFixed(0)}/15',
+                                  (c['sector_score'] as num) >= 5 ? Colors.indigo : Colors.grey),
+                          ]),
+                          if ((c['blocks'] as List? ?? const []).isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text('⛔ 매수 차단: ${(c['blocks'] as List).join(', ')}',
+                                style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                          ],
                         ],
                       ]),
                     ),
@@ -276,6 +296,12 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
       ),
     );
   }
+
+  Widget _pill(String t, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(8)),
+        child: Text(t, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
+      );
 
   Widget _row(String k, String v, {String? sub, Color? color, bool bold = false}) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),

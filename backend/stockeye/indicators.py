@@ -59,7 +59,7 @@ def consecutive_positive(s: pd.Series) -> pd.Series:
 # ---------------------------------------------------------------------------
 # 종목 1개에 대한 전체 피처 계산
 # ---------------------------------------------------------------------------
-PRICE_LEVEL_COLS = ["sma5", "sma20", "sma60", "sma120", "high20_prev", "high60_prev", "high250", "low10",
+PRICE_LEVEL_COLS = ["sma5", "sma20", "sma60", "sma120", "high20_prev", "high60_prev", "high250", "low10", "low20",
                     "macd", "macd_signal", "macd_hist", "bb_mid", "bb_up", "bb_low", "atr14"]
 
 
@@ -136,6 +136,16 @@ def features_for_one(bars: pd.DataFrame, flows: pd.DataFrame | None = None,
     f["near_high250"] = c / h.rolling(250, min_periods=60).max()
     f["up_day"] = (c > c.shift(1)) & (bars["close"] > bars["open"])
 
+    # ---- V2 추가 피처 ----
+    f["low20"] = l.rolling(20, min_periods=20).min()                    # 최근 20일 저점 (스윙 저점)
+    f["sma120_slope"] = f["sma120"] / f["sma120"].shift(10) - 1
+    up_v = v.where(c > c.shift(1), 0.0).rolling(20, min_periods=10).sum()
+    dn_v = v.where(c < c.shift(1), 0.0).rolling(20, min_periods=10).sum()
+    f["updown_vol20"] = up_v / dn_v.replace(0, np.nan)                  # 20일간 상승일 거래량 / 하락일 거래량
+    f["vol_trend"] = sma(v, 5) / sma(v, 20)                               # 5일 평균 / 20일 평균 (오늘 포함)
+    f["touch_sma20_3d"] = ((l <= sma(c, 20) * 1.01).astype(float)
+                           .rolling(3, min_periods=1).max())              # 최근 3일 안에 20일선 근처까지 내려옴
+
     for col in PRICE_LEVEL_COLS:          # 보정 단위 → 그날 실제 가격 단위
         f[col] = f[col] * C
 
@@ -146,6 +156,7 @@ def features_for_one(bars: pd.DataFrame, flows: pd.DataFrame | None = None,
                 x = fl[col].astype("float64")
                 f[f"{col}_net"] = x
                 f[f"{col}_net5"] = x.rolling(5, min_periods=1).sum()
+                f[f"{col}_net20"] = x.rolling(20, min_periods=5).sum()
                 # 수급 데이터가 없는 날은 '연속일수'도 모름(NaN) — 0 으로 두면 데이터 유무가 결과를 바꿈
                 f[f"{col}_streak"] = consecutive_positive(x.fillna(0)).where(x.notna())
     if fund is not None and len(fund):

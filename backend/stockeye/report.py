@@ -57,26 +57,49 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
     sector_of = dict(zip(sectors["code"], sectors["sector"])) if not sectors.empty else {}
 
     d = res.to_dict()
-    weak = weak_markets(market, cfg)
-    for c in d["candidates"] + [c for v in d["strategies"].values() for c in v["candidates"]]:
-        g = best_group.get(c["code"])
-        c["theme"] = g["group"] if g else None
-        c["sector"] = sector_of.get(c["code"])
-        apply_market_filter(c, weak, market.get("filter_ma", 60))
-
+    theme_of = {c: g["group"] for c, g in best_group.items()}
     report = {
         "date": d["date"], "as_of": d["as_of"], "funnel": d["funnel"], "dropped": d["dropped"],
         "market": market, "sectors": strength, "unmatched_theme_names": unmatched,
-        "top10": d["candidates"][:10], "candidates": d["candidates"], "strategies": d["strategies"],
         "labels": d["labels"], "explanations": {},
     }
 
-    # ---- AI 설명 (TOP10 + 전략별 상위 2개) ----
-    if with_ai:
-        ex = Explainer(cfg, data_dir(cfg) / "ai_cache")
+    engine = (cfg.get("engine") or "v2").lower()
+    if engine == "v2":
+        # ---- 매수후보 V2: 시장 → 업종 → 재무·공시 위험 → 기술 → 100점 → 가격위치 → 과열 → 등급 / 매수 신호 ----
+        from .engine.v2_report import evaluate_all, build_lists, market_summary
+        ev = evaluate_all(pit, view, x, uni.index if uni is not None else [], cfg, as_of)
+        res.v2 = ev
+        name_of = dict(zip(names["code"], names["name"])) if not names.empty else {}
+        L = build_lists(ev, x, name_of, theme_of)
+        report.update({
+            "engine": "v2",
+            "top10": L["overall"][:10], "candidates": L["overall"], "strategies": L["lists"],
+            "v2": {
+                "market": market_summary(ev, cfg),
+                "counts": {**ev[ev["stage1"]]["status"].value_counts().to_dict(),
+                           "매수 신호": int(ev["signal"].sum())},
+                "has_financials": bool(ev.attrs.get("has_fin")), "has_disclosures": bool(ev.attrs.get("has_disc")),
+            },
+        })
+        targets = L["overall"][: cfg.get("ai", {}).get("explain_top", 20)]
+    else:
+        # ---- (예전) V1: 종합 점수 + 전략 A~E ----
+        weak = weak_markets(market, cfg)
+        for c in d["candidates"] + [c for v in d["strategies"].values() for c in v["candidates"]]:
+            g = best_group.get(c["code"])
+            c["theme"] = g["group"] if g else None
+            c["sector"] = sector_of.get(c["code"])
+            apply_market_filter(c, weak, market.get("filter_ma", 60))
+        report.update({"engine": "v1", "top10": d["candidates"][:10], "candidates": d["candidates"],
+                       "strategies": d["strategies"]})
         targets = list(d["candidates"][: cfg.get("ai", {}).get("explain_top", 20)])
         for v in d["strategies"].values():
             targets += v["candidates"][:2]
+
+    # ---- AI 설명 (상위 후보) ----
+    if with_ai:
+        ex = Explainer(cfg, data_dir(cfg) / "ai_cache")
         seen = set()
         for c in targets:
             if c["code"] in seen:

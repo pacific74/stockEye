@@ -79,7 +79,20 @@ backtest:
   regime_ma: 60              # 시장 필터: 종목이 속한 지수가 60일선 아래면 신규 매수 쉼 (0 = 끔)
   regime_index: own          # own = 종목의 시장(코스피/코스닥) 지수 | KOSPI | KOSDAQ
 
-# ---------------- 시장 필터 (실전) ----------------
+# ---------------- 매수후보 엔진 ----------------
+engine: v2                   # v2 = 매수후보 V2 (시장→업종→재무·공시→기술→가격위치→과열) / v1 = 예전 종합점수 + 전략 A~E
+v2:
+  min_value: 3_000_000_000   # 20일 평균 거래대금 30억 미만 → 매수 차단
+  max_stop_pct: 0.12         # 정상 손절폭이 12% 넘게 필요 → 매수 차단
+  signal_max_stop_pct: 0.06  # 매수 신호는 손절폭 6% 이내
+  min_sector_score: 5        # 업종 강도(0~15) 이 값 미만 → 업종 약세 관망
+  signal_min_score: 75       # 매수 신호 최소 점수
+  target1_pct: 0.08          # 1차 익절 +8% (절반)
+  target2_pct: 0.15          # 2차 익절 +15% (남은 것의 절반), 나머지는 20일선 이탈 때
+  max_hold_days: 40
+  market_sizing: {A: 1.0, B: 0.5, C: 0.0}   # 시장 상승장 / 중립 / 하락장 매수 비중
+
+# ---------------- 시장 필터 (V1 용) ----------------
 # 2026-10-08 실험: 5개 전략 모두 손실·낙폭이 크게 줄어듦 (docs: 프로젝트 backtest-experiments 문서)
 market_filter:
   enabled: true
@@ -108,8 +121,8 @@ trading:
   broker: paper              # paper(내부 모의) | kis_vps(KIS 모의투자 계좌) | kis_prod(실전 계좌)
   allow_real_orders: false   # ★ 실전 주문 허용. kis_prod 를 쓰려면 직접 true 로 바꿔야 함
   auto_stop_loss: false      # semi_auto 에서 손절은 승인 없이 바로 주문할지 (기본: 손절도 승인 필요)
-  signal_lists: [overall, A, B, D]      # 진입 신호를 볼 후보 목록 (C 급등초기는 기본 제외)
-  entry_verdicts: [매수 고려, 눌림 대기]   # 이 판정인 종목이 '매수 적정구간'에 오면 신호
+  signal_lists: [overall, signal, A, B, D]      # 진입 신호를 볼 후보 목록 (C 급등초기는 기본 제외)
+  entry_verdicts: [매수 신호, 매수 고려, 눌림 대기]   # V2: 매수 신호 / (V1: 매수 고려·눌림 대기) 종목이 '매수 적정구간'에 오면 신호
   entry_start: "09:05"       # 장 초반 5분 변동성 회피
   entry_end: "15:00"
   poll_seconds: 30           # 시세 확인 간격 (KIS 초당 호출 제한 고려)

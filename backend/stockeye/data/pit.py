@@ -142,6 +142,7 @@ class PointInTimeData:
         self.index = _norm(index if index is not None else e())
         self.listing = listing if listing is not None else e()
         self.sectors = e()      # 업종 분류 (현재 스냅샷; 그룹핑 용도라 미래참조 영향 작음)
+        self.financials = e()   # DART 주요계정 (date = 접수일 → 그 뒤에만 사용)
 
     @classmethod
     def from_store(cls, store) -> "PointInTimeData":
@@ -153,6 +154,7 @@ class PointInTimeData:
         obj = cls(store.load("ohlcv"), flows, store.load("fundamentals"),
                   store.load("disclosures"), store.load("index"), store.load("listing"))
         obj.sectors = store.load("sectors")
+        obj.financials = store.load("financials")
         return obj
 
     def view(self, as_of) -> PITView:

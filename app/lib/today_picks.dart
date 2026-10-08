@@ -13,7 +13,7 @@ import 'widgets/common.dart';
 ///  - 손절가 아래 / 1차 목표가 도달 / 오늘 +15% 넘게 급등 / -5% 넘게 급락 → 제외
 ///  - 매수구간 안 → 먼저, 그다음 구간 바로 위(+2% 이내)·바로 아래(-1.5% 이내)
 ///  - 같은 묶음 안에서는 점수(어제 마감 분석) 높은 순
-///  - 시장 필터: 종목이 속한 지수가 60일선 아래면 제외 (2026-10-08 백테스트 실험 결과 반영)
+///  - 시장 필터: 종목이 속한 시장이 하락장(V2 시장 상태 C)이면 제외
 ///  - '지금 사면' 목표·손절까지 남은 %와 손익비를 지금 가격으로 다시 계산
 class TodayPick {
   TodayPick(this.c, this.q, this.zone, this.order, this.up, this.down);
@@ -32,6 +32,11 @@ class TodayPick {
 /// 시장 필터: 지수가 N일선(어제 마감 기준 값) 아래인 시장 {'KOSPI','KOSDAQ'}
 ///   지금 지수가 있으면 지금 값으로, 없으면 어제 마감 판정으로
 Set<String> weakMarkets(Json market, Map<String, LiveQuote> indexQuotes) {
+  // V2: 시장 상태가 C(하락장)인 시장 → 신규 매수 중단
+  final v2 = asMap(asMap(market['v2'])['market']);
+  if (v2.isNotEmpty) {
+    return {for (final e in v2.entries) if (asMap(e.value)['state'] == 'C') e.key};
+  }
   final out = <String>{};
   for (final i in asList(market['indices'])) {
     final code = '${i['code']}';
@@ -101,6 +106,8 @@ class TodayPickTile extends StatelessWidget {
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Wrap(spacing: 4, runSpacing: 2, children: [
             _chip(p.zone, zoneColor),
+            if (c['signal'] == true) _chip('매수 신호', upColor),
+            if (c['grade'] != null && c['signal'] != true) _chip('${c['grade']}', verdictColor('${c['grade']}')),
             ...tags.map((k) => _chip(strategyLabels[k] ?? k, Colors.teal)),
           ]),
           const SizedBox(height: 2),

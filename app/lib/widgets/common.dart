@@ -134,7 +134,11 @@ class SectionTitle extends StatelessWidget {
 
 const strategyLabels = {
   'now': '지금 매수구간',
-  'overall': '상승 후보',
+  'signal': '매수 신호',
+  'buy': '강력·매수 후보',
+  'watch': '관심',
+  'overall': '전체 후보',
+  // (예전 V1 전략 — 과거 기록 표시용)
   'A': '돌파',
   'B': '눌림목',
   'C': '급등 초기',

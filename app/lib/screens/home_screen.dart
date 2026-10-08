@@ -148,7 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final repDate = '${d['date']}';
           final repLabel = _dateLabel(repDate, clock.now);
           final quotes = _stk?.quotes ?? const <String, LiveQuote>{};
-          final weak = weakMarkets(m, _idx?.quotes ?? const {}); // 시장 필터 (지수 60일선 아래)
+          final weak = weakMarkets(m, _idx?.quotes ?? const {}); // 시장 하락장(C) → 신규 매수 중단
           final picks = todayPicks(_pool, quotes, weak: weak);
           final t = Theme.of(context).textTheme;
           return RefreshIndicator(
@@ -178,7 +178,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           : '지금 매수구간에 들어온 후보가 없습니다. 무리해서 살 필요 없는 날일 수 있어요.')
                 else
                   ...picks.take(5).toList().asMap().entries.map((e) => TodayPickTile(p: e.value, rank: e.key + 1)),
-                SectionTitle('TOP 10 · 지금 시세', trailing: Text('$repLabel 분석', style: t.bodySmall)),
+                SectionTitle('매수 후보 TOP 10 · 지금 시세', trailing: Text('$repLabel 분석', style: t.bodySmall)),
                 if (_stk?.error != null && quotes.isEmpty)
                   _Notice('지금 시세를 가져오지 못해 $repLabel 종가로 보여줍니다. (${_stk!.error})'),
                 ...top10.map((c) =>
@@ -294,6 +294,12 @@ class _LiveMarketCard extends StatelessWidget {
   final bool busy;
   final Set<String> weak; // 지수가 60일선 아래인 시장
 
+  /// V2 시장 상태 {state: A/B/C, label, why}
+  Json? _state(String code) {
+    final v = asMap(asMap(yesterday['v2'])['market'])[code];
+    return v == null ? null : asMap(v);
+  }
+
   /// 어제 마감 기준 지수 60일선 값
   double? _ma(String code) {
     for (final i in asList(yesterday['indices'])) {
@@ -339,7 +345,9 @@ class _LiveMarketCard extends StatelessWidget {
                       child: Row(children: [
                     Text(i.code, style: const TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(width: 6),
-                    if (_ma(i.code) != null)
+                    if (_state(i.code) != null)
+                      _StateChip(_state(i.code)!)
+                    else if (_ma(i.code) != null)
                       Text(weak.contains(i.code) ? '60일선 아래' : '60일선 위',
                           style: TextStyle(fontSize: 11, color: weak.contains(i.code) ? downColor : Colors.green)),
                   ])),
@@ -374,8 +382,10 @@ class _LiveMarketCard extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                      '시장 필터: ${weak.map(marketName).join('·')} 지수가 60일선 아래 → '
-                      '${weak.map(marketName).join('·')} 종목은 신규 매수 쉬기 (보유 종목 관리는 그대로)',
+                      asMap(yesterday['v2']).isNotEmpty
+                          ? '${weak.map(marketName).join('·')} 하락장 → 그 시장 종목은 신규 매수 중단 (보유 종목 관리는 그대로)'
+                          : '시장 필터: ${weak.map(marketName).join('·')} 지수가 60일선 아래 → '
+                              '${weak.map(marketName).join('·')} 종목은 신규 매수 쉬기 (보유 종목 관리는 그대로)',
                       style: const TextStyle(fontSize: 12)),
                 ),
               ]),
@@ -386,6 +396,27 @@ class _LiveMarketCard extends StatelessWidget {
               child: Text('※ 최신 시세를 못 받아 조금 전 값입니다', style: t.bodySmall?.copyWith(color: Colors.orange)),
             ),
         ]),
+      ),
+    );
+  }
+}
+
+/// 시장 상태 칩: 🟢 상승장 / 🟡 중립 / 🔴 하락장 (V2)
+class _StateChip extends StatelessWidget {
+  const _StateChip(this.s);
+  final Json s;
+
+  @override
+  Widget build(BuildContext context) {
+    final st = '${s['state']}';
+    final color = st == 'A' ? Colors.green : (st == 'C' ? downColor : Colors.orange);
+    final icon = st == 'A' ? '🟢' : (st == 'C' ? '🔴' : '🟡');
+    return Tooltip(
+      message: (s['why'] as List? ?? const []).join(' · '),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.13), borderRadius: BorderRadius.circular(6)),
+        child: Text('$icon ${s['label'] ?? st}', style: TextStyle(fontSize: 11, color: color)),
       ),
     );
   }
@@ -593,12 +624,9 @@ class _ShortcutGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = <(String, String, IconData, int?)>[
       ('now', '지금 매수구간', Icons.shopping_cart_outlined, null),
-      ('overall', '상승 후보', Icons.trending_up, null),
-      ('A', '돌파 후보', Icons.rocket_launch, _count('A')),
-      ('B', '눌림목 후보', Icons.south_east, _count('B')),
-      ('C', '급등 초기 후보', Icons.bolt, _count('C')),
-      ('D', '수급 후보', Icons.groups, _count('D')),
-      ('E', '저평가 전환', Icons.savings, _count('E')),
+      ('signal', '매수 신호', Icons.notifications_active_outlined, _count('signal')),
+      ('buy', '강력·매수 후보', Icons.trending_up, _count('buy')),
+      ('watch', '관심', Icons.visibility_outlined, _count('watch')),
     ];
     return Wrap(spacing: 8, runSpacing: 8, children: [
       ...items.map((it) => ActionChip(

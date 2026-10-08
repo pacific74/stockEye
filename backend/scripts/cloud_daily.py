@@ -167,13 +167,11 @@ def main():
 
     from stockeye.trading.notify import Notifier
     n = Notifier()
-    top = ", ".join(f"{c['name']}({c['score']:.0f})" for c in report["top10"][:3]) or "후보 없음"
-    m = report["market"]
     try:   # 관리자에게: 가입 승인 대기 인원
         pending = sb.count("profiles", {"status": "eq.pending"})
     except Exception:  # noqa: BLE001  (예전 스키마)
         pending = 0
-    n.send(f"StockEye {report['date']} 리포트", f"{m.get('mood_icon', '')} {m.get('mood', '')} · TOP3 {top}"
+    n.send(f"StockEye {report['date']} 리포트", pub.report_summary(report)
            + (f"\n👤 가입 승인 대기 {pending}명 (앱 → 회원 관리)" if pending else "")
            + (f"\n⚠ 일부 단계 실패 {len(errors)}건" if errors else ""))
     step("회원별 알림", lambda: pub.notify_members(sb, report, n, skip_topics=[n.ntfy or ""],

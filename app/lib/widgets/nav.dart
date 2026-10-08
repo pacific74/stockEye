@@ -5,7 +5,7 @@ import '../api.dart';
 /// 앱 전체 공통 이동: 하단 메뉴(어느 화면에서나) + 상단 로고(누르면 메인)
 final ValueNotifier<int> tabIndex = ValueNotifier<int>(0); // 지금 선택된 하단 탭
 final ValueNotifier<int> tabTap = ValueNotifier<int>(0); // 하단 탭을 누를 때마다 +1 (같은 탭 다시 눌러도 새로고침)
-final ValueNotifier<String> candidateListKey = ValueNotifier<String>('overall'); // 후보 탭에서 처음 보여줄 목록
+final ValueNotifier<String> candidateListKey = ValueNotifier<String>('now'); // 후보 탭에서 처음 보여줄 목록
 
 const navDestinations = [
   NavigationDestination(icon: Icon(Icons.home_outlined), label: '오늘'),

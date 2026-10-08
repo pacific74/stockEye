@@ -94,6 +94,7 @@ class SectionTitle extends StatelessWidget {
 }
 
 const strategyLabels = {
+  'now': '지금 매수구간',
   'overall': '상승 후보',
   'A': '돌파',
   'B': '눌림목',

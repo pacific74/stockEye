@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../format.dart';
 import '../live.dart';
+import '../today_picks.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
@@ -14,7 +15,8 @@ import 'sector_screen.dart';
 import 'stock_detail_screen.dart';
 
 /// 메인 화면 = 오늘, 지금 기준
-///   지금 시장(실시간 지수) → TOP 10 지금 시세 → 내 보유종목 지금 → (참고) 지난 장 마감 분석
+///   지금 시장 → 오늘 살 만한 후보(지금 가격 기준) → TOP 10 지금 시세 → 내 보유종목 지금
+///   → 돈이 몰리는 업종 (오늘 | 어제) → 후보 보기
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -27,6 +29,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Json? _report;
   List<Json> _holdings = const [];
   Map<String, double> _scores = const {}; // 보유종목 점수 (최근 분석)
+  List<Json> _pool = const []; // 어제 분석의 모든 후보 (지금 매수구간 계산용)
   LiveResult? _idx, _stk;
   bool _liveBusy = false;
   DateTime? _liveAt; // 마지막으로 시세를 받은 기기 시각
@@ -69,21 +72,29 @@ class _HomeScreenState extends State<HomeScreen> {
       _holdings = const [];
     }
     _scores = await Api.scores(_holdings.map((h) => '${h['code']}').toList());
+    try {
+      _pool = await Api.allCandidates();
+    } catch (_) {
+      _pool = const [];
+    }
     await _refreshLive();
   }
 
   Future<void> _refreshLive() async {
     if (_liveBusy || _report == null || !mounted) return;
     setState(() => _liveBusy = true);
-    final codes = <String>{
+    // 모두에게 같은 종목 묶음(후보·업종 대표) / 내 보유종목은 따로 → 서버 캐시를 같이 씀
+    final common = <String>{
       ...asList(_report!['top10']).map((c) => '${c['code']}'),
-      ..._holdings.map((h) => '${h['code']}'),
+      ..._pool.map((c) => '${c['code']}'),
+      for (final g in asList(_report!['sectors'])) ...asList(g['top']).map((m) => '${m['code']}'),
     }.toList();
-    final r = await Future.wait([Live.indices(), Live.stocks(codes)]);
+    final mine = _holdings.map((h) => '${h['code']}').where((c) => !common.contains(c)).toList();
+    final r = await Future.wait([Live.indices(), Live.stocks(common), Live.stocks(mine)]);
     if (!mounted) return;
     setState(() {
       _idx = r[0];
-      _stk = r[1];
+      _stk = Live.merge([r[1], r[2]]);
       _liveAt = DateTime.now();
       _liveBusy = false;
     });
@@ -137,6 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final repDate = '${d['date']}';
           final repLabel = _dateLabel(repDate, clock.now);
           final quotes = _stk?.quotes ?? const <String, LiveQuote>{};
+          final picks = todayPicks(_pool, quotes);
           final t = Theme.of(context).textTheme;
           return RefreshIndicator(
             onRefresh: _pullRefresh,
@@ -148,8 +160,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 const _TradingBanner(),
                 const SectionTitle('지금 시장'),
                 _LiveMarketCard(live: _idx, yesterday: m, busy: _liveBusy && _idx == null),
-                SectionTitle('TOP 10 · 지금 시세',
-                    trailing: Text('$repLabel 분석', style: t.bodySmall)),
+                SectionTitle('오늘 살 만한 후보 · 지금 가격 기준',
+                    trailing: TextButton(onPressed: () => goTab(context, 1, list: 'now'), child: const Text('전체'))),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+                  child: Text('$repLabel 분석 후보 중 지금 가격이 매수구간 근처인 종목 (점수는 $repLabel 마감 기준)',
+                      style: t.bodySmall),
+                ),
+                if (_stk == null)
+                  const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
+                else if (picks.isEmpty)
+                  _Notice(quotes.isEmpty
+                      ? '지금 시세를 받지 못해 계산할 수 없습니다.'
+                      : '지금 매수구간에 들어온 후보가 없습니다. 무리해서 살 필요 없는 날일 수 있어요.')
+                else
+                  ...picks.take(5).toList().asMap().entries.map((e) => TodayPickTile(p: e.value, rank: e.key + 1)),
+                SectionTitle('TOP 10 · 지금 시세', trailing: Text('$repLabel 분석', style: t.bodySmall)),
                 if (_stk?.error != null && quotes.isEmpty)
                   _Notice('지금 시세를 가져오지 못해 $repLabel 종가로 보여줍니다. (${_stk!.error})'),
                 ...top10.map((c) => _LiveCandidateTile(c: c, q: quotes['${c['code']}'], clock: clock)),
@@ -159,16 +185,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   ..._holdings.map((h) =>
                       _HoldingNowTile(h: h, q: quotes['${h['code']}'], score: _scores['${h['code']}'])),
                 ],
-                const SizedBox(height: 12),
-                const Divider(),
-                SectionTitle('참고 · $repLabel 장 마감 분석'),
-                _MarketCard(m: m, title: '$repLabel 마감 시장'),
-                SectionTitle('돈이 몰리는 업종 ($repLabel)',
+                SectionTitle('돈이 몰리는 업종',
                     trailing: TextButton(
                         onPressed: () =>
                             Navigator.push(context, MaterialPageRoute(builder: (_) => const SectorListScreen())),
                         child: const Text('전체'))),
-                ...sectors.take(6).toList().asMap().entries.map((e) => _SectorRow(rank: e.key + 1, g: e.value)),
+                _SectorCompare(
+                    today: sectorsToday(sectors, quotes),
+                    yesterday: sectors,
+                    todayLabel: _liveAt == null ? '오늘' : '오늘 ${_hm(_liveAt!)}',
+                    yesterdayLabel: '$repLabel 마감'),
                 SectionTitle('후보 보기 ($repLabel 분석 · 목록별 10개)'),
                 _ShortcutGrid(strat: strat),
                 const SizedBox(height: 16),
@@ -182,6 +208,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  static String _hm(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   /// '2026-10-07' → 오늘이면 '오늘(10/8)', 아니면 '10/7'
   static String _dateLabel(String ymd, DateTime now) {
@@ -455,83 +483,62 @@ class _HoldingNowTile extends StatelessWidget {
   }
 }
 
-class _MarketCard extends StatelessWidget {
-  const _MarketCard({required this.m, this.title});
-  final Json m;
-  final String? title;
+/// 돈이 몰리는 업종: 왼쪽 = 오늘 지금 (대표 종목 등락률 평균), 오른쪽 = 어제 마감 점수
+class _SectorCompare extends StatelessWidget {
+  const _SectorCompare(
+      {required this.today, required this.yesterday, required this.todayLabel, required this.yesterdayLabel});
+  final List<SectorToday> today;
+  final List<Json> yesterday;
+  final String todayLabel, yesterdayLabel;
+
+  void _open(BuildContext context, Json g) =>
+      Navigator.push(context, MaterialPageRoute(builder: (_) => SectorDetailScreen(g: g)));
+
+  Widget _row(BuildContext context, int rank, Json g, Widget value) => InkWell(
+        onTap: () => _open(context, g),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(children: [
+            SizedBox(width: 18, child: Text('$rank', style: const TextStyle(fontWeight: FontWeight.bold))),
+            Expanded(child: Text('${g['group']}', maxLines: 1, overflow: TextOverflow.ellipsis)),
+            value,
+          ]),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
-    final idx = asList(m['indices']);
-    final mood = '${m['mood'] ?? ''}';
-    final moodColor = mood == '강세' ? upColor : (mood == '약세' ? downColor : Colors.orange);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(children: [
-          if (title != null)
-            Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(title!, style: Theme.of(context).textTheme.bodySmall))),
-          ...idx.map((i) {
-            final ch = (i['change_pct'] as num).toDouble();
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Row(children: [
-                Expanded(child: Text(i['code'] as String, style: const TextStyle(fontWeight: FontWeight.w600))),
-                Text(num0(i['close'] as num)),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 70,
-                  child: Text(pct(ch),
-                      textAlign: TextAlign.right,
-                      style: TextStyle(color: ch >= 0 ? upColor : downColor, fontWeight: FontWeight.bold)),
-                ),
+    final t = Theme.of(context).textTheme;
+    Widget box(String title, String sub, List<Widget> rows) => Expanded(
+          child: Card(
+            margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                Text(sub, style: t.bodySmall),
+                const SizedBox(height: 4),
+                if (rows.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('-', style: t.bodySmall)),
+                ...rows,
               ]),
-            );
-          }),
-          const Divider(),
-          Row(children: [
-            const Expanded(child: Text('시장 분위기')),
-            Text('${m['mood_icon']} $mood',
-                style: TextStyle(color: moodColor, fontWeight: FontWeight.bold, fontSize: 16)),
-          ]),
-          const SizedBox(height: 4),
-          Row(children: [
-            Expanded(
-                child: Text('상승 ${m['advancers']} · 하락 ${m['decliners']} · 20일선 위 ${m['above_sma20_pct']}%',
-                    style: Theme.of(context).textTheme.bodySmall)),
-          ]),
-        ]),
-      ),
-    );
-  }
-}
-
-class _SectorRow extends StatelessWidget {
-  const _SectorRow({required this.rank, required this.g});
-  final int rank;
-  final Json g;
-
-  @override
-  Widget build(BuildContext context) {
-    final arrows = g['arrows'] as String;
-    final up = !arrows.contains('↓');
-    return ListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-      leading: Text('$rank', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-      title: Text('${g['group']}', style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(asList(g['top']).take(3).map((t) => t['name']).join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text(arrows, style: TextStyle(color: up ? upColor : downColor, fontSize: 16)),
-        const SizedBox(width: 8),
-        Text('${g['score']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+          ),
+        );
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      box(todayLabel, '대표종목 등락 평균', [
+        for (final (i, s) in today.take(6).indexed)
+          _row(
+              context,
+              i + 1,
+              s.g,
+              Text(pct(s.avg),
+                  style: TextStyle(fontWeight: FontWeight.bold, color: s.avg >= 0 ? upColor : downColor))),
       ]),
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SectorDetailScreen(g: g))),
-    );
+      box(yesterdayLabel, '강도 점수', [
+        for (final (i, g) in yesterday.take(6).indexed)
+          _row(context, i + 1, g, Text('${g['score']}', style: const TextStyle(fontWeight: FontWeight.bold))),
+      ]),
+    ]);
   }
 }
 
@@ -542,6 +549,7 @@ class _ShortcutGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = <(String, String, IconData, int?)>[
+      ('now', '지금 매수구간', Icons.shopping_cart_outlined, null),
       ('overall', '상승 후보', Icons.trending_up, null),
       ('A', '돌파 후보', Icons.rocket_launch, _count('A')),
       ('B', '눌림목 후보', Icons.south_east, _count('B')),

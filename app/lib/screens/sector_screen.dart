@@ -41,17 +41,12 @@ class _SectorListScreenState extends State<SectorListScreen> {
                 );
               }
               final g = list[i - 1];
-              final up = !(g['arrows'] as String).contains('↓');
               return ListTile(
                 leading: SizedBox(width: 28, child: Text('$i', textAlign: TextAlign.center)),
                 title: Text('${g['group']}'),
                 subtitle: Text('${g['type'] == 'theme' ? '테마' : 'KRX 업종'} · ${g['members']}종목 · '
-                    '오늘 ${pct(g['ret1_pct'] as num)} · 5일 ${pct(g['ret5_pct'] as num)}'),
-                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text('${g['arrows']}', style: TextStyle(color: up ? upColor : downColor)),
-                  const SizedBox(width: 8),
-                  Text('${g['score']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                ]),
+                    '당일 ${pct(g['ret1_pct'] as num)} · 5일 ${pct(g['ret5_pct'] as num)}'),
+                trailing: Text('${g['score']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SectorDetailScreen(g: g))),
               );
             },
@@ -71,7 +66,7 @@ class SectorDetailScreen extends StatelessWidget {
     final top = asList(g['top']);
     return Scaffold(
       bottomNavigationBar: const MainNavBar(),
-      appBar: AppBar(title: LogoTitle('${g['group']}  ${g['arrows']}'), actions: topActions(context)),
+      appBar: AppBar(title: LogoTitle('${g['group']}'), actions: topActions(context)),
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [

@@ -96,16 +96,34 @@ class LiveResult {
 class Live {
   static Future<LiveResult> indices() => _get('index', const ['KOSPI', 'KOSDAQ']);
 
-  /// 종목 시세. 한 번에 여러 개를 요청하고, 빠진 종목은 하나씩 다시 요청
+  /// 종목 시세. 50개씩 나눠 한 번에 요청하고, 빠진 종목은 하나씩 다시 요청
+  /// (같은 종목 묶음이면 서버 캐시를 여러 사람이 같이 씀 → 코드를 정렬해서 묶음)
   static Future<LiveResult> stocks(List<String> codes) async {
     final want = codes.where((c) => RegExp(r'^[0-9A-Z]{6}$').hasMatch(c)).toSet().toList()..sort();
     if (want.isEmpty) return LiveResult({});
-    final first = await _get('stock', want.take(50).toList());
-    final missing = want.where((c) => !first.quotes.containsKey(c)).take(30).toList();
-    if (missing.isEmpty || want.length == 1 || (first.quotes.isEmpty && first.error != null)) return first;
-    final more = await Future.wait(missing.map((c) => _get('stock', [c])));
-    return LiveResult({...first.quotes, for (final r in more) ...r.quotes},
-        fetchedAt: first.fetchedAt, error: first.error, stale: first.stale);
+    final chunks = [for (var i = 0; i < want.length; i += 50) want.sublist(i, i + 50 > want.length ? want.length : i + 50)];
+    final parts = await Future.wait(chunks.map((c) => _get('stock', c)));
+    final quotes = <String, LiveQuote>{for (final r in parts) ...r.quotes};
+    final first = parts.first;
+    final missing = want.where((c) => !quotes.containsKey(c)).take(30).toList();
+    final failedAll = quotes.isEmpty && first.error != null;
+    if (missing.isNotEmpty && want.length > 1 && !failedAll) {
+      final more = await Future.wait(missing.map((c) => _get('stock', [c])));
+      for (final r in more) {
+        quotes.addAll(r.quotes);
+      }
+    }
+    return LiveResult(quotes,
+        fetchedAt: first.fetchedAt, error: quotes.isEmpty ? first.error : null, stale: parts.any((p) => p.stale));
+  }
+
+  /// 여러 결과 합치기
+  static LiveResult merge(List<LiveResult> rs) {
+    final ok = rs.where((r) => r.quotes.isNotEmpty).toList();
+    return LiveResult({for (final r in rs) ...r.quotes},
+        fetchedAt: ok.isEmpty ? null : ok.first.fetchedAt,
+        error: ok.isEmpty ? rs.map((r) => r.error).whereType<String>().firstOrNull : null,
+        stale: rs.any((r) => r.stale));
   }
 
   static Future<LiveResult> _get(String kind, List<String> codes) async {

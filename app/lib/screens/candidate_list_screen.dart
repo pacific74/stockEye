@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../live.dart';
+import '../today_picks.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
@@ -11,7 +13,7 @@ class CandidateListScreen extends StatefulWidget {
   final String list;
   final String title;
 
-  static const keys = ['overall', 'A', 'B', 'C', 'D', 'E'];
+  static const keys = ['now', 'overall', 'A', 'B', 'C', 'D', 'E']; // now = 오늘 지금 가격 기준
 
   @override
   State<CandidateListScreen> createState() => _CandidateListScreenState();
@@ -37,7 +39,12 @@ class _CandidateListScreenState extends State<CandidateListScreen> {
             tabs: keys.map((k) => Tab(text: strategyLabels[k])).toList(),
           ),
         ),
-        body: TabBarView(children: keys.map((k) => _ListTab(key: ValueKey('$k$_gen'), listKey: k)).toList()),
+        body: TabBarView(
+            children: keys
+                .map((k) => k == 'now'
+                    ? _NowTab(key: ValueKey('now$_gen'))
+                    : _ListTab(key: ValueKey('$k$_gen'), listKey: k))
+                .toList()),
       ),
     );
   }
@@ -143,6 +150,80 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
                 showStrategyScore: _isStrategy,
                 bigStrategy: _sort == _Sort.strategy)),
           ],
+        );
+      },
+    );
+  }
+}
+
+
+/// 오늘 지금 가격 기준: 어제 분석 후보 중 지금 매수구간 근처인 종목 (최대 10개)
+class _NowTab extends StatefulWidget {
+  const _NowTab({super.key});
+
+  @override
+  State<_NowTab> createState() => _NowTabState();
+}
+
+class _NowTabState extends State<_NowTab> with AutomaticKeepAliveClientMixin {
+  late Future<(List<Json>, LiveResult)> _f = _load();
+
+  Future<(List<Json>, LiveResult)> _load() async {
+    final pool = await Api.allCandidates();
+    final live = await Live.stocks(pool.map((c) => '${c['code']}').toList());
+    return (pool, live);
+  }
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final t = Theme.of(context).textTheme;
+    return Loader<(List<Json>, LiveResult)>(
+      future: _f,
+      onRetry: () => setState(() => _f = _load()),
+      builder: (context, d) {
+        final (pool, live) = d;
+        final picks = todayPicks(pool, live.quotes, limit: maxShow);
+        final at = live.fetchedAt;
+        return RefreshIndicator(
+          onRefresh: () async {
+            setState(() => _f = _load());
+            await _f;
+          },
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('오늘 살 만한 후보 · 지금 가격 기준${at == null ? '' : ' (${at.hour}:${at.minute.toString().padLeft(2, '0')})'}',
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    const Text('어제 장 마감 분석의 모든 후보(종합·전략별) 중에서 지금 가격이 매수 적정구간 안이거나 '
+                        '바로 근처인 종목만 골랐습니다. 구간 안 → 점수 높은 순.'),
+                    const SizedBox(height: 4),
+                    Text('※ 손절가 아래 · 1차 목표 도달 · 오늘 +15% 이상 급등 · -5% 이상 급락 종목은 뺐습니다. '
+                        '점수는 어제 마감 기준이며 장중 거래량·수급은 반영되지 않습니다.',
+                        style: t.bodySmall),
+                  ]),
+                ),
+              ),
+              if (live.quotes.isEmpty)
+                Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(child: Text('지금 시세를 받지 못했습니다.\n${live.error ?? ''}', textAlign: TextAlign.center)))
+              else if (picks.isEmpty)
+                const Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Center(child: Text('지금 매수구간에 들어온 후보가 없습니다', textAlign: TextAlign.center)))
+              else
+                ...picks.asMap().entries.map((e) => TodayPickTile(p: e.value, rank: e.key + 1)),
+            ],
+          ),
         );
       },
     );

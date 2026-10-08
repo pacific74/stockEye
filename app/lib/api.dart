@@ -30,6 +30,8 @@ class Api {
   static Future<Json> dashboard() => useCloud ? _Cloud.dashboard() : _Http.dashboard();
   static Future<Json> candidates(String list, {int top = 30}) =>
       useCloud ? _Cloud.candidates(list, top) : _Http.candidates(list, top);
+  /// 어제(최근) 분석의 모든 후보 (종합 + 전략별, 종목별 1개) — '지금 매수구간' 계산용
+  static Future<List<Json>> allCandidates() => useCloud ? _Cloud.allCandidates() : _Http.allCandidates();
   static Future<Json> sectors() => useCloud ? _Cloud.sectors() : _Http.get('/api/sectors');
   static Future<Json> sector(String group) =>
       useCloud ? _Cloud.sector(group) : _Http.get('/api/sectors/${Uri.encodeComponent(group)}');
@@ -148,7 +150,7 @@ class _Cloud {
       'date': r['date'],
       'as_of': r['as_of'],
       'market': r['market'],
-      'sectors': asList(r['sectors']).take(8).toList(),
+      'sectors': asList(r['sectors']),
       'top10': r['top10'] ?? [],
       'strategies': r['strategies'] ?? {},
       'funnel': r['funnel'],
@@ -178,6 +180,12 @@ class _Cloud {
       'limitation': s['limitation'],
       'candidates': cands,
     };
+  }
+
+  static Future<List<Json>> allCandidates() async {
+    final r = await _latest();
+    final rows = await db.from('candidates').select('payload').eq('date', r['date'] as String).limit(500);
+    return _uniqueByCode(rows.map((e) => asMap(e['payload'])));
   }
 
   static Future<Json> sectors() async {
@@ -442,8 +450,30 @@ class _Http {
   static Future<Json> post(String path, Object body) async => asMap(await send('POST', path, body));
 
   static Future<Json> dashboard() => get('/api/dashboard');
+  static Future<List<Json>> allCandidates() async {
+    final lists = await Future.wait(['overall', 'A', 'B', 'C', 'D', 'E']
+        .map((k) => candidates(k, 30).then((d) => asList(d['candidates']), onError: (_) => <Json>[])));
+    return _uniqueByCode(lists.expand((l) => l));
+  }
   static Future<Json> candidates(String list, int top) => get('/api/candidates?list=$list&top=$top');
   static Future<List<Json>> search(String q) => getList('/api/search?q=${Uri.encodeQueryComponent(q)}');
+}
+
+/// 종목별로 하나만 (점수 높은 쪽, 전략 태그는 합침)
+List<Json> _uniqueByCode(Iterable<Json> cands) {
+  final by = <String, Json>{};
+  for (final c in cands) {
+    final code = '${c['code']}';
+    final old = by[code];
+    if (old == null) {
+      by[code] = Map<String, dynamic>.from(c);
+      continue;
+    }
+    final tags = {...List<String>.from(old['tags'] as List? ?? []), ...List<String>.from(c['tags'] as List? ?? [])};
+    if (((c['score'] as num?) ?? 0) > ((old['score'] as num?) ?? 0)) by[code] = Map<String, dynamic>.from(c);
+    by[code]!['tags'] = tags.toList();
+  }
+  return by.values.toList();
 }
 
 // ============================================================ 회원 (관리자 승인제, 클라우드 전용)

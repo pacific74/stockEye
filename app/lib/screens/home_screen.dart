@@ -143,7 +143,7 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context, d) {
           final m = asMap(d['market']);
           final sectors = asList(d['sectors']);
-          final top10 = asList(d['top10']);
+          final top10 = sortByScore(asList(d['top10'])); // V3 점수 높은 순
           final clock = _clock;
           final repDate = '${d['date']}';
           final intraday = asMap(d['market'])['intraday'] as String?; // 장중 재분석 시각 ("11:00")
@@ -172,7 +172,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 SectionTitle('V3 상위 10 · 지금 시세', trailing: Text('$repLabel 분석', style: t.bodySmall)),
                 if (_stk?.error != null && quotes.isEmpty)
                   _Notice('지금 시세를 가져오지 못해 $repBasis 가격으로 보여줍니다. (${_stk!.error})'),
-                ...top10.map((c) => _LiveCandidateTile(c: c, q: quotes['${c['code']}'], clock: clock)),
+                ...top10.asMap().entries.map((e) => _LiveCandidateTile(
+                    c: {...e.value, 'rank': e.key + 1}, q: quotes['${e.value['code']}'], clock: clock)),
                 if (_holdings.isNotEmpty) ...[
                   SectionTitle('내 보유종목 · 지금',
                       trailing: TextButton(onPressed: () => goTab(context, 2), child: const Text('보유 탭'))),

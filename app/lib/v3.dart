@@ -37,6 +37,13 @@ List<String> strList(dynamic v) => v is List ? v.map((e) => '$e').toList() : <St
 
 List<String> v3Calendar(Json meta) => strList(meta['calendar']);
 
+/// 점수 높은 순 (같으면 원래 순위 순) — 서버가 매긴 V3 순위와 같지만, 예전 데이터가 섞여도 화면은 항상 점수순
+List<Json> sortByScore(List<Json> cands) {
+  double sc(Json c) => (c['score'] as num?)?.toDouble() ?? -1;
+  double rk(Json c) => (c['rank'] as num?)?.toDouble() ?? 999;
+  return List<Json>.from(cands)..sort((a, b) => sc(b) != sc(a) ? sc(b).compareTo(sc(a)) : rk(a).compareTo(rk(b)));
+}
+
 /// 내 보유종목의 V3 규칙 기준 매도 예정일 (매수일 포함 20거래일째)
 String? holdingSellDate(Json meta, String? buyDate) {
   if (buyDate == null || buyDate.isEmpty) return null;

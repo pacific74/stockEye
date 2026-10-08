@@ -103,7 +103,7 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
       future: _f,
       onRetry: () => setState(() => _f = Api.candidates(widget.listKey)),
       builder: (context, d) {
-        final all = widget.listKey == 'v3' ? asList(d['candidates']) : _sorted(asList(d['candidates']));
+        final all = widget.listKey == 'v3' ? sortByScore(asList(d['candidates'])) : _sorted(asList(d['candidates']));
         final cands = all.take(maxShow).toList(); // 정렬한 뒤 상위 10개만
         return ListView(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),

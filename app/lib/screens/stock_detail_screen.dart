@@ -24,9 +24,11 @@ const _labels = {
 };
 
 class StockDetailScreen extends StatefulWidget {
-  const StockDetailScreen({super.key, required this.code, required this.name});
+  const StockDetailScreen({super.key, required this.code, required this.name, this.source});
   final String code;
   final String name;
+  /// 어느 후보 탭에서 열었는지 (nextday·early·reversal·v3) → 맨 위에 그 탭 점수를 보여줌 (목록 점수와 같게)
+  final String? source;
 
   @override
   State<StockDetailScreen> createState() => _StockDetailScreenState();
@@ -114,6 +116,8 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
               ),
 
               // ---- V3 기준 전략: 오늘 상태 · 점수 · 매수/매도 예정 ----
+              if (widget.source != null && widget.source != 'v3' && asMap(c[widget.source]).isNotEmpty)
+                _TabHead(source: widget.source!, v: asMap(c[widget.source])),
               _V3Head(v: v3, price: q?.price, ratio: q?.ratio, basePrice: (p['price'] as num?)?.toDouble()),
 
               // ---- 설명 (V3 기준) ----
@@ -572,7 +576,7 @@ class _V3Head extends StatelessWidget {
               ]),
             ),
             Column(children: [
-              Text(score == null ? '-' : '${score.toStringAsFixed(0)}점', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              Text(score == null ? '-' : 'V3 ${score.toStringAsFixed(0)}점', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
               if (v['raw'] != null) Text('원점수 ${v['raw']}/60', style: t.bodySmall),
             ]),
           ]),
@@ -589,6 +593,44 @@ class _V3Head extends StatelessWidget {
           const SizedBox(height: 4),
           Text('V3 기준: 손절·목표가 없이 20거래일 보유, 보유 중 다시 상위 10 이면 연장 (규칙 고정 ${v['version'] ?? ''})',
               style: t.bodySmall),
+        ]),
+      ),
+    );
+  }
+}
+
+
+/// 후보 탭(익일유망주·상승초기·추세전환)에서 열었을 때: 그 탭 점수·등급 (목록에 보이던 점수와 같음)
+class _TabHead extends StatelessWidget {
+  const _TabHead({required this.source, required this.v});
+  final String source;
+  final Json v;
+
+  static const _titles = {'nextday': '익일유망주', 'early': '상승초기', 'reversal': '추세전환'};
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final score = v['score'] as num?;
+    final label = '${v['label'] ?? ''}';
+    final type = v['type'] as String?;
+    final rank = v['rank'];
+    return Card(
+      color: Colors.indigo.withValues(alpha: 0.10),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${_titles[source] ?? source} ${label.isEmpty ? '' : label}',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo)),
+              const SizedBox(height: 4),
+              Text([if (type != null) type, if (rank != null) '전체 $rank위'].join(' · '), style: t.bodySmall),
+              Text('후보 목록 점수입니다. 아래 V3 점수는 V3 기준으로 따로 매긴 점수예요.', style: t.bodySmall),
+            ]),
+          ),
+          Text(score == null ? '-' : '${score.toStringAsFixed(1)}점',
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.indigo)),
         ]),
       ),
     );

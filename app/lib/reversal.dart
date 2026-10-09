@@ -74,7 +74,7 @@ class ReversalTile extends StatelessWidget {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: col)),
         ]),
         onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}'))),
+            MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}', source: kind.field))),
       ),
     );
   }

@@ -107,7 +107,7 @@ class V3PickTile extends StatelessWidget {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         ]),
         onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}'))),
+            MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}', source: 'v3'))),
       ),
     );
   }

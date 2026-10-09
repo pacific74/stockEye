@@ -147,6 +147,8 @@ def main():
     step("리포트 → Storage", lambda: (sync.put_json("reports/latest.json", report),
                                        sync.put_json(f"reports/{report['date']}.json", report)), errors)
     step("리포트 발행", lambda: pub.publish_report(sb, report), errors, required=True)
+    from stockeye.cloud.entry_info import annotate_positions
+    step("매매일지: 매수 당시 후보·점수·상태 기록", lambda: annotate_positions(sb, sync), errors)
     company = step("기업 개요 (주 1회 갱신)", lambda: load_company(sync, report["date"]), errors)
     held = step("보유종목 목록 (비슷한 패턴용)", lambda: sorted({r["code"] for r in sb.select(
         "positions", {"select": "code", "status": "eq.open", "limit": "100000"})}), errors) or []

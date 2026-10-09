@@ -55,7 +55,9 @@ class _Records extends StatelessWidget {
   final String? mode;
 
   Future<(List<Json>, Map<String, LiveQuote>)> _load() async {
-    final rows = await Api.journal(mode: mode);
+    // 매도까지 끝난 매매만 · 매도일 최신순
+    final rows = (await Api.journal(status: 'closed', mode: mode)).toList()
+      ..sort((a, b) => '${b['exit_time'] ?? ''}'.compareTo('${a['exit_time'] ?? ''}'));
     final open = rows.where((p) => p['status'] != 'closed').map((p) => '${p['code']}').toSet().toList();
     Map<String, LiveQuote> q = const {};
     if (open.isNotEmpty) {
@@ -73,7 +75,7 @@ class _Records extends StatelessWidget {
       future: _load(),
       builder: (context, d) {
         final (rows, quotes) = d;
-        if (rows.isEmpty) return const Center(child: Text('아직 기록이 없습니다.\n매수/매도하면 자동으로 쌓입니다.', textAlign: TextAlign.center));
+        if (rows.isEmpty) return const Center(child: Text('아직 매도한 매매가 없습니다.\n보유종목에서 [매도]를 누르면 여기에 쌓입니다.', textAlign: TextAlign.center));
         final head = t.bodySmall?.copyWith(color: Colors.grey);
         return ListView(padding: const EdgeInsets.all(12), children: [
           Padding(
@@ -110,6 +112,9 @@ class _EntryRow extends StatelessWidget {
     final entry = (p['entry_price'] as num?)?.toDouble();
     double? ret = (p['ret_pct'] as num?)?.toDouble();
     if (!closed && entry != null && entry > 0 && q != null && q!.price > 0) ret = (q!.price / entry - 1) * 100;
+    // 매수 당시: 어떤 후보 탭·몇 위·몇 점·상태 (저녁/장중 배치가 positions.plan.entry_info 에 기록)
+    final info = asMap(asMap(p['plan'])['entry_info']);
+    final summary = info['summary'] as String?;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 3),
       child: InkWell(
@@ -118,7 +123,8 @@ class _EntryRow extends StatelessWidget {
             MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${p['code']}', name: '${p['name']}'))),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          child: Row(children: [
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
             Expanded(
                 flex: 4,
                 child: Text('${p['name']}',
@@ -133,6 +139,15 @@ class _EntryRow extends StatelessWidget {
                 child: Text(pct(ret),
                     textAlign: TextAlign.right,
                     style: TextStyle(fontWeight: FontWeight.bold, color: (ret ?? 0) >= 0 ? upColor : downColor))),
+          ]),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+                summary == null
+                    ? '매수 당시 정보: 다음 배치 때 기록됩니다'
+                    : '매수 당시${info['report_date'] == null ? '' : '(${_d(info['report_date'])} 분석)'}: $summary',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: summary == null ? Colors.grey : null)),
+          ),
           ]),
         ),
       ),

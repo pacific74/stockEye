@@ -200,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Text('오늘 조건을 만족한 종목이 없습니다', style: t.bodySmall)),
                   ...(_picks[k] ?? (k == 'v3' ? top10.take(3).toList() : const <Json>[])).asMap().entries.map((e) =>
                       _LiveCandidateTile(
-                          c: {...e.value, 'rank': e.key + 1}, q: quotes['${e.value['code']}'], clock: clock)),
+                          c: {...e.value, 'rank': e.key + 1, '_tab': k}, q: quotes['${e.value['code']}'], clock: clock)),
                 ],
                 if (_holdings.isNotEmpty) ...[
                   SectionTitle('보유종목',
@@ -464,7 +464,7 @@ class _LiveCandidateTile extends StatelessWidget {
                 ],
         ),
         onTap: () => Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => StockDetailScreen(code: c['code'] as String, name: c['name'] as String))),
+            builder: (_) => StockDetailScreen(code: c['code'] as String, name: c['name'] as String, source: c['_tab'] as String?))),
       ),
     );
   }

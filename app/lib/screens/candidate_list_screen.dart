@@ -69,7 +69,17 @@ enum _Sort { score, strategy, rank }
 const maxShow = 10;
 
 class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
-  late Future<Json> _f = Api.candidates(widget.listKey);
+  late Future<Json> _f = _loadQ();
+
+  /// 후보 + 상위 종목 지금 시세 (매수구간 여부·지금 사면 목표/손절 계산용)
+  Future<Json> _loadQ() async {
+    final d = await Api.candidates(widget.listKey);
+    final codes = sortByScore(asList(d['candidates'])).take(maxShow).map((c) => '${c['code']}').toList();
+    try {
+      d['_quotes'] = (await Live.stocks(codes)).quotes;
+    } catch (_) {}
+    return d;
+  }
   _Sort _sort = _Sort.score; // 기본: 종합 점수 높은 순
 
   bool get _isStrategy => const ['A', 'B', 'C', 'D', 'E'].contains(widget.listKey); // (예전 V1 전략)
@@ -104,13 +114,15 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
     super.build(context);
     return Loader<Json>(
       future: _f,
-      onRetry: () => setState(() => _f = Api.candidates(widget.listKey)),
+      onRetry: () => setState(() => _f = _loadQ()),
       builder: (context, d) {
         final rev = widget.listKey == 'reversal';
         final early = widget.listKey == 'early';
         final nextd = widget.listKey == 'nextday';
         final all = widget.listKey == 'v3' || rev || early || nextd ? sortByScore(asList(d['candidates'])) : _sorted(asList(d['candidates']));
         final cands = all.take(maxShow).toList(); // 정렬한 뒤 상위 10개만 (모든 탭)
+        final qs = d['_quotes'] is Map ? d['_quotes'] as Map : const {};
+        double? px(Json c) => (qs['${c['code']}'] as LiveQuote?)?.price;
         return ListView(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
           children: [
@@ -152,13 +164,13 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
                 child: Text('오늘 70점 이상이 적어 60점대(근접)도 같이 보여줍니다.', style: Theme.of(context).textTheme.bodySmall),
               ),
             if (widget.listKey == 'v3')
-              ...cands.asMap().entries.map((e) => V3PickTile(c: e.value, rank: e.key + 1))
+              ...cands.asMap().entries.map((e) => V3PickTile(c: e.value, rank: e.key + 1, price: px(e.value)))
             else if (rev)
-              ...cands.asMap().entries.map((e) => ReversalTile(c: e.value, rank: e.key + 1))
+              ...cands.asMap().entries.map((e) => ReversalTile(c: e.value, rank: e.key + 1, price: px(e.value)))
             else if (early)
-              ...cands.asMap().entries.map((e) => ReversalTile(c: e.value, rank: e.key + 1, kind: earlyKind))
+              ...cands.asMap().entries.map((e) => ReversalTile(c: e.value, rank: e.key + 1, kind: earlyKind, price: px(e.value)))
             else if (nextd)
-              ...cands.asMap().entries.map((e) => NextdayTile(c: e.value, rank: e.key + 1))
+              ...cands.asMap().entries.map((e) => NextdayTile(c: e.value, rank: e.key + 1, price: px(e.value)))
             else
             ...cands.asMap().entries.map((e) => CandidateTile(
                 c: e.value,

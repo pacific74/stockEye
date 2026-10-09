@@ -188,6 +188,7 @@ def candidate_dict(code: str, r: pd.Series, x: pd.Series, name: str, rank: int =
             "basis": _lst(r.get("level_basis")), "level_warn": _lst(r.get("level_warn")),
             "resistances": _lst(r.get("resistances")), "supports": _lst(r.get("supports")),
             "method": "chart" if _lst(r.get("level_basis")) else "pct",
+            "zones": _lst(r.get("zones")), "notes": r.get("notes") if isinstance(r.get("notes"), dict) else {},
         },
     }
 

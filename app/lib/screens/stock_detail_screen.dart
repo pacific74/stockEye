@@ -129,27 +129,38 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                     if (v3['rank'] != null && v3['entry_day'] == true) ...[
                       _row('매수', '${v3['buy_date']} 시가', bold: true),
                       _row('매도 예정', '${v3['sell_date']} 종가 (20거래일째)', bold: true),
-                    ] else if (v3['rank'] != null)
-                      _row('매수', '다음 선정일 ${v3['next_entry'] ?? '-'} 에 상위 10 이면 다음 거래일 시가')
-                    else
-                      _row('매수', 'V3B 상위 10 에 들 때만 (5거래일마다 선정)'),
+                      const Divider(),
+                    ],
+                    // 분할 매수 구간 1·2·3차 (지지·이평선·매물대 기준)
+                    if (p['zones'] is List && (p['zones'] as List).isNotEmpty) ...[
+                      for (final z in asList(p['zones'])) ...[
+                        _row('${z['name']} 매수구간 (${z['weight']}%)', '${num0(z['low'] as num?)} ~ ${won(z['high'] as num?)}'),
+                        _note(context, '${z['note'] ?? ''}'),
+                      ],
+                      if (asMap(p['notes'])['zones'] != null) _note(context, '${asMap(p['notes'])['zones']}'),
+                    ] else if (pv('entry_low') != null && pv('entry_high') != null)
+                      _row('매수구간', '${num0(pv('entry_low'))} ~ ${won(pv('entry_high'))}'),
                     const Divider(),
-                    Text('참고 가격 (V3 규칙엔 손절·익절이 없습니다 — 검증에서 손절이 수익을 깎음)',
-                        style: Theme.of(context).textTheme.bodySmall),
-                    if (pv('entry_low') != null && pv('entry_high') != null)
-                      _row('참고 매수구간', '${num0(pv('entry_low'))} ~ ${won(pv('entry_high'))}'),
-                    if (pv('target1') != null)
-                      _row('참고 1차 목표가', won(pv('target1')), sub: pct(pv('target1_pct')), color: upColor),
-                    if (pv('target2') != null)
-                      _row('참고 2차 목표가', won(pv('target2')), sub: pct(pv('target2_pct')), color: upColor),
-                    if (pv('target3') != null)
-                      _row('참고 3차 목표가', won(pv('target3')), sub: pct(pv('target3_pct')), color: upColor),
-                    if (pv('stop') != null)
-                      _row('참고 손절가', won(pv('stop')), sub: pct(pv('loss_pct')), color: downColor),
+                    if (pv('target1') != null) ...[
+                      _row('1차 목표가', won(pv('target1')), sub: pct(pv('target1_pct')), color: upColor),
+                      _note(context, asMap(p['notes'])['target1'] as String?),
+                    ],
+                    if (pv('target2') != null) ...[
+                      _row('2차 목표가', won(pv('target2')), sub: pct(pv('target2_pct')), color: upColor),
+                      _note(context, asMap(p['notes'])['target2'] as String?),
+                    ],
+                    if (pv('target3') != null) ...[
+                      _row('3차 목표가', won(pv('target3')), sub: pct(pv('target3_pct')), color: upColor),
+                      _note(context, asMap(p['notes'])['target3'] as String?),
+                    ],
+                    if (pv('stop') != null) ...[
+                      _row('손절가', won(pv('stop')), sub: pct(pv('loss_pct')), color: downColor),
+                      _note(context, asMap(p['notes'])['stop'] as String?),
+                    ],
                     // 차트 기반 근거: 어떤 지지·저항을 썼는지
                     if (p['basis'] is List && (p['basis'] as List).isNotEmpty) ...[
                       const SizedBox(height: 6),
-                      Text('계산 근거 (스윙 고저점·매물대·이평선·볼린저·되돌림)',
+                      Text('계산 근거 (스윙 고저점·매물대·이평선·볼린저·되돌림·ATR)',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
                       for (final b in p['basis'] as List) Text('· $b', style: Theme.of(context).textTheme.bodySmall),
                       if (p['rr1'] != null)
@@ -181,7 +192,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                           if (pv('target1') != null) PriceLevel('1차 목표', pv('target1')!.toDouble(), upColor),
                           if (q?.price != null || p['price'] != null)
                             PriceLevel('현재', q?.price ?? (p['price'] as num).toDouble(), Colors.grey),
-                          if (pv('stop') != null) PriceLevel('참고 손절', pv('stop')!.toDouble(), downColor),
+                          if (pv('stop') != null) PriceLevel('손절', pv('stop')!.toDouble(), downColor),
                           if (pv('target2') != null && p['method'] == 'chart')
                             PriceLevel('2차 목표', pv('target2')!.toDouble(), upColor.withValues(alpha: 0.6)),
                           // 3차 목표가 너무 멀면(현재가 +30% 초과) 캔들이 납작해지므로 선은 생략 (표에는 표시)
@@ -280,6 +291,14 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
         decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(8)),
         child: Text(t, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
       );
+
+  /// 목표·손절·매수구간 아래 작은 설명 줄
+  Widget _note(BuildContext context, String? s) => (s == null || s.isEmpty)
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Text(s, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey)),
+        );
 
   Widget _row(String k, String v, {String? sub, Color? color, bool bold = false}) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -548,9 +567,7 @@ class _V3Head extends StatelessWidget {
                 if (top && v['entry_day'] == true)
                   Text('${v['buy_date']} 시가 매수 → ${v['sell_date']} 종가 매도 예정 (20거래일)', style: t.bodyMedium)
                 else if (top)
-                  Text('참고 순위 · 다음 선정일 ${v['next_entry'] ?? '-'}', style: t.bodyMedium)
-                else if (v['eligible'] == true)
-                  Text('V3B 상위 10 에 들면 다음 거래일 시가에 매수 (5거래일마다 선정)', style: t.bodySmall),
+                  Text('다음 선정일 ${v['next_entry'] ?? '-'}', style: t.bodyMedium),
                 ...why.map((w) => Text('· $w', style: t.bodySmall?.copyWith(color: Colors.orange))),
               ]),
             ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'format.dart';
+import 'plan_line.dart';
 import 'screens/stock_detail_screen.dart';
 import 'widgets/common.dart';
 
@@ -41,10 +42,11 @@ Widget _chip(String s, Color color) => Container(
 
 /// 목록 한 줄: 총점(소수점) · 판정 · 5개 항목
 class ReversalTile extends StatelessWidget {
-  const ReversalTile({super.key, required this.c, required this.rank, this.kind = reversalKind});
+  const ReversalTile({super.key, required this.c, required this.rank, this.kind = reversalKind, this.price});
   final Json c;
   final int rank;
   final ExpKind kind;
+  final double? price;
 
   @override
   Widget build(BuildContext context) {
@@ -52,8 +54,6 @@ class ReversalTile extends StatelessWidget {
     final parts = asMap(v['parts']), labels = asMap(v['labels']), maxes = asMap(v['maxes']);
     final score = v['score'] as num?;
     final col = reversalColor(score);
-    final plan = asMap(c['plan']);
-    final t = Theme.of(context).textTheme;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
@@ -66,7 +66,7 @@ class ReversalTile extends StatelessWidget {
               _chip('${labels[k] ?? k} ${(parts[k] as num?)?.toStringAsFixed(1) ?? '-'}/${maxes[k] ?? ''}', Colors.indigo),
           ]),
           const SizedBox(height: 2),
-          Text('기준가 ${num0(plan['price'] as num?)} · ${v['label'] ?? ''}', style: t.bodySmall),
+          PlanLine(c: c, price: price, live: price != null),
         ]),
         isThreeLine: true,
         trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [

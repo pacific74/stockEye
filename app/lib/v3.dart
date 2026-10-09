@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'format.dart';
+import 'plan_line.dart';
 import 'screens/stock_detail_screen.dart';
 import 'widgets/common.dart';
 import 'widgets/nav.dart';
@@ -76,9 +77,10 @@ class V3ScheduleLine extends StatelessWidget {
 
 /// V3 후보 한 줄: 이름 · V3B 점수(60) · 변동성/재무/가격위치 · 매수·매도 예정일
 class V3PickTile extends StatelessWidget {
-  const V3PickTile({super.key, required this.c, required this.rank});
+  const V3PickTile({super.key, required this.c, required this.rank, this.price});
   final Json c;
   final int rank;
+  final double? price; // 지금 시세 (없으면 분석일 종가)
 
   @override
   Widget build(BuildContext context) {
@@ -97,6 +99,7 @@ class V3PickTile extends StatelessWidget {
             for (final k in ['vola15', 'fin25', 'pos20'])
               _chip('${labels[k] ?? k} ${num0(parts[k] as num?)}/${maxes[k] ?? ''}', Colors.teal),
           ]),
+          PlanLine(c: c, price: price, live: price != null),
         ]),
         isThreeLine: true,
         trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [

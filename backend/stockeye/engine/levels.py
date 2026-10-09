@@ -158,6 +158,7 @@ def compute(dates, o, h, l, c, v) -> dict | None:
     basis = []
     # 1차·2차 목표 (3차는 아래)
     t1g = next((g for g in R if g["price"] >= close + 1.0 * atr), None)
+    t2g = None
     if t1g:
         t1 = t1g["price"]
         basis.append(f"1차 목표: {_label(t1g)} 저항")
@@ -181,8 +182,10 @@ def compute(dates, o, h, l, c, v) -> dict | None:
         basis.append("3차 목표: 위에 저항 없음 → 2차 + 2ATR")
     # 손절
     sg = next((g for g in S if g["price"] <= close - 0.8 * atr), None)
+    stop_lab = None
     if sg and close - (sg["price"] - 0.5 * atr) <= min(3.5 * atr, close * 0.15):
         stop = sg["price"] - 0.5 * atr
+        stop_lab = _label(sg)
         basis.append(f"손절: {_label(sg)} 지지 아래 (지지 - 0.5ATR)")
     elif sg:
         stop = close - 2.5 * atr
@@ -194,6 +197,10 @@ def compute(dates, o, h, l, c, v) -> dict | None:
     near = next((g["price"] for g in S if g["price"] > stop and g["price"] >= close - 1.5 * atr), None)
     lo = max(stop * 1.02, near if near else min(close, ind["ma20"] if np.isfinite(ind["ma20"]) else close) * 0.99)
     lo = min(lo, close)
+    zones = _zones(close, atr, stop, S, lo)
+    if zones:
+        lo = zones[0]["low"]                                  # 매수구간 = 1차 구간 (하단 ~ 종가 +1%)
+    notes = _notes(close, atr, (t1, t1g), (t2, t2g), (t3, t3g), stop, stop_lab, zones)
     warn = []
     if np.isfinite(ind["rsi"]) and ind["rsi"] >= 70:
         warn.append(f"RSI {ind['rsi']:.0f} 과열 — 목표 도달 전 눌림 가능")
@@ -205,7 +212,7 @@ def compute(dates, o, h, l, c, v) -> dict | None:
             "target1": t1_r, "target2": t2_r, "target3": t3_r, "stop": stop_r,
             "stop_pct": (close - stop_r) / close, "rr": round((t1_r - close) / max(close - stop_r, 1e-9), 2),
             "atr": round(atr, 1), "rsi": None if not np.isfinite(ind["rsi"]) else round(ind["rsi"], 1),
-            "basis": basis, "level_warn": warn,
+            "basis": basis, "level_warn": warn, "zones": zones, "notes": notes,
             "resistances": [{"price": rt(g["price"], "up"), "label": _label(g)} for g in R[:6]],
             "supports": [{"price": rt(g["price"], "down"), "label": _label(g)} for g in S[:4]]}
 
@@ -253,7 +260,7 @@ def apply_to_ev(ev: pd.DataFrame, ohlcv: pd.DataFrame) -> int:
     L = compute_all(ohlcv, ev.index)
     if "target3" not in ev:
         ev["target3"] = np.nan
-    for k in ("level_basis", "level_warn", "resistances", "supports"):
+    for k in ("level_basis", "level_warn", "resistances", "supports", "zones", "notes"):
         ev[k] = pd.Series([None] * len(ev), index=ev.index, dtype=object)
     n = 0
     for code, r in L.items():
@@ -265,6 +272,61 @@ def apply_to_ev(ev: pd.DataFrame, ohlcv: pd.DataFrame) -> int:
         ev.at[code, "level_warn"] = r["level_warn"]
         ev.at[code, "resistances"] = r["resistances"]
         ev.at[code, "supports"] = r["supports"]
+        ev.at[code, "zones"] = r["zones"]
+        ev.at[code, "notes"] = r["notes"]
         n += 1
     ev.attrs["levels"] = "chart"
     return n
+
+
+def _zones(close, atr, stop, S, lo1) -> list[dict]:
+    """분할 매수 구간 1·2·3차 (30/30/40%), 모두 손절가 위.
+    1차 = 현재가 +1% ~ 가까운 지지 (폭은 최대 1ATR)
+    2·3차 = 1차 하단 ~ 손절가 사이에서 지지(스윙 저점·이평선·매물대)를 우선, 모자라면 그 사이를 고르게 나눔"""
+    rt = lambda x, m: int(round_tick(x, m))  # noqa: E731
+    floor = stop + 0.3 * atr
+    z1_low = min(close, max(lo1, close - 1.0 * atr, floor))
+    z = [{"name": "1차", "weight": 30, "low": rt(z1_low, "down"), "high": rt(close * 1.01, "up"),
+          "note": "현재가 ~ 가까운 지지 · 지금 가격대"}]
+    w = z1_low - floor
+    if w < 0.4 * atr:                                       # 손절가가 가까워 아래로 나눌 자리가 없음
+        z[0]["weight"] = 100
+        return z
+    half = min(0.3 * atr, w / 6)
+    picks = []
+    for g in S:                                              # 지지 우선 (위에서 아래로, 0.5ATR 이상 간격)
+        p = g["price"]
+        if floor + half <= p <= z1_low - half and all(abs(p - q) >= 0.5 * atr for q, _ in picks):
+            picks.append((p, f"{_label(g)} 지지"))
+        if len(picks) == 2:
+            break
+    for k in (1, 2):                                         # 모자라면 고르게
+        if len(picks) == 2:
+            break
+        p = z1_low - w * k / 3
+        if all(abs(p - q) >= w / 4 for q, _ in picks):
+            picks.append((p, "1차 하단과 손절가 사이 (아래 지지 없음)"))
+    picks.sort(key=lambda t: -t[0])
+    for (p, why), (name, wt) in zip(picks, (("2차", 30), ("3차", 40))):
+        z.append({"name": name, "weight": wt, "low": rt(max(p - half, floor), "down"),
+                  "high": rt(min(p + half, z1_low), "up"), "note": why + " · 눌림 때 추가"})
+    if len(z) == 2:
+        z[0]["weight"], z[1]["weight"] = 50, 50
+    return z
+
+
+def _notes(close, atr, t1, t2, t3, stop, stop_lab, zones) -> dict:
+    """목표·손절 설명 문장"""
+    def tn(i, t, g, after):
+        pct = (t / close - 1) * 100
+        src = f"{_label(g)} 저항" if g else "위 저항 없음 → ATR 투영"
+        return f"{i}차 목표 +{pct:.1f}% — {src}. {after}"
+    out = {"target1": tn(1, *t1, "첫 저항이라 매물이 나오기 쉬운 자리 — 도달 시 일부 차익 실현 고려"),
+           "target2": tn(2, *t2, "1차 돌파 후 다음 저항 — 남은 물량의 추가 차익 구간"),
+           "target3": tn(3, *t3, "추세가 강할 때의 확장 목표 — 거래량이 붙을 때만 기대")}
+    sp = (stop / close - 1) * 100
+    out["stop"] = (f"손절 {sp:.1f}% — " + (f"{stop_lab} 지지 아래(지지 - 0.5ATR)" if stop_lab else "하루 변동폭(ATR) 기준")
+                   + ". 종가가 이 아래로 마감하면 지지 붕괴로 보고 정리")
+    if len(zones) > 1:
+        out["zones"] = "분할 매수 " + " / ".join(f"{z['name']} {z['weight']}%" for z in zones) + " — 아래 구간은 눌림이 올 때만"
+    return out

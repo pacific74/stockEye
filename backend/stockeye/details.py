@@ -171,9 +171,17 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
         elif code in nd_idx:                     # 장중: 전날 장 마감 점수 + 지금 상태
             cand = {**cand, "nextday": nd_idx[code]}
         e = expl.get(code) if v3s is None else None
-        if v3text:
-            e = {"text": v3text, "source": "rule", "model": None, "verified": True,
-                 "disclaimer": "V3B 점수와 규칙을 풀어 쓴 참고용 설명이며 투자 권유가 아닙니다."}
+        # 요약 설명: 보조지표·이평선·거래량·수급·지지/저항 기준 (V3 점수 설명은 candidate.v3.text 로 따로 남음)
+        try:
+            from .analysis.tech_summary import summarize
+            ts = summarize(r, cand.get("plan") or {})
+            e = {"text": ts["text"], "points": ts["points"], "tone": ts["tone"], "source": "rule", "model": None,
+                 "verified": True, "disclaimer": "보조지표를 풀어 쓴 참고용 설명이며 투자 권유가 아닙니다."}
+        except Exception as ex:  # noqa: BLE001
+            log.debug("지표 요약 실패 %s: %s", code, ex)
+            if v3text:
+                e = {"text": v3text, "source": "rule", "model": None, "verified": True,
+                     "disclaimer": "V3B 점수와 규칙을 풀어 쓴 참고용 설명이며 투자 권유가 아닙니다."}
         if e is None:
             try:
                 e = {"text": rule_based(cand), "source": "rule", "model": None, "verified": True,

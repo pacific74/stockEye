@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../format.dart';
 import '../live.dart';
+import '../plan_line.dart';
 import '../today_picks.dart';
 import '../v3.dart';
 import '../widgets/common.dart';
@@ -443,7 +444,11 @@ class _LiveCandidateTile extends StatelessWidget {
       child: ListTile(
         leading: CircleAvatar(child: Text('${c['rank']}')),
         title: StockName('${c['name']}', market: c['market'] as String?, score: score),
-        subtitle: nxt ? Text('넥스트레이드 ${num0(q!.overPrice)} (${pct(q!.overRatio)})', style: t.bodySmall) : null,
+        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          PlanLine(c: c, price: q?.price, live: q != null),
+          if (nxt) Text('넥스트레이드 ${num0(q!.overPrice)} (${pct(q!.overRatio)})', style: t.bodySmall),
+        ]),
+        isThreeLine: true,
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -483,13 +488,6 @@ class _HoldingNowTile extends StatelessWidget {
     final price = q?.price;
     final pnl = (price != null && entry != null && entry > 0) ? (price / entry - 1) * 100 : null;
     final pnlWon = (price != null && entry != null && qty != null) ? (price - entry) * qty : null;
-    String? warn;
-    Color warnColor = Colors.grey;
-    if (sellDate != null) {
-      final due = today != null && sellDate!.compareTo(today!) <= 0;
-      warn = due ? '매도 예정일 도래 (${mdw(sellDate)})' : '매도 예정 ${mdw(sellDate)}';
-      warnColor = due ? Colors.orange : Colors.teal;
-    }
     Color c(double v) => v >= 0 ? upColor : downColor;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -497,12 +495,7 @@ class _HoldingNowTile extends StatelessWidget {
         dense: true,
         title: StockName('${h['name'] ?? h['code']}',
             market: (meta['market'] ?? h['market']) as String?, score: meta['score'] as num?),
-        subtitle: Text(
-            [
-              '매수가 ${num0(entry)}${qty == null ? '' : ' · ${num0(qty)}주'}',
-              if (warn != null) warn,
-            ].join(' · '),
-            style: warn != null ? t.bodySmall?.copyWith(color: warnColor) : t.bodySmall),
+        subtitle: Text('매수가 ${num0(entry)}', style: t.bodySmall),
         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
           // 오늘 시세
           Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [

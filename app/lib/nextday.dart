@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'format.dart';
+import 'plan_line.dart';
 import 'reversal.dart';
 import 'screens/stock_detail_screen.dart';
 import 'widgets/common.dart';
@@ -38,9 +39,10 @@ String _pct(num? v) => v == null ? '-' : '${v >= 0 ? '+' : ''}${v.toStringAsFixe
 
 /// 목록 한 줄: 등급·유형·점수 + (장중이면) 지금 상태
 class NextdayTile extends StatelessWidget {
-  const NextdayTile({super.key, required this.c, required this.rank});
+  const NextdayTile({super.key, required this.c, required this.rank, this.price});
   final Json c;
   final int rank;
+  final double? price;
 
   @override
   Widget build(BuildContext context) {
@@ -74,6 +76,7 @@ class NextdayTile extends StatelessWidget {
           else if (w.isNotEmpty)
             Text('종가 ${num0(w['close'] as num?)} · 돌파 ${num0(w['breakout'] as num?)} · 지지 ${num0(w['support'] as num?)} · '
                 '추격 금지 ${num0(w['no_chase'] as num?)}↑', style: t.bodySmall),
+          PlanLine(c: c, price: price, live: price != null),
         ]),
         isThreeLine: true,
         trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [

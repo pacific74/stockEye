@@ -116,6 +116,11 @@ def main():
     for r in rows:                     # 비슷한 패턴은 저녁에 만든 것을 그대로 둠 (칸을 보내지 않으면 안 바뀜)
         r.pop("similar_patterns", None)
     pub.publish_details(sb, rows, report["date"])
+    try:                                   # 검색 종목 '비슷한 패턴' 요청도 같이 처리 (지금 시세 반영)
+        from stockeye.cloud.patterns import process_pattern_requests
+        process_pattern_requests(sb, pit)
+    except Exception as e:  # noqa: BLE001
+        log.warning("패턴 요청 처리 실패: %s", e)
     print(f"발행 완료 ({(time.time() - t0) / 60:.1f}분)")
 
 

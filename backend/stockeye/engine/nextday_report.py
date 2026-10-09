@@ -85,7 +85,7 @@ def build_section(pit, view, x: pd.DataFrame, ev: pd.DataFrame, name_of: dict, t
     types = {}
     for c in cands:
         types[c["nextday"]["type"]] = types.get(c["nextday"]["type"], 0) + 1
-    lst_ = {"name": "익일 유망주", "short": "익일유망주", "description": DESC, "limitation": LIMIT,
+    lst_ = {"experimental": True, "name": "익일 유망주", "short": "익일유망주", "description": DESC, "limitation": LIMIT,
             "count": len(ranked), "candidates": cands}
     meta = {"version": nd.VERSION, "as_of": d.strftime("%Y-%m-%d"), "rules": nd.RULES_TEXT, "grades": counts,
             "types": types, "eligible": int(sc["eligible"].sum()), "has_disclosures": has_news,

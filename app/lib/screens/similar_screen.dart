@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -53,6 +54,9 @@ class _SimilarScreenState extends State<SimilarScreen> {
         future: _f,
         builder: (context, data) {
           final d = data.$1;
+          if (d['missing'] == true) {
+            return _PatternRequest(code: widget.code, onDone: () => setState(() => _f = _load()));
+          }
           final win = (d['window'] as num?)?.toInt() ?? 20;
           final q = _path(d['query_path']);
           final matches = asList(d['matches']);
@@ -70,6 +74,9 @@ class _SimilarScreenState extends State<SimilarScreen> {
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
             children: [
               Text('⚠ ${d['disclaimer']}', style: t.bodySmall?.copyWith(color: Colors.orange)),
+              if (d['basis'] != null)
+                Text('비교 기준: ${d['basis']} · ${d['as_of']} 기준', style: t.bodySmall),
+              if (asMap(d['query_ma']).isNotEmpty) Text('지금: ${_maText(asMap(d['query_ma']))}', style: t.bodySmall),
               const SizedBox(height: 8),
               // ① 지금 이 종목
               _ChartCard(
@@ -156,6 +163,11 @@ class _SimilarScreenState extends State<SimilarScreen> {
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Text('패턴 ${e.key + 1} · ${mm['name']}', style: const TextStyle(fontWeight: FontWeight.w600)),
                             Text('${mm['start']} ~ ${mm['end']} · 유사도 ${mm['similarity']}', style: t.bodySmall),
+                            if (mm['sim_price'] != null)
+                              Text('가격 ${mm['sim_price']} · 이평선 ${mm['sim_ma']} · 거래량 ${mm['sim_volume']}',
+                                  style: t.bodySmall?.copyWith(color: Colors.grey)),
+                            if (asMap(mm['ma']).isNotEmpty)
+                              Text('그때: ${_maText(asMap(mm['ma']))}', style: t.bodySmall?.copyWith(color: Colors.grey)),
                             const SizedBox(height: 4),
                             Sparkline(values: [..._path(mm['path']), ..._path(mm['future'])], height: 32,
                                 color: selected ? orange : null),
@@ -179,6 +191,12 @@ class _SimilarScreenState extends State<SimilarScreen> {
         },
       ),
     );
+  }
+
+  static String _maText(Json m) {
+    String p(num? v, [int d = 1]) => v == null ? '-' : '${v >= 0 ? '+' : ''}${v.toStringAsFixed(d)}%';
+    return '20일선 대비 ${p(m['dist20'] as num?)}(기울기 ${p(m['slope20'] as num?, 2)}) · '
+        '60일선 대비 ${p(m['dist60'] as num?)} · 거래대금 ${p(m['vol_change'] as num?, 0)}';
   }
 
   Widget _legend(Color c, String label, {bool dashed = false}) => Row(mainAxisSize: MainAxisSize.min, children: [
@@ -278,4 +296,122 @@ class _ComparePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ComparePainter old) => old.p != p || old.q != q || old.f != f;
+}
+
+
+/// 아직 패턴이 없는 종목: [패턴 찾기 요청] → 상태 표시 · 1분마다 자동 확인
+class _PatternRequest extends StatefulWidget {
+  const _PatternRequest({required this.code, required this.onDone});
+  final String code;
+  final VoidCallback onDone;
+
+  @override
+  State<_PatternRequest> createState() => _PatternRequestState();
+}
+
+class _PatternRequestState extends State<_PatternRequest> {
+  Json _st = {};
+  bool _busy = false;
+  String? _err;
+  Timer? _timer;
+  int _polls = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  bool get _waiting => const ['queued', 'running'].contains(_st['status']);
+
+  Future<void> _check() async {
+    final st = await Api.patternStatus(widget.code);
+    if (!mounted) return;
+    setState(() => _st = st);
+    if (st['status'] == 'done') {
+      _timer?.cancel();
+      widget.onDone();
+    } else if (_waiting) {
+      _timer ??= Timer.periodic(const Duration(minutes: 1), (_) {
+        if (++_polls > 70) _timer?.cancel(); // 최대 약 1시간 10분
+        _check();
+      });
+    }
+  }
+
+  Future<void> _request() async {
+    setState(() {
+      _busy = true;
+      _err = null;
+    });
+    try {
+      await Api.requestPattern(widget.code);
+      await _check();
+    } catch (e) {
+      setState(() => _err = '$e'.replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _hm(dynamic v) {
+    final d = DateTime.tryParse('${v ?? ''}')?.toLocal();
+    return d == null ? '' : '${d.hour}:${d.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final instant = _st['instant'] == true;
+    final when = instant
+        ? '보통 3~6분 안에 결과가 나옵니다.'
+        : '평일 9~21시 매시간 15분 · 장중 11시·14시 · 저녁 배치 때 처리됩니다 (최대 1시간 정도).';
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('이 종목은 아직 비슷한 과거 패턴을 계산하지 않았어요', style: t.titleSmall),
+            const SizedBox(height: 6),
+            const Text('매일 저녁 배치는 후보 메뉴의 모든 탭 종목과 보유종목만 미리 계산합니다. '
+                '요청하면 이 종목도 계산해서, 다른 회원도 같이 볼 수 있게 저장합니다. '
+                '요청한 종목은 며칠 동안 저녁 배치에서 계속 새로 계산됩니다.'),
+            const SizedBox(height: 4),
+            Text('비교 기준: 가격 모양 50% · 이동평균선(20·60일) 30% · 거래량 20%', style: t.bodySmall),
+            const SizedBox(height: 12),
+            if (_waiting) ...[
+              Row(children: [
+                const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: Text('${_st['status'] == 'running' ? '계산 중' : '요청됨'} (${_hm(_st['created_at'])}) — $when')),
+              ]),
+              const SizedBox(height: 6),
+              Text('이 화면을 열어 두면 1분마다 확인해서 끝나면 바로 보여줍니다.', style: t.bodySmall),
+            ] else ...[
+              if (_st['status'] == 'failed')
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text('지난 요청 실패: ${_st['message'] ?? ''}', style: const TextStyle(color: Colors.orange)),
+                ),
+              FilledButton.icon(
+                icon: const Icon(Icons.timeline),
+                label: Text(_busy ? '요청 중…' : '비슷한 과거 패턴 찾기 요청'),
+                onPressed: _busy ? null : _request,
+              ),
+            ],
+            if (_err != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_err!, style: const TextStyle(color: Colors.red))),
+            const SizedBox(height: 8),
+            TextButton.icon(icon: const Icon(Icons.refresh), label: const Text('지금 다시 확인'), onPressed: _check),
+          ]),
+        ),
+      ),
+    ]);
+  }
 }

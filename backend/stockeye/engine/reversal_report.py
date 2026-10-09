@@ -47,7 +47,7 @@ def build_section(view, x: pd.DataFrame, ev: pd.DataFrame, name_of: dict, theme_
             continue
         c = candidate_dict(code, ev.loc[code], x.loc[code], name_of.get(code, code), i, theme_of.get(code))
         cands.append(apply(c, sc.loc[code]))
-    lst = {"name": "추세전환", "short": "추세전환", "description": DESC, "limitation": LIMIT, "count": n70,
+    lst = {"experimental": True, "name": "추세전환", "short": "추세전환", "description": DESC, "limitation": LIMIT, "count": n70,
            "candidates": cands}
     meta = {"version": rv.VERSION, "rules": rv.RULES_TEXT, "candidates": n70, "priority": n80,
             "eligible": int(sc["eligible"].sum())}

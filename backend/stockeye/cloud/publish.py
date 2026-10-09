@@ -7,6 +7,7 @@ from datetime import datetime
 import pandas as pd
 
 from ..engine.strategies import STRATEGIES, LIMITATIONS
+from ..details import is_experimental
 from .client import Supabase
 
 log = logging.getLogger(__name__)
@@ -118,7 +119,7 @@ def publish_journal(sb: Supabase, cfg: dict, journal, pit=None, report: dict | N
     oh = oh[oh["date"] >= oh["date"].max() - pd.Timedelta(days=120)]
     x = compute_features(oh).xs(oh["date"].max(), level="date")
     idx = {}
-    for c in report["candidates"] + [c for k, v in report["strategies"].items() if k not in ("reversal", "early", "nextday") for c in v["candidates"]]:
+    for c in report["candidates"] + [c for k, v in report["strategies"].items() if not is_experimental(k, v) for c in v["candidates"]]:
         idx.setdefault(c["code"], {"score": c["score"], "tags": c.get("tags", [])})
     cal = (report.get("v3") or {}).get("calendar")
     if cal is None and report.get("v3"):

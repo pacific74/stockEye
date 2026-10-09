@@ -47,13 +47,18 @@ def _bars(g: pd.DataFrame) -> list[dict]:
 EXP_TABS = ("nextday", "early", "reversal")     # 점수 체계가 다른 실험 탭 (기본 후보로는 안 쓰고 상세에 따로 붙임)
 
 
+def is_experimental(key: str, lst: dict | None) -> bool:
+    """후보 메뉴의 실험 탭인지 — 새 탭은 목록에 experimental=True 만 넣으면 됨"""
+    return key in EXP_TABS or bool((lst or {}).get("experimental"))
+
+
 def _report_index(report: dict) -> dict[str, dict]:
     """리포트 후보(전략·테마 정보가 붙은 것)를 코드별로. 종합 후보 우선."""
     idx = {}
     for c in report["candidates"]:
         idx.setdefault(c["code"], c)
     for k, v in report["strategies"].items():
-        if k in EXP_TABS:           # 추세전환은 점수 체계가 달라 기본 후보로 쓰지 않음 (상세에 따로 붙임)
+        if is_experimental(k, v):   # 실험 탭은 점수 체계가 달라 기본 후보로 쓰지 않음 (상세에 따로 붙임)
             continue
         for c in v["candidates"]:
             idx.setdefault(c["code"], c)
@@ -186,9 +191,8 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
         log.info("지표 부족으로 상세를 만들지 못한 종목 %d개", failed)
 
     # 비슷한 패턴: 리포트 후보 + 회원들의 보유종목 (similar_codes)
-    # 실험 탭(익일 유망주·상승초기·추세전환) 후보도 포함
-    exp_codes = [c["code"] for k in EXP_TABS
-                 for c in (report.get("strategies", {}).get(k) or {}).get("candidates", [])]
+    # 후보 메뉴의 모든 탭 후보 (새 탭이 생기면 자동 포함 — 리포트 strategies 에 있는 목록 전부)
+    exp_codes = [c["code"] for v in (report.get("strategies") or {}).values() for c in (v or {}).get("candidates", [])]
     base = list(dict.fromkeys(list(rep_idx) + exp_codes))
     sim_targets = list(dict.fromkeys(base + [c for c in (similar_codes or []) if c]))
     if similar and sim_targets:
@@ -198,33 +202,38 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
         pi = PatternIndex(pit.ohlcv, window=20)
         name_of = dict(zip(names["code"], names["name"]))
         by_code = {r["code"]: r for r in rows}
-        results = {}
-        for code in sim_targets:
-            if code not in by_code:
-                continue
-            try:
-                s = pi.search(code, date, top=similar_top)
-            except Exception as ex:  # noqa: BLE001
-                s = {"error": str(ex)}
-            if "error" not in s:
-                for m in s["matches"]:
-                    m["name"] = name_of.get(m["code"], m["code"])
-                s["name"] = name_of.get(code, code)
-            results[code] = s
-        # 비교 화면용: 각 유사 구간의 실제 일봉 (패턴 20일 + 그 뒤 20일)
-        need = {m["code"] for s in results.values() if "error" not in s for m in s["matches"]}
-        oh = _add_ma(pit.ohlcv[pit.ohlcv["code"].isin(need)])
-        groups = {c: g.reset_index(drop=True) for c, g in oh.groupby("code", sort=False)}
-        for code, s in results.items():
-            if "error" not in s:
-                for m in s["matches"]:
-                    g = groups.get(m["code"])
-                    if g is None:
-                        continue
-                    pos = g.index[g["date"] == pd.Timestamp(m["start"])]
-                    if len(pos) == 0:
-                        continue
-                    seg = g.iloc[int(pos[0]): int(pos[0]) + s["window"] + len(m.get("future", []))]
-                    m["bars"] = _bars(seg)
-            by_code[code]["similar_patterns"] = s
+        results = similar_payloads(pi, [c for c in sim_targets if c in by_code], date, pit.ohlcv, name_of, similar_top)
+        for code, s_ in results.items():
+            by_code[code]["similar_patterns"] = s_
     return rows
+
+
+def similar_payloads(pi, codes, date, ohlcv: pd.DataFrame, name_of: dict, top: int = 10) -> dict:
+    """종목별 비슷한 패턴 + 비교 화면용 실제 일봉(패턴 20일 + 그 뒤 20일). 저녁 배치·검색 요청 처리 공용"""
+    results = {}
+    for code in codes:
+        try:
+            s = pi.search(code, date, top=top)
+        except Exception as ex:  # noqa: BLE001
+            s = {"error": str(ex)}
+        if "error" not in s:
+            for m in s["matches"]:
+                m["name"] = name_of.get(m["code"], m["code"])
+            s["name"] = name_of.get(code, code)
+        results[code] = s
+    need = {m["code"] for s in results.values() if "error" not in s for m in s["matches"]}
+    oh = _add_ma(ohlcv[ohlcv["code"].isin(need)])
+    groups = {c: g.reset_index(drop=True) for c, g in oh.groupby("code", sort=False)}
+    for code, s in results.items():
+        if "error" in s:
+            continue
+        for m in s["matches"]:
+            g = groups.get(m["code"])
+            if g is None:
+                continue
+            pos = g.index[g["date"] == pd.Timestamp(m["start"])]
+            if len(pos) == 0:
+                continue
+            seg = g.iloc[int(pos[0]): int(pos[0]) + s["window"] + len(m.get("future", []))]
+            m["bars"] = _bars(seg)
+    return results

@@ -150,10 +150,13 @@ def main():
     company = step("기업 개요 (주 1회 갱신)", lambda: load_company(sync, report["date"]), errors)
     held = step("보유종목 목록 (비슷한 패턴용)", lambda: sorted({r["code"] for r in sb.select(
         "positions", {"select": "code", "status": "eq.open", "limit": "100000"})}), errors) or []
+    from stockeye.cloud.patterns import recent_requested, process_pattern_requests
+    asked = step("최근 검색 요청 종목 (비슷한 패턴 계속 갱신)", lambda: recent_requested(sb), errors) or []
     rows = step("종목 상세 만들기", lambda: build_details(pit, cfg, report, res, view, similar=not args.no_similar,
-                                                         company=company, similar_codes=held), errors)
+                                                         company=company, similar_codes=held + asked), errors)
     if rows:
         step("종목 상세 발행", lambda: pub.publish_details(sb, rows, report["date"]), errors)
+    step("검색 종목 패턴 요청 처리", lambda: process_pattern_requests(sb, pit), errors)
 
     # 매매일지: 앱을 쓰는 모든 사용자 각각 (본인 데이터만 본인에게 보임)
     from stockeye.cloud.journal import CloudJournal

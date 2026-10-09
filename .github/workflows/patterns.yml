@@ -1,0 +1,58 @@
+# 검색 종목 '비슷한 과거 패턴' 요청 처리
+#   - 앱에서 요청하면 Supabase 가 바로 신호(repository_dispatch) → 보통 3~6분 안에 결과
+#     (신호는 Supabase app_config 에 github_dispatch_token·github_repo 를 넣었을 때만. 마이그레이션 파일 참고)
+#   - 신호 설정이 없거나 놓쳤을 때를 위해 평일 09~21시(한국) 매시간 점검
+#     대기 요청이 없으면 데이터를 받지 않고 바로 끝남 (약 10초)
+#   - 장중 재분석(11·14시)과 저녁 배치 끝에서도 같이 처리
+name: patterns
+
+on:
+  repository_dispatch:
+    types: [pattern_request]
+  schedule:
+    - cron: "15 0-12 * * 1-5"      # UTC 00:15~12:15 = 한국 09:15~21:15 매시간
+  workflow_dispatch:
+
+concurrency:
+  group: stockeye-patterns
+  cancel-in-progress: false
+
+jobs:
+  patterns:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: Asia/Seoul
+      PYTHONUTF8: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+    steps:
+      - name: 대기 중인 요청 확인 (없으면 여기서 끝)
+        id: q
+        run: |
+          n=$(curl -s "$SUPABASE_URL/rest/v1/pattern_requests?status=eq.queued&select=id&limit=1" \
+                -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY")
+          echo "응답: $n"
+          if [ "$n" = "[]" ]; then echo "has=0" >> "$GITHUB_OUTPUT"; else echo "has=1" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@v4
+        if: steps.q.outputs.has == '1'
+      - uses: actions/setup-python@v5
+        if: steps.q.outputs.has == '1'
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: 원본 데이터 캐시 (Storage 에서 바뀐 조각만 받기)
+        if: steps.q.outputs.has == '1'
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: stockeye-data-${{ github.run_id }}
+          restore-keys: stockeye-data-
+      - name: 패키지 설치
+        if: steps.q.outputs.has == '1'
+        run: pip install -r backend/requirements.txt
+      - name: 패턴 요청 처리
+        if: steps.q.outputs.has == '1'
+        working-directory: backend
+        run: python -m scripts.patterns

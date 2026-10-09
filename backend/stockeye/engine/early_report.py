@@ -37,7 +37,7 @@ def build_section(view, x: pd.DataFrame, ev: pd.DataFrame, name_of: dict, theme_
             c = candidate_dict(code, ev.loc[code], x.loc[code], name_of.get(code, code), i, theme_of.get(code))
             cands.append(apply(c, sc.loc[code]))
     tot = ranked["total"]
-    lst = {"name": "상승초기", "short": "상승초기", "description": DESC, "limitation": LIMIT,
+    lst = {"experimental": True, "name": "상승초기", "short": "상승초기", "description": DESC, "limitation": LIMIT,
            "count": int((tot >= up.WATCH).sum()), "candidates": cands}
     meta = {"version": up.VERSION, "rules": up.RULES_TEXT, "priority": int((tot >= up.PRIORITY).sum()),
             "watch": int(((tot >= up.WATCH) & (tot < up.PRIORITY)).sum()), "hold": int((tot < up.WATCH).sum()),

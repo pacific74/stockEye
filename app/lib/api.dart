@@ -41,6 +41,8 @@ class Api {
   static Future<Json> stock(String code) => useCloud ? _Cloud.stock(code) : _Http.get('/api/stocks/$code');
   static Future<Json> explain(String code) => useCloud ? _Cloud.explain(code) : _Http.get('/api/stocks/$code/explain');
   static Future<Json> similar(String code) => useCloud ? _Cloud.similar(code) : _Http.get('/api/stocks/$code/similar');
+  static Future<Json> requestPattern(String code) => _Cloud.requestPattern(code);
+  static Future<Json> patternStatus(String code) => useCloud ? _Cloud.patternStatus(code) : Future.value(<String, dynamic>{});
   static Future<List<Json>> strategies() => useCloud ? _Cloud.strategies() : _Http.getList('/api/strategies');
   static Future<Json> backtest(Json req) => useCloud ? _Cloud.backtest(req) : _Http.post('/api/backtest', req);
   static Future<Json> latestBacktest({String? strategy}) => useCloud
@@ -262,13 +264,28 @@ class _Cloud {
   static Future<Json> similar(String code) async {
     final r = await _detail(code, 'similar_patterns');
     final s = r['similar_patterns'];
-    if (s == null) {
-      throw Exception('비슷한 패턴은 매일 저녁 배치에서 "매수 후보"와 "보유종목"만 미리 계산합니다.\n'
-          '오늘 보유종목에 추가했다면 오늘 저녁 배치 뒤에 볼 수 있어요.');
-    }
+    if (s == null) return {'missing': true}; // 아직 계산 안 됨 → 화면에서 [패턴 찾기 요청]
     final m = asMap(s);
     if (m['error'] != null) throw Exception('${m['error']}');
     return m;
+  }
+
+  /// 검색 종목 '비슷한 과거 패턴' 요청 (같은 종목이 대기 중이면 그 요청을 같이 씀)
+  static Future<Json> requestPattern(String code) async {
+    try {
+      return asMap(await db.rpc('request_pattern', params: {'p_code': code}));
+    } on PostgrestException catch (e) {
+      throw Exception(e.message);
+    }
+  }
+
+  /// 그 종목의 최근 패턴 요청 상태 (queued/running/done/failed), 없으면 빈 Map
+  static Future<Json> patternStatus(String code) async {
+    try {
+      return asMap(await db.rpc('pattern_request_status', params: {'p_code': code}));
+    } on PostgrestException {
+      return {}; // 마이그레이션 전
+    }
   }
 
   // ---------------------------------------------------------------- 전략 / 백테스트

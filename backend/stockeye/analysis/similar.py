@@ -10,8 +10,17 @@
   - 과거 구간은 '구간 끝 + 보유기간(20일)'이 기준일(as_of) 이전에 끝난 것만 사용
   - 같은 종목의 최근 구간(기준일 이전 60일 내)은 제외
 가격은 KRX 등락률(chg_pct)로 만든 수익률을 써서 액면분할의 영향을 받지 않는다.
+
+비교 기준 (2026-10-09~): 가격 모양 50% + 이동평균선 30% + 거래량 20%
+  - 가격: 20일 누적 수익 경로의 모양 (z 정규화 거리)
+  - 이평선: 같은 기간 20일선·60일선 경로를 '가격과 같은 기준'으로 정규화해 비교
+           → 주가가 이평선 위/아래 어디에 있었는지, 이평선이 오르는지/내리는지까지 비슷해야 함
+  - 거래량: 거래대금(분할 영향 없음)의 20일 모양 + 직전 20일 대비 늘었는지/줄었는지
+  1단계로 가격 모양이 비슷한 구간 4,000개를 고른 뒤, 2단계에서 세 가지를 합친 거리로 다시 정렬한다.
 """
 from __future__ import annotations
+
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -19,8 +28,10 @@ from numpy.lib.stride_tricks import sliding_window_view
 
 
 class PatternIndex:
+    WEIGHTS = {"price": 0.5, "ma": 0.3, "volume": 0.2}
+
     def __init__(self, ohlcv: pd.DataFrame, window: int = 20, step: int = 2, horizons=(5, 10, 20),
-                 min_value: float = 1e9):
+                 min_value: float = 1e9, prefilter: int = 4000):
         self.window, self.step, self.horizons = window, step, tuple(horizons)
         df = ohlcv[["date", "code", "close", "value"] + (["chg_pct"] if "chg_pct" in ohlcv else [])].copy()
         if "chg_pct" in df:
@@ -37,6 +48,18 @@ class PatternIndex:
         lr = np.log1p(self.r.fillna(0).to_numpy()).astype("float32")
         self.valid = self.r.notna().to_numpy()
         self.cum = np.vstack([np.zeros((1, lr.shape[1]), dtype="float32"), np.cumsum(lr, axis=0)])  # (T+1, N)
+        self.prefilter = prefilter
+        # 이동평균선: 수익률로 만든 가격(분할 영향 없음)의 20·60일 평균 → log. 거래일이 부족하면 NaN
+        px = pd.DataFrame(np.exp(self.cum[1:]))
+        vcnt = pd.DataFrame(self.valid.astype("float32"))
+        self.lma = {}
+        for n in (20, 60):
+            ma = px.rolling(n, min_periods=n).mean().to_numpy()
+            okn = vcnt.rolling(n, min_periods=n).sum().to_numpy() >= n * 0.9
+            self.lma[n] = np.where(okn, np.log(ma), np.nan).astype("float32")
+        # 거래량: 거래대금 log (거래 없는 날·결측 = NaN)
+        v = self.val.to_numpy()
+        self.lv = np.where(self.valid & (v > 0), np.log1p(np.where(v > 0, v, 0)), np.nan).astype("float32")
 
     def _path(self, end_idx: int, col: int) -> np.ndarray | None:
         s = end_idx + 1 - self.window
@@ -83,20 +106,38 @@ class PatternIndex:
             d = np.sqrt(((self._z(paths) - qz) ** 2).mean(axis=-1))
             dist[b:b + 100] = np.where(ok, d, np.inf)
 
-        flat = np.argsort(dist, axis=None)
+        # 1단계: 가격 모양이 비슷한 구간 prefilter 개 → 2단계: 가격·이평선·거래량 합친 거리로 재정렬
+        nfin = int(np.isfinite(dist).sum())
+        k1 = min(self.prefilter, nfin)
+        if k1 == 0:
+            return {"error": "비슷한 구간 없음"}
+        flat = np.argpartition(dist, k1 - 1, axis=None)[:k1] if k1 < dist.size else np.arange(dist.size)
+        flat = flat[np.isfinite(dist.flat[flat])]
+        ei_all, ci_all = np.unravel_index(flat, dist.shape)
+        e_all = ends[ei_all]
+        d_p = dist.flat[flat].astype("float32")
+        d_m = self._ma_dist(T, col, e_all, ci_all)
+        d_v = self._vol_dist(T, col, e_all, ci_all)
+        wt = self.WEIGHTS
+        comb = wt["price"] * d_p + wt["ma"] * d_m + wt["volume"] * d_v
+        order = np.argsort(comb)
+        sim = lambda d: round(float(max(0.0, 1 - d / 1.5)) * 100, 1)  # noqa: E731
         res, seen = [], set()
-        for k in flat:
-            if not np.isfinite(dist.flat[k]) or len(res) >= pool:
+        for j in order:
+            if len(res) >= pool:
                 break
-            ei, ci = np.unravel_index(k, dist.shape)
+            ci = int(ci_all[j])
             c = self.codes[ci]
             if one_per_code and c in seen:
                 continue
             seen.add(c)
-            e = int(ends[ei])
+            e = int(e_all[j])
+            extra = {"sim_price": sim(d_p[j]), "sim_ma": sim(d_m[j]), "sim_volume": sim(d_v[j])}
+            if len(res) < top:
+                extra["ma"] = self._ma_state(e, ci)
             fwd = {f"ret{h}": float(np.expm1(self.cum[e + 1 + h, ci] - self.cum[e + 1, ci])) for h in self.horizons}
             res.append({"code": c, "start": str(self.dates[e + 1 - W].date()), "end": str(self.dates[e].date()),
-                        "similarity": round(float(max(0.0, 1 - dist.flat[k] / 1.5)) * 100, 1),
+                        "similarity": sim(comb[j]), **extra,
                         "path": [round(float(v), 4) for v in
                                  np.expm1(self.cum[e + 2 - W:e + 2, ci] - self.cum[e + 1 - W, ci])],
                         # 패턴 이후 H일 (같은 기준점에서의 누적 수익률) — 화면에서 '그 뒤' 점선으로 비교
@@ -112,7 +153,75 @@ class PatternIndex:
                               "median": round(float(np.median(arr)), 2),
                               "p25": round(float(np.percentile(arr, 25)), 2),
                               "p75": round(float(np.percentile(arr, 75)), 2)}
-        return {"code": code, "as_of": str(as_of.date()), "window": W,
+        return {"code": code, "as_of": str(as_of.date()), "window": W, "weights": dict(self.WEIGHTS),
+                "basis": "가격 모양 50% · 이동평균선(20·60일) 30% · 거래량 20%",
+                "query_ma": self._ma_state(T, col),
                 "query_path": [round(float(v), 4) for v in np.expm1(q)],
                 "matches": res[:top], "sample_size": len(res), "stats": stats,
                 "disclaimer": "과거 유사 패턴의 결과일 뿐이며 미래 수익을 예측하지 않습니다. 참고자료로만 사용하세요."}
+
+    # ---------------------------------------------------------------- 이평선·거래량 비교
+    def _rows(self, e: np.ndarray) -> np.ndarray:
+        return (e - self.window + 1)[:, None] + np.arange(self.window)[None, :]          # (K, W) 날짜 인덱스
+
+    def _norm(self, e: np.ndarray, c: np.ndarray):
+        """구간별 가격 경로의 평균·표준편차 (이평선 경로를 같은 기준으로 정규화하려고)"""
+        s = e - self.window + 1
+        rows = self._rows(e)
+        base = self.cum[s, c]                                                            # 구간 시작 전날 log 가격
+        p = self.cum[rows + 1, c[:, None]] - base[:, None]
+        sd = p.std(axis=1)
+        return rows, base, p.mean(axis=1), np.where(sd < 1e-6, 1, sd)
+
+    def _ma_paths(self, e, c):
+        rows, base, mu, sd = self._norm(e, c)
+        out = []
+        for n in (20, 60):
+            m = (self.lma[n][rows, c[:, None]] - base[:, None] - mu[:, None]) / sd[:, None]
+            out.append(np.clip(m, -6, 6))
+        return out
+
+    def _ma_dist(self, T, col, e, c) -> np.ndarray:
+        q20, q60 = (x[0] for x in self._ma_paths(np.array([T]), np.array([col])))
+        m20, m60 = self._ma_paths(e, c)
+        d = np.sqrt((((m20 - q20) ** 2).mean(axis=1) + ((m60 - q60) ** 2).mean(axis=1)) / 2)
+        if np.isnan(q20).any() or np.isnan(q60).any():               # 지금 종목 이평선을 못 구하면 비교 안 함
+            return np.zeros(len(e), dtype="float32")
+        return np.where(np.isfinite(d), d, 1.5).astype("float32")
+
+    def _vol_feat(self, e, c):
+        rows = self._rows(e)
+        lv = self.lv[rows, c[:, None]]
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            m = np.nanmean(lv, axis=1)
+            shape = lv - m[:, None]
+            prev_rows = np.clip(rows - self.window, 0, None)
+            prev = np.nanmean(self.lv[prev_rows, c[:, None]], axis=1)
+        return shape, m - prev
+
+    def _vol_dist(self, T, col, e, c) -> np.ndarray:
+        qs, ql = self._vol_feat(np.array([T]), np.array([col]))
+        sh, lvl = self._vol_feat(e, c)
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            d_shape = np.sqrt(np.nanmean((sh - qs) ** 2, axis=1))
+            d = 0.6 * d_shape / 0.8 + 0.4 * np.abs(lvl - ql[0]) / 0.5
+        return np.where(np.isfinite(d), np.minimum(d, 3.0), 1.5).astype("float32")
+
+    def _ma_state(self, T: int, col: int) -> dict:
+        """지금 종목의 이평선 상태 (화면 설명용)"""
+        lp = self.cum[T + 1, col]
+        out = {}
+        for n in (20, 60):
+            m = self.lma[n][T, col]
+            m5 = self.lma[n][T - 5, col] if T >= 5 else np.nan
+            out[f"dist{n}"] = None if np.isnan(m) else round(float(np.expm1(lp - m)) * 100, 1)
+            out[f"slope{n}"] = None if np.isnan(m) or np.isnan(m5) else round(float(np.expm1(m - m5)) * 100, 2)
+        lv = self.lv[max(0, T - 19):T + 1, col]
+        pv = self.lv[max(0, T - 39):max(0, T - 19), col]
+        with np.errstate(all="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            out["vol_change"] = None if np.isnan(lv).all() or np.isnan(pv).all() else \
+                round(float(np.expm1(np.nanmean(lv) - np.nanmean(pv))) * 100, 0)
+        return out

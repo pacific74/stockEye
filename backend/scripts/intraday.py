@@ -98,6 +98,14 @@ def main():
             attach_portfolio(report, pit, DataSync(store, sb), record=False, eligible=getattr(res, "v3_eligible", None))
         except Exception as e:  # noqa: BLE001
             log.warning("V3 모의 보유 계산 실패: %s", e)
+    # 익일 유망주: 전날 장 마감 점수는 그대로, 지금 시세로 상태(갭 추격 금지·돌파·무효화)만 따로
+    try:
+        from stockeye.engine.nextday_report import carry_over
+        carry_over(report, DataSync(store, sb).get_json("reports/latest.json"), bars, hm)
+        res.nextday_scores = None             # 상세에도 장중 값으로 다시 매기지 않음
+    except Exception as e:  # noqa: BLE001
+        log.warning("익일 유망주 장중 상태 실패: %s", e)
+        report.get("strategies", {}).pop("nextday", None)
     report["intraday"] = {"time": hm, "coverage": round(cov, 3)}
     v2 = report.get("v2", {})
     print(f"장중 재분석 {report['date']} {hm}: 시장 {v2.get('market')} / {v2.get('counts')}")

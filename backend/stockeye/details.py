@@ -50,7 +50,7 @@ def _report_index(report: dict) -> dict[str, dict]:
     for c in report["candidates"]:
         idx.setdefault(c["code"], c)
     for k, v in report["strategies"].items():
-        if k in ("reversal", "early"):           # 추세전환은 점수 체계가 달라 기본 후보로 쓰지 않음 (상세에 따로 붙임)
+        if k in ("reversal", "early", "nextday"):           # 추세전환은 점수 체계가 달라 기본 후보로 쓰지 않음 (상세에 따로 붙임)
             continue
         for c in v["candidates"]:
             idx.setdefault(c["code"], c)
@@ -71,6 +71,7 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
     in_s2 = set(stage2(uni, cfg)[0].index) if uni is not None and len(uni) else set()
     titles = titles_from_view(view, x.index) or {}
     rep_idx = _report_index(report)
+    nd_idx = {c["code"]: c.get("nextday") for c in (report.get("strategies", {}).get("nextday") or {}).get("candidates", [])}
     expl = report.get("explanations", {})
     theme_of = {c["code"]: c.get("theme") for c in rep_idx.values()}
 
@@ -155,6 +156,12 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
         if ups is not None and code in ups.index:
             from .engine.early_report import info as up_info
             cand = {**cand, "early": up_info(ups.loc[code])}
+        nds = getattr(res, "nextday_scores", None)
+        if nds is not None and code in nds.index:
+            from .engine.nextday_report import info as nd_info
+            cand = {**cand, "nextday": nd_info(nds.loc[code])}
+        elif code in nd_idx:                     # 장중: 전날 장 마감 점수 + 지금 상태
+            cand = {**cand, "nextday": nd_idx[code]}
         e = expl.get(code) if v3s is None else None
         if v3text:
             e = {"text": v3text, "source": "rule", "model": None, "verified": True,

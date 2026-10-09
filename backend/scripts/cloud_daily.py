@@ -139,6 +139,10 @@ def main():
         step("V3 기준 전략: 선정 기록·모의 보유·매도 예정일",
              lambda: attach_portfolio(report, pit, sync, record=not args.as_of, eligible=getattr(res, "v3_eligible", None)),
              errors)
+    if report.get("nextday"):
+        from stockeye.engine.nextday_report import attach_log
+        step("익일 유망주: 후보 기록·어제 후보 결과",
+             lambda: attach_log(report, pit, sync, record=not args.as_of), errors)
     save_report(report, cfg)
     step("리포트 → Storage", lambda: (sync.put_json("reports/latest.json", report),
                                        sync.put_json(f"reports/{report['date']}.json", report)), errors)

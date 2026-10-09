@@ -114,6 +114,15 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
             res.early_scores = ups["scores"]
         except Exception as e:  # noqa: BLE001
             log.warning("상승초기 계산 실패: %s", e)
+        # ---- 익일 유망주 (실험 탭 · 관찰용): 장 마감 데이터로 다음 거래일 움직임 후보 ----
+        try:
+            from .engine.nextday_report import build_section as nd_section
+            nds = nd_section(pit, view, x, ev, name_of, theme_of, as_of)
+            report.setdefault("strategies", {})["nextday"] = nds["list"]
+            report["nextday"] = nds["meta"]
+            res.nextday_scores = nds["scores"]
+        except Exception as e:  # noqa: BLE001
+            log.warning("익일 유망주 계산 실패: %s", e)
     else:
         # ---- (예전) V1: 종합 점수 + 전략 A~E ----
         weak = weak_markets(market, cfg)

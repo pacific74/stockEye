@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../format.dart';
 import '../live.dart';
+import '../nextday.dart';
 import '../reversal.dart';
 import '../widgets/common.dart';
 import '../widgets/price_chart.dart';
@@ -96,6 +97,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
           final v3 = asMap(c['v3']);
           final rev = asMap(c['reversal']);
           final early = asMap(c['early']);
+          final nextd = asMap(c['nextday']);
           num? pv(String k) => p[k] as num?;
 
           return ListView(
@@ -208,6 +210,14 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
               if (v3.isNotEmpty) ...[
                 const SectionTitle('점수 구성'),
                 _V3Score(v: v3),
+              ],
+
+              // ---- 익일 유망주 (실험 탭 · 관찰용) ----
+              if (nextd.isNotEmpty) ...[
+                const SectionTitle('익일 유망주'),
+                NextdayCard(v: nextd),
+                ...((nextd['reasons'] is List) ? nextd['reasons'] as List : const []).map((r) => _bullet('✓', '$r', Colors.indigo)),
+                ...((nextd['warnings'] is List) ? nextd['warnings'] as List : const []).map((w) => _bullet('⚠', '$w', Colors.orange)),
               ],
 
               // ---- 추세전환 점수 (실험 탭 · 관찰용) ----

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../live.dart';
+import '../nextday.dart';
 import '../reversal.dart';
 import '../today_picks.dart';
 import '../v3.dart';
@@ -16,8 +17,8 @@ class CandidateListScreen extends StatefulWidget {
   final String title;
 
   // v3 = V3 기준 전략 (🔒 고정) / now = 오늘 지금 가격 기준 / signal·buy·watch = 매수후보 V2 (참고)
-  // early = 상승초기 (실험 탭 · 60점 이상) / reversal = 추세전환 (실험 탭 · 70점 이상)
-  static const keys = ['v3', 'early', 'reversal']; // V2 목록(지금 매수구간·매수 신호·강력 후보·관심)은 숨김
+  // nextday = 익일 유망주 (실험 탭 · 60점 이상) / early = 상승초기 (실험 탭 · 60점 이상) / reversal = 추세전환 (실험 탭 · 70점 이상)
+  static const keys = ['v3', 'nextday', 'early', 'reversal']; // V2 목록(지금 매수구간·매수 신호·강력 후보·관심)은 숨김
 
   @override
   State<CandidateListScreen> createState() => _CandidateListScreenState();
@@ -107,8 +108,9 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
       builder: (context, d) {
         final rev = widget.listKey == 'reversal';
         final early = widget.listKey == 'early';
-        final all = widget.listKey == 'v3' || rev || early ? sortByScore(asList(d['candidates'])) : _sorted(asList(d['candidates']));
-        final cands = all.take(rev || early ? 30 : maxShow).toList(); // 정렬한 뒤 상위 10개만 (실험 탭은 30개)
+        final nextd = widget.listKey == 'nextday';
+        final all = widget.listKey == 'v3' || rev || early || nextd ? sortByScore(asList(d['candidates'])) : _sorted(asList(d['candidates']));
+        final cands = all.take(rev || early || nextd ? 30 : maxShow).toList(); // 정렬한 뒤 상위 10개만 (실험 탭은 30개)
         return ListView(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
           children: [
@@ -135,6 +137,7 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
                   ]),
                 ),
               ),
+            if (nextd && asMap(d['meta']).isNotEmpty) NextdaySummary(meta: asMap(d['meta'])),
             if (widget.listKey == 'v3' && cands.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
@@ -174,6 +177,8 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
               ...cands.asMap().entries.map((e) => ReversalTile(c: e.value, rank: e.key + 1))
             else if (early)
               ...cands.asMap().entries.map((e) => ReversalTile(c: e.value, rank: e.key + 1, kind: earlyKind))
+            else if (nextd)
+              ...cands.asMap().entries.map((e) => NextdayTile(c: e.value, rank: e.key + 1))
             else
             ...cands.asMap().entries.map((e) => CandidateTile(
                 c: e.value,

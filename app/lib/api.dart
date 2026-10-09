@@ -199,6 +199,7 @@ class _Cloud {
       'name': s['name'] ?? list,
       'description': s['description'],
       'limitation': s['limitation'],
+      'meta': asMap(asMap(r['market'])[list]), // 실험 탭 요약 (예: 익일 유망주 등급 수·어제 후보 결과)
       'candidates': cands,
     };
   }

@@ -46,6 +46,12 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
     strength = group_strength(x, groups, uni_scores, names)
     mf = cfg.get("market_filter", {})
     market = market_overview(view.index(), x, int(mf.get("ma", 60)))
+    try:                                   # 저녁 알림 '금일장 브리핑·내일장 예상'용 지수·거래대금 요약
+        from .cloud.digest import market_brief
+        brief = market_brief(view.index(), view.ohlcv())
+    except Exception as e:  # noqa: BLE001
+        log.warning("시장 요약 실패: %s", e)
+        brief = {}
 
     # 종목 → 소속 테마(가장 강한 것) 표시
     best_group = {}
@@ -61,7 +67,7 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
     report = {
         "date": d["date"], "as_of": d["as_of"], "funnel": d["funnel"], "dropped": d["dropped"],
         "market": market, "sectors": strength, "unmatched_theme_names": unmatched,
-        "labels": d["labels"], "explanations": {},
+        "labels": d["labels"], "explanations": {}, "brief": brief,
     }
 
     engine = (cfg.get("engine") or "v2").lower()
@@ -69,6 +75,12 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
         # ---- 매수후보 V2: 시장 → 업종 → 재무·공시 위험 → 기술 → 100점 → 가격위치 → 과열 → 등급 / 매수 신호 ----
         from .engine.v2_report import evaluate_all, build_lists, market_summary
         ev = evaluate_all(pit, view, x, uni.index if uni is not None else [], cfg, as_of)
+        # 매수구간·목표·손절: 차트 지지·저항(스윙 고저점·매물대·이평선·볼린저·되돌림) 기준으로 다시 계산
+        try:
+            from .engine.levels import apply_to_ev
+            apply_to_ev(ev, view.ohlcv())
+        except Exception as e:  # noqa: BLE001
+            log.warning("차트 기반 목표·손절 계산 실패 (예전 % 기준 유지): %s", e)
         res.v2 = ev
         name_of = dict(zip(names["code"], names["name"])) if not names.empty else {}
         L = build_lists(ev, x, name_of, theme_of)

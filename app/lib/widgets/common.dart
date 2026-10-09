@@ -133,7 +133,7 @@ class SectionTitle extends StatelessWidget {
 }
 
 const strategyLabels = {
-  'v3': 'V3 기준',
+  'v3': 'V3',
   'reversal': '추세전환',
   'early': '상승초기',
   'nextday': '익일유망주',

@@ -110,7 +110,7 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
         final early = widget.listKey == 'early';
         final nextd = widget.listKey == 'nextday';
         final all = widget.listKey == 'v3' || rev || early || nextd ? sortByScore(asList(d['candidates'])) : _sorted(asList(d['candidates']));
-        final cands = all.take(rev || early || nextd ? 30 : maxShow).toList(); // 정렬한 뒤 상위 10개만 (실험 탭은 30개)
+        final cands = all.take(maxShow).toList(); // 정렬한 뒤 상위 10개만 (모든 탭)
         return ListView(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
           children: [
@@ -122,27 +122,7 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
                   '${all.length > cands.length ? '조건 통과 ${all.length}개 중 ' : ''}상위 ${cands.length}개',
                   style: Theme.of(context).textTheme.bodySmall),
             ),
-            if (d['description'] != null)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('${d['name']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text('${d['description']}'),
-                    if (d['limitation'] != null) ...[
-                      const SizedBox(height: 4),
-                      Text('※ ${d['limitation']}', style: Theme.of(context).textTheme.bodySmall),
-                    ],
-                  ]),
-                ),
-              ),
-            if (nextd && asMap(d['meta']).isNotEmpty) NextdaySummary(meta: asMap(d['meta'])),
-            if (widget.listKey == 'v3' && cands.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-                child: V3ScheduleLine(v: asMap(cands.first['v3'])),
-              ),
+            // (전략 설명 카드 · 선정일/등급 요약 줄은 뺌 — 목록만)
             if (_isStrategy && cands.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),

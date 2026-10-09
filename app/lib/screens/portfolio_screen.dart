@@ -74,28 +74,10 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
         ])),
       );
 
-  Color _statusColor(String s) {
-    switch (s) {
-      case '매도 예정일':
-        return Colors.orange;
-      case '매도 임박':
-        return Colors.teal;
-      case '손절 검토':
-        return downColor;
-      case '익절 검토':
-        return upColor;
-      case '주의':
-      case '확인 필요':
-        return Colors.orange;
-      default:
-        return Colors.green;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const LogoTitle('보유종목 관리'), actions: topActions(context, onRefresh: _reload)),
+      appBar: AppBar(title: const LogoTitle('보유종목'), actions: topActions(context, onRefresh: _reload)),
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.add),
         label: const Text('추가'),
@@ -124,7 +106,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                   child: Row(children: [
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('보유 ${rows.length}종목 · 매수가 대비', style: t.bodySmall),
+                        Text('보유 ${rows.length}종목 · 수익률', style: t.bodySmall),
                         const SizedBox(height: 2),
                         Text('매수 ${won(cost)} → 평가 ${won(value)}', style: t.bodyMedium),
                       ]),
@@ -144,9 +126,6 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               ...rows.map((h) {
               final alerts = List<String>.from(h['alerts'] as List? ?? []);
               final pnl = (h['pnl_now'] as num?)?.toDouble();
-              final pnlWon = (h['pnl_won'] as num?)?.toDouble();
-              final today = (h['today_ratio'] as num?)?.toDouble();
-              final status = h['status'] as String? ?? '';
               return Card(
                 child: InkWell(
                   onTap: () => Navigator.push(context,
@@ -164,13 +143,6 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                               score: h['score_now'] as num?,
                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         ),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                              color: _statusColor(status).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
-                          child: Text(status, style: TextStyle(color: _statusColor(status), fontSize: 12)),
-                        ),
                       ]),
                       const SizedBox(height: 6),
                       Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
@@ -181,47 +153,31 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                             children: [
                               TableRow(children: [
                                 _lbl(t, '매수가'),
-                                _val('${num0(h['avg_price'] as num?)}${h['qty'] == null ? '' : ' ×${num0(h['qty'] as num)}'}'),
+                                _val(num0(h['avg_price'] as num?)),
                                 _lbl(t, h['now_live'] == true ? '현재가' : '최근가'),
-                                _val(num0(h['now_price'] as num?),
-                                    sub: today == null ? null : pct(today),
-                                    subColor: (today ?? 0) >= 0 ? upColor : downColor),
+                                _val(num0(h['now_price'] as num?)),
                               ]),
                             ],
                           ),
                         ),
-                        // 매수가 대비 수익률
+                        // 수익률 (매수가 대비)
                         Container(
                             width: 1, height: 40, margin: const EdgeInsets.symmetric(horizontal: 10),
                             color: Colors.grey.withValues(alpha: 0.3)),
                         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                          Text('매수가 대비', style: t.bodySmall),
+                          Text('수익률', style: t.bodySmall),
                           Text(pct(pnl),
                               style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
                                   color: (pnl ?? 0) >= 0 ? upColor : downColor)),
-                          if (pnlWon != null)
-                            Text('${pnlWon >= 0 ? '+' : ''}${won(pnlWon.round())}',
-                                style: TextStyle(fontSize: 12, color: pnlWon >= 0 ? upColor : downColor)),
                         ]),
                       ]),
-                      if (h['sell_date'] != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                              '매수 ${mdw(h['buy_date'] as String?)} · V3 기준 매도 예정 ${mdw(h['sell_date'] as String?)} 종가'
-                              '${h['sell_left'] == null ? '' : (h['sell_left'] as int) <= 0 ? ' (오늘 또는 지남)' : ' (${h['sell_left']}거래일 남음)'}',
-                              style: t.bodySmall?.copyWith(
-                                  color: ((h['sell_left'] as int?) ?? 99) <= 3 ? Colors.orange : null,
-                                  fontWeight: FontWeight.w600)),
-                        ),
                       ...alerts.map((a) => Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text('⚠ $a', style: const TextStyle(color: Colors.orange)),
                           )),
                       Row(children: [
-                        Text('${h['mode'] ?? ''}', style: Theme.of(context).textTheme.bodySmall),
                         const Spacer(),
                         TextButton.icon(
                           icon: const Icon(Icons.delete_outline, size: 18),
@@ -233,7 +189,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                         ),
                         TextButton.icon(
                           icon: const Icon(Icons.sell_outlined, size: 18),
-                          label: const Text('매도 기록'),
+                          label: const Text('매도'),
                           onPressed: () async {
                             final done = await _closeDialog(context, h);
                             if (done) _reload();
@@ -260,7 +216,7 @@ Future<bool> _deleteHolding(BuildContext context, Json h) async {
     builder: (ctx) => AlertDialog(
       title: Text('${h['name']} 삭제할까요?'),
       content: const Text('보유 목록과 매매일지에서 완전히 지워집니다.\n'
-          '실제로 팔았다면 [삭제] 대신 [매도 기록]을 쓰세요 (수익률이 일지에 남습니다).'),
+          '실제로 팔았다면 [삭제] 대신 [매도]를 쓰세요 (수익률이 일지에 남습니다).'),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
         FilledButton(

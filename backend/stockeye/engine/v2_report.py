@@ -59,6 +59,10 @@ def _stars(score: float) -> int:
     return 5 if score >= 85 else 4 if score >= 75 else 3 if score >= 65 else 2 if score >= 55 else 1
 
 
+def _lst(v) -> list:
+    return list(v) if isinstance(v, (list, tuple)) else []
+
+
 def _f(v, nd=2):
     try:
         f = float(v)
@@ -157,6 +161,8 @@ def candidate_dict(code: str, r: pd.Series, x: pd.Series, name: str, rank: int =
     price = _f(r.get("price"), 0) or 0
     stop = int(r.get("stop") or 0)
     t1, t2 = int(r.get("target1") or 0), int(r.get("target2") or 0)
+    t3 = r.get("target3")
+    t3 = int(t3) if t3 == t3 and t3 else None              # 차트 기반 3차 목표 (없으면 None)
     loss = _f((stop / price - 1) * 100, 1) if price else None
     parts = {KEYMAP[k]: _f(r.get(k), 1) or 0.0 for k in PARTS_MAX}
     return {
@@ -175,8 +181,13 @@ def candidate_dict(code: str, r: pd.Series, x: pd.Series, name: str, rank: int =
             "target1": t1, "target2": t2, "stop": stop, "loss_pct": loss,
             "target1_pct": _f((t1 / price - 1) * 100, 1) if price else None,
             "target2_pct": _f((t2 / price - 1) * 100, 1) if price else None,
+            "target3": t3, "target3_pct": _f((t3 / price - 1) * 100, 1) if price and t3 else None,
             "rr1": _f(r.get("rr"), 2), "rr2": _f(((t2 / price - 1) / (1 - stop / price)) if price and stop else None, 2),
             "verdict": verdict, "verdict_reason": why,
+            # 차트 기반 목표·손절의 근거 (levels.py) — 없으면 예전 % 기준
+            "basis": _lst(r.get("level_basis")), "level_warn": _lst(r.get("level_warn")),
+            "resistances": _lst(r.get("resistances")), "supports": _lst(r.get("supports")),
+            "method": "chart" if _lst(r.get("level_basis")) else "pct",
         },
     }
 

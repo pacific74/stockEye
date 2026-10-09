@@ -223,7 +223,8 @@ def notify_members(sb: Supabase, report: dict, notifier, skip_topics=(), app_url
     except Exception as e:  # noqa: BLE001  (예전 스키마)
         log.info("회원 알림 생략: %s", e)
         return 0
-    summary = report_summary(report)
+    from .digest import build as build_digest
+    title, summary = build_digest(report)
     skip = {t.strip() for t in skip_topics if t}
     sent = 0
     for u in members:
@@ -245,7 +246,7 @@ def notify_members(sb: Supabase, report: dict, notifier, skip_topics=(), app_url
                                     priority="high", url=app_url)
                 sent += 1
         if u.get("notify_daily", True):
-            notifier.send_topic(topic, f"StockEye {report['date']} 리포트", summary, url=app_url)
+            notifier.send_topic(topic, title, summary, url=app_url)
             sent += 1
     log.info("회원 알림 %d건 발송", sent)
     return sent

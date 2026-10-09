@@ -86,8 +86,6 @@ class V3PickTile extends StatelessWidget {
     final parts = asMap(v['parts']);
     final labels = asMap(v['labels']);
     final maxes = asMap(v['maxes']);
-    final plan = asMap(c['plan']);
-    final t = Theme.of(context).textTheme;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
@@ -99,18 +97,11 @@ class V3PickTile extends StatelessWidget {
             for (final k in ['vola15', 'fin25', 'pos20'])
               _chip('${labels[k] ?? k} ${num0(parts[k] as num?)}/${maxes[k] ?? ''}', Colors.teal),
           ]),
-          const SizedBox(height: 2),
-          if (v['entry_day'] == true)
-            Text('매수 ${mdw(v['buy_date'] as String?)} 시가 → 매도 예정 ${mdw(v['sell_date'] as String?)} 종가',
-                style: t.bodySmall?.copyWith(fontWeight: FontWeight.w600))
-          else
-            Text('기준가 ${num0(plan['price'] as num?)} · 선정일에 다시 확인', style: t.bodySmall),
         ]),
         isThreeLine: true,
         trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
           Text(v['score'] == null ? '-' : '${(v['score'] as num).toStringAsFixed(0)}점',
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          if (v['raw'] != null) Text('원 ${v['raw']}/60', style: t.bodySmall),
         ]),
         onTap: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}'))),

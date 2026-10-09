@@ -11,13 +11,12 @@ import '../widgets/common.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
 import 'admin_screen.dart';
-import 'orders_screen.dart';
+import 'candidate_list_screen.dart';
 import 'sector_screen.dart';
 import 'stock_detail_screen.dart';
 
 /// 메인 화면 = 오늘, 지금 기준
-///   지금 시장 → 오늘 살 만한 후보(지금 가격 기준) → TOP 10 지금 시세 → 내 보유종목 지금
-///   → 돈이 몰리는 업종 (오늘 | 어제) → 후보 보기
+///   지금 시장 → 돈이 몰리는 업종 (오늘 | 어제) → 금일 관심주 (후보 탭별 3개, 지금 시세) → 내 보유종목 지금
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -31,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Json> _holdings = const [];
   Map<String, Json> _meta = const {}; // 보유종목 점수·시장 (최근 분석)
   List<Json> _pool = const []; // 어제 분석의 모든 후보 (지금 매수구간 계산용)
+  Map<String, List<Json>> _picks = const {}; // 금일 관심주: 후보 탭별 상위 3
   LiveResult? _idx, _stk;
   bool _liveBusy = false;
   DateTime? _liveAt; // 마지막으로 시세를 받은 기기 시각
@@ -78,6 +78,11 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {
       _pool = const [];
     }
+    // 금일 관심주: 후보 메뉴의 탭마다 점수 높은 3개 (새 탭이 생기면 자동으로 같이)
+    const keys = CandidateListScreen.keys;
+    final lists = await Future.wait(keys.map((k) => Api.candidates(k, top: 10)
+        .then((d) => sortByScore(asList(d['candidates'])).take(3).toList(), onError: (_) => <Json>[])));
+    _picks = {for (var i = 0; i < keys.length; i++) keys[i]: lists[i]};
     await _refreshLive();
   }
 
@@ -87,6 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // 모두에게 같은 종목 묶음(후보·업종 대표) / 내 보유종목은 따로 → 서버 캐시를 같이 씀
     final common = <String>{
       ...asList(_report!['top10']).map((c) => '${c['code']}'),
+      for (final l in _picks.values) ...l.map((c) => '${c['code']}'),
       ..._pool.map((c) => '${c['code']}'),
       for (final g in asList(_report!['sectors'])) ...asList(g['top']).map((m) => '${m['code']}'),
     }.toList();
@@ -161,29 +167,9 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 _NowHeader(clock: clock, busy: _liveBusy, at: _liveAt, onRefresh: _refreshLive),
                 const PendingUsersBanner(),
-                const _TradingBanner(),
-                if (asMap(m['v3']).isNotEmpty) ...[
-                  SectionTitle('V3 기준 전략',
-                      trailing: TextButton(onPressed: () => goTab(context, 1, list: 'v3'), child: const Text('상위 10'))),
-                  V3HomeCard(meta: asMap(m['v3'])),
-                ],
+                // (매매 모드 배너 · V3 기준 전략 카드는 홈에서 뺌 — 후보 탭 'V3 기준'에서 확인)
                 const SectionTitle('지금 시장'),
                 _LiveMarketCard(live: _idx, yesterday: m, busy: _liveBusy && _idx == null, weak: weak),
-                SectionTitle('V3 상위 10 · 지금 시세', trailing: Text('$repLabel 분석', style: t.bodySmall)),
-                if (_stk?.error != null && quotes.isEmpty)
-                  _Notice('지금 시세를 가져오지 못해 $repBasis 가격으로 보여줍니다. (${_stk!.error})'),
-                ...top10.asMap().entries.map((e) => _LiveCandidateTile(
-                    c: {...e.value, 'rank': e.key + 1}, q: quotes['${e.value['code']}'], clock: clock)),
-                if (_holdings.isNotEmpty) ...[
-                  SectionTitle('내 보유종목 · 지금',
-                      trailing: TextButton(onPressed: () => goTab(context, 2), child: const Text('보유 탭'))),
-                  ..._holdings.map((h) => _HoldingNowTile(
-                      h: h,
-                      q: quotes['${h['code']}'],
-                      meta: _meta['${h['code']}'] ?? const {},
-                      sellDate: holdingSellDate(asMap(m['v3']), '${h['entry_time'] ?? ''}'.length >= 10 ? '${h['entry_time']}'.substring(0, 10) : null),
-                      today: repDate)),
-                ],
                 SectionTitle('돈이 몰리는 업종',
                     trailing: TextButton(
                         onPressed: () =>
@@ -194,6 +180,37 @@ class _HomeScreenState extends State<HomeScreen> {
                     yesterday: sectors,
                     todayLabel: _liveAt == null ? '오늘' : '오늘 ${_hm(_liveAt!)}',
                     yesterdayLabel: repBasis),
+                SectionTitle('금일 관심주', trailing: Text('$repLabel 분석', style: t.bodySmall)),
+                if (_stk?.error != null && quotes.isEmpty)
+                  _Notice('지금 시세를 가져오지 못해 $repBasis 가격으로 보여줍니다. (${_stk!.error})'),
+                // 후보 탭별 3개 (탭 데이터를 못 받으면 V3 상위 3)
+                for (final k in (_picks.isEmpty ? const ['v3'] : _picks.keys)) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 8, 0, 0),
+                    child: Row(children: [
+                      Text(strategyLabels[k] ?? k, style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                      const Spacer(),
+                      TextButton(onPressed: () => goTab(context, 1, list: k), child: const Text('전체')),
+                    ]),
+                  ),
+                  if ((_picks[k] ?? (k == 'v3' ? top10.take(3).toList() : const <Json>[])).isEmpty)
+                    Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+                        child: Text('오늘 조건을 만족한 종목이 없습니다', style: t.bodySmall)),
+                  ...(_picks[k] ?? (k == 'v3' ? top10.take(3).toList() : const <Json>[])).asMap().entries.map((e) =>
+                      _LiveCandidateTile(
+                          c: {...e.value, 'rank': e.key + 1}, q: quotes['${e.value['code']}'], clock: clock)),
+                ],
+                if (_holdings.isNotEmpty) ...[
+                  SectionTitle('보유종목',
+                      trailing: TextButton(onPressed: () => goTab(context, 2), child: const Text('보유 탭'))),
+                  ..._holdings.map((h) => _HoldingNowTile(
+                      h: h,
+                      q: quotes['${h['code']}'],
+                      meta: _meta['${h['code']}'] ?? const {},
+                      sellDate: holdingSellDate(asMap(m['v3']), '${h['entry_time'] ?? ''}'.length >= 10 ? '${h['entry_time']}'.substring(0, 10) : null),
+                      today: repDate)),
+                ],
                 const SizedBox(height: 16),
                 Text('규칙 기반 분석 결과이며 투자 권유가 아닙니다. 최종 판단과 책임은 본인에게 있습니다. '
                     '지금 시세는 네이버 금융 기준이며 약간 늦을 수 있습니다.',
@@ -419,30 +436,14 @@ class _LiveCandidateTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final plan = asMap(c['plan']);
     final score = (c['score'] as num?)?.toDouble() ?? 0;
-    final verdict = '${plan['verdict'] ?? ''}';
     final t = Theme.of(context).textTheme;
-    final v3 = asMap(c['v3']);
-    final posText = v3['entry_day'] == true
-        ? '매수 ${mdw(v3['buy_date'] as String?)} 시가 → 매도 예정 ${mdw(v3['sell_date'] as String?)}'
-        : (v3['next_entry'] != null ? '참고 순위 · 다음 선정일 ${mdw(v3['next_entry'] as String?)}' : null);
-    final posColor = v3['entry_day'] == true ? Colors.teal : Colors.grey;
     final nxt = q != null && !clock.open && q!.overStatus == 'OPEN' && q!.overPrice != null;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
         leading: CircleAvatar(child: Text('${c['rank']}')),
         title: StockName('${c['name']}', market: c['market'] as String?, score: score),
-        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(verdict, style: t.bodySmall?.copyWith(color: Colors.teal)),
-          if (posText != null)
-            Container(
-              margin: const EdgeInsets.only(top: 3),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(color: posColor.withValues(alpha: 0.13), borderRadius: BorderRadius.circular(6)),
-              child: Text(posText, style: TextStyle(fontSize: 11, color: posColor)),
-            ),
-          if (nxt) Text('넥스트레이드 ${num0(q!.overPrice)} (${pct(q!.overRatio)})', style: t.bodySmall),
-        ]),
+        subtitle: nxt ? Text('넥스트레이드 ${num0(q!.overPrice)} (${pct(q!.overRatio)})', style: t.bodySmall) : null,
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -585,37 +586,5 @@ class _SectorCompare extends StatelessWidget {
           _row(context, i + 1, g, Text('${g['score']}', style: const TextStyle(fontWeight: FontWeight.bold))),
       ]),
     ]);
-  }
-}
-
-class _TradingBanner extends StatelessWidget {
-  const _TradingBanner();
-
-  static const _modeNames = {'alert': '알림만', 'paper': '모의투자 자동', 'semi_auto': '반자동 (승인 후 주문)'};
-
-  @override
-  Widget build(BuildContext context) {
-    if (useCloud && !isAdminUser) return const SizedBox.shrink(); // 실시간 매매는 관리자 계좌용
-    return FutureBuilder<Json>(
-      future: Api.tradingStatus(),
-      builder: (context, snap) {
-        if (!snap.hasData) return const SizedBox.shrink();
-        final t = snap.data!;
-        final pending = t['pending_orders'] as int? ?? 0;
-        return Card(
-          color: pending > 0 ? Colors.orange.withValues(alpha: 0.15) : null,
-          child: ListTile(
-            dense: true,
-            leading: Icon(pending > 0 ? Icons.notifications_active : Icons.sensors,
-                color: pending > 0 ? Colors.orange : null),
-            title: Text(pending > 0 ? '승인 대기 주문 $pending건' : '매매 모드: ${_modeNames[t['mode']] ?? t['mode']}'),
-            subtitle: Text('보유 ${t['open_positions']}종목 · 알림 ${List<String>.from(t['notify_channels'] as List).join(', ')}'
-                '${t['mode'] == 'paper' ? ' · 모의 현금 ${won(t['paper_cash'] as num?)}' : ''}'),
-            trailing: pending > 0 ? const Icon(Icons.chevron_right) : null,
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OrdersScreen())),
-          ),
-        );
-      },
-    );
   }
 }

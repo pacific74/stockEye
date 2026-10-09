@@ -79,7 +79,6 @@ class NextdayTile extends StatelessWidget {
         trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
           Text(score == null ? '-' : '${score.toStringAsFixed(1)}점',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: col)),
-          Text('${v['grade_label'] ?? ''}', style: t.bodySmall?.copyWith(color: col)),
         ]),
         onTap: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}'))),

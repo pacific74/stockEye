@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../format.dart';
+import '../live.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
+import 'stock_detail_screen.dart';
 
 const _modes = {null: '전체', 'paper': '모의', 'kis_paper': 'KIS 모의', 'real': '실전', 'manual': '직접 입력'};
 
@@ -36,7 +38,7 @@ class _JournalScreenState extends State<JournalScreen> {
               itemBuilder: (_) => _modes.entries.map((e) => PopupMenuItem(value: e.key, child: Text(e.value))).toList(),
             ),
           ]),
-          bottom: const TabBar(tabs: [Tab(text: '기록'), Tab(text: '내 매매 분석')]),
+          bottom: const TabBar(tabs: [Tab(text: '매매내역'), Tab(text: '내 매매 분석')]),
         ),
         body: TabBarView(children: [
           _Records(key: ValueKey('r$_mode$_gen'), mode: _mode),
@@ -47,82 +49,95 @@ class _JournalScreenState extends State<JournalScreen> {
   }
 }
 
+/// 매매내역: 종목명 · 매수일 · 매도일 · 수익률 (보유 중이면 지금 시세로 수익률)
 class _Records extends StatelessWidget {
   const _Records({super.key, this.mode});
   final String? mode;
 
+  Future<(List<Json>, Map<String, LiveQuote>)> _load() async {
+    final rows = await Api.journal(mode: mode);
+    final open = rows.where((p) => p['status'] != 'closed').map((p) => '${p['code']}').toSet().toList();
+    Map<String, LiveQuote> q = const {};
+    if (open.isNotEmpty) {
+      try {
+        q = (await Live.stocks(open)).quotes;
+      } catch (_) {}
+    }
+    return (rows, q);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Loader<List<Json>>(
-      future: Api.journal(mode: mode),
-      builder: (context, rows) {
+    final t = Theme.of(context).textTheme;
+    return Loader<(List<Json>, Map<String, LiveQuote>)>(
+      future: _load(),
+      builder: (context, d) {
+        final (rows, quotes) = d;
         if (rows.isEmpty) return const Center(child: Text('아직 기록이 없습니다.\n매수/매도하면 자동으로 쌓입니다.', textAlign: TextAlign.center));
-        return ListView(padding: const EdgeInsets.all(12), children: rows.map((p) => _EntryCard(p: p)).toList());
+        final head = t.bodySmall?.copyWith(color: Colors.grey);
+        return ListView(padding: const EdgeInsets.all(12), children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(children: [
+              Expanded(flex: 4, child: Text('종목명', style: head)),
+              Expanded(flex: 3, child: Text('매수일', style: head, textAlign: TextAlign.center)),
+              Expanded(flex: 3, child: Text('매도일', style: head, textAlign: TextAlign.center)),
+              Expanded(flex: 3, child: Text('수익률', style: head, textAlign: TextAlign.right)),
+            ]),
+          ),
+          ...rows.map((p) => _EntryRow(p: p, q: quotes['${p['code']}'])),
+        ]);
       },
     );
   }
 }
 
-class _EntryCard extends StatelessWidget {
-  const _EntryCard({required this.p});
+class _EntryRow extends StatelessWidget {
+  const _EntryRow({required this.p, this.q});
   final Json p;
+  final LiveQuote? q;
+
+  static String _d(dynamic v) {
+    final s = '${v ?? ''}';
+    if (s.length < 10) return '-';
+    final now = DateTime.now().year.toString();
+    return s.startsWith(now) ? '${int.parse(s.substring(5, 7))}/${int.parse(s.substring(8, 10))}' : s.substring(2, 10).replaceAll('-', '/');
+  }
 
   @override
   Widget build(BuildContext context) {
     final closed = p['status'] == 'closed';
-    final ret = (p['ret_pct'] as num?)?.toDouble();
-    final reasons = List<String>.from(p['reasons'] as List? ?? []);
-    final t = Theme.of(context).textTheme;
-    final result = p['result'] as String? ?? '';
-    final resultColor = result == '성공' ? upColor : (result == '실패' ? downColor : Colors.grey);
+    final entry = (p['entry_price'] as num?)?.toDouble();
+    double? ret = (p['ret_pct'] as num?)?.toDouble();
+    if (!closed && entry != null && entry > 0 && q != null && q!.price > 0) ret = (q!.price / entry - 1) * 100;
     return Card(
-      child: ExpansionTile(
-        title: Row(children: [
-          Expanded(child: Text('${p['name']}', style: const TextStyle(fontWeight: FontWeight.bold))),
-          if (closed)
-            Text(pct(ret), style: TextStyle(fontWeight: FontWeight.bold, color: (ret ?? 0) >= 0 ? upColor : downColor))
-          else
-            const Text('보유 중', style: TextStyle(color: Colors.teal)),
-        ]),
-        subtitle: Text('${_modes[p['mode']] ?? p['mode']} · ${strategyLabels[p['strategy']] ?? p['strategy'] ?? '-'} · '
-            '${(p['entry_time'] as String).substring(0, 16)}', style: t.bodySmall),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        expandedCrossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _kv('매수가', won(p['entry_price'] as num?)),
-          _kv('매수시간', (p['entry_time'] as String).substring(11, 16)),
-          _kv('당시 점수', (p['score'] as num?)?.toStringAsFixed(0) ?? '-'),
-          _kv('전략', strategyLabels[p['strategy']] ?? '${p['strategy'] ?? '-'}'),
-          _kv('손절', won(p['stop'] as num?)),
-          _kv('목표1', won(p['target1'] as num?)),
-          _kv('목표2', won(p['target2'] as num?)),
-          if (p['market_mood'] != null) _kv('시장 분위기', '${p['market_mood']}'),
-          if (closed) ...[
-            const Divider(),
-            _kv('매도가', '${won(p['exit_price'] as num?)} (${p['exit_reason'] ?? ''})'),
-            _kv('수익률', pct(ret)),
-            _kv('보유기간', '${p['hold_days']}일'),
-            Row(children: [
-              const Expanded(child: Text('결과')),
-              Text(result, style: TextStyle(color: resultColor, fontWeight: FontWeight.bold)),
-            ]),
-            if (p['late_stop'] == 1) const Text('⚠ 손절가보다 늦게 매도', style: TextStyle(color: Colors.orange)),
-          ],
-          _kv('보유 중 최대 손실 / 수익', '${pct(p['mae_pct'] as num?)} / ${pct(p['mfe_pct'] as num?)}'),
-          if (reasons.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text('매수 이유', style: t.labelLarge),
-            Text(reasons.take(6).join(' + '), style: t.bodySmall),
-          ],
-        ],
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${p['code']}', name: '${p['name']}'))),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Row(children: [
+            Expanded(
+                flex: 4,
+                child: Text('${p['name']}',
+                    style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
+            Expanded(flex: 3, child: Text(_d(p['entry_time']), textAlign: TextAlign.center)),
+            Expanded(
+                flex: 3,
+                child: Text(closed ? _d(p['exit_time']) : '보유 중',
+                    textAlign: TextAlign.center, style: closed ? null : const TextStyle(color: Colors.teal))),
+            Expanded(
+                flex: 3,
+                child: Text(pct(ret),
+                    textAlign: TextAlign.right,
+                    style: TextStyle(fontWeight: FontWeight.bold, color: (ret ?? 0) >= 0 ? upColor : downColor))),
+          ]),
+        ),
       ),
     );
   }
-
-  Widget _kv(String k, String v) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(children: [Expanded(child: Text(k)), Text(v)]),
-      );
 }
 
 class _Analysis extends StatefulWidget {

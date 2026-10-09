@@ -142,8 +142,23 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                       _row('참고 1차 목표가', won(pv('target1')), sub: pct(pv('target1_pct')), color: upColor),
                     if (pv('target2') != null)
                       _row('참고 2차 목표가', won(pv('target2')), sub: pct(pv('target2_pct')), color: upColor),
+                    if (pv('target3') != null)
+                      _row('참고 3차 목표가', won(pv('target3')), sub: pct(pv('target3_pct')), color: upColor),
                     if (pv('stop') != null)
                       _row('참고 손절가', won(pv('stop')), sub: pct(pv('loss_pct')), color: downColor),
+                    // 차트 기반 근거: 어떤 지지·저항을 썼는지
+                    if (p['basis'] is List && (p['basis'] as List).isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text('계산 근거 (스윙 고저점·매물대·이평선·볼린저·되돌림)',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+                      for (final b in p['basis'] as List) Text('· $b', style: Theme.of(context).textTheme.bodySmall),
+                      if (p['rr1'] != null)
+                        Text('· 손익비(1차 목표/손절) ${p['rr1']}', style: Theme.of(context).textTheme.bodySmall),
+                      for (final w in (p['level_warn'] is List ? p['level_warn'] as List : const []))
+                        Text('⚠ $w', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orange)),
+                    ] else
+                      Text('※ 예전 방식 (목표 +8%·+15%, 손절 20일 저점/2ATR) — 다음 배치부터 차트 기준으로 바뀝니다',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey)),
                   ]),
                 ),
               ),
@@ -163,10 +178,15 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                       SizedBox(
                         height: 300,
                         child: PriceChart(bars: chart, levels: [
-                          if (pv('target1') != null) PriceLevel('참고 목표', pv('target1')!.toDouble(), upColor),
+                          if (pv('target1') != null) PriceLevel('1차 목표', pv('target1')!.toDouble(), upColor),
                           if (q?.price != null || p['price'] != null)
                             PriceLevel('현재', q?.price ?? (p['price'] as num).toDouble(), Colors.grey),
                           if (pv('stop') != null) PriceLevel('참고 손절', pv('stop')!.toDouble(), downColor),
+                          if (pv('target2') != null && p['method'] == 'chart')
+                            PriceLevel('2차 목표', pv('target2')!.toDouble(), upColor.withValues(alpha: 0.6)),
+                          // 3차 목표가 너무 멀면(현재가 +30% 초과) 캔들이 납작해지므로 선은 생략 (표에는 표시)
+                          if (pv('target3') != null && pv('price') != null && pv('target3')! <= pv('price')! * 1.3)
+                            PriceLevel('3차 목표', pv('target3')!.toDouble(), upColor.withValues(alpha: 0.35)),
                         ]),
                       ),
                     ]),

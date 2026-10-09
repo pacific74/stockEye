@@ -44,13 +44,16 @@ def _bars(g: pd.DataFrame) -> list[dict]:
     return out
 
 
+EXP_TABS = ("nextday", "early", "reversal")     # 점수 체계가 다른 실험 탭 (기본 후보로는 안 쓰고 상세에 따로 붙임)
+
+
 def _report_index(report: dict) -> dict[str, dict]:
     """리포트 후보(전략·테마 정보가 붙은 것)를 코드별로. 종합 후보 우선."""
     idx = {}
     for c in report["candidates"]:
         idx.setdefault(c["code"], c)
     for k, v in report["strategies"].items():
-        if k in ("reversal", "early", "nextday"):           # 추세전환은 점수 체계가 달라 기본 후보로 쓰지 않음 (상세에 따로 붙임)
+        if k in EXP_TABS:           # 추세전환은 점수 체계가 달라 기본 후보로 쓰지 않음 (상세에 따로 붙임)
             continue
         for c in v["candidates"]:
             idx.setdefault(c["code"], c)
@@ -183,10 +186,15 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
         log.info("지표 부족으로 상세를 만들지 못한 종목 %d개", failed)
 
     # 비슷한 패턴: 리포트 후보 + 회원들의 보유종목 (similar_codes)
-    sim_targets = list(dict.fromkeys(list(rep_idx) + [c for c in (similar_codes or []) if c]))
+    # 실험 탭(익일 유망주·상승초기·추세전환) 후보도 포함
+    exp_codes = [c["code"] for k in EXP_TABS
+                 for c in (report.get("strategies", {}).get(k) or {}).get("candidates", [])]
+    base = list(dict.fromkeys(list(rep_idx) + exp_codes))
+    sim_targets = list(dict.fromkeys(base + [c for c in (similar_codes or []) if c]))
     if similar and sim_targets:
         from .analysis.similar import PatternIndex
-        log.info("비슷한 패턴 계산 (후보 %d + 보유 %d종목)...", len(rep_idx), len(sim_targets) - len(rep_idx))
+        log.info("비슷한 패턴 계산 (후보 %d [V3 %d + 실험 탭 %d] + 보유 %d종목)...", len(base), len(rep_idx),
+                 len(base) - len(rep_idx), len(sim_targets) - len(base))
         pi = PatternIndex(pit.ohlcv, window=20)
         name_of = dict(zip(names["code"], names["name"]))
         by_code = {r["code"]: r for r in rows}

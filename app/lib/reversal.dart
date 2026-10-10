@@ -148,11 +148,6 @@ class ReversalScore extends StatelessWidget {
               borderRadius: BorderRadius.circular(4),
             ),
           ),
-          SizedBox(
-            width: 70,
-            child: Text(got == null ? '데이터없음' : '${got.toStringAsFixed(small ? 2 : 1)}/$max',
-                textAlign: TextAlign.right, style: const TextStyle(fontSize: 12)),
-          ),
         ]),
       );
 

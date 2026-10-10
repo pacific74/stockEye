@@ -54,11 +54,8 @@ jobs:
           sed -i 's#android:label="[^"]*"#android:label="StockEye"#' $M
           # 업데이트 안내에서 APK 주소(https)를 브라우저로 열기 (안드로이드 11+ 패키지 공개 범위)
           grep -q 'android:scheme="https"' $M || sed -i 's#</manifest>#    <queries><intent><action android:name="android.intent.action.VIEW"/><data android:scheme="https"/></intent></queries>\n</manifest>#' $M
-          # 업데이트 버튼 → 앱 안에서 APK 받아 설치 화면 열기 (ota_update): 설치 권한 + 파일 제공자
+          # 업데이트 버튼 → 앱 안에서 APK 받아 설치 화면 열기 (open_filex): 설치 권한
           grep -q "REQUEST_INSTALL_PACKAGES" $M || sed -i 's#<application#<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n    <application#' $M
-          grep -q "ota_update_provider" $M || sed -i 's#</application>#    <provider android:name="sk.fourq.otaupdate.OtaUpdateFileProvider" android:authorities="${applicationId}.ota_update_provider" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/filepaths"/></provider>\n    </application>#' $M
-          mkdir -p android/app/src/main/res/xml
-          [ -f android/app/src/main/res/xml/filepaths.xml ] || printf '<?xml version="1.0" encoding="utf-8"?>\n<paths xmlns:android="http://schemas.android.com/apk/res/android">\n  <files-path name="internal_apk_storage" path="ota_update/"/>\n</paths>\n' > android/app/src/main/res/xml/filepaths.xml
           sed -i 's#<title>.*</title>#<title>StockEye</title>#' web/index.html
       - run: flutter pub get
       - name: 앱 아이콘

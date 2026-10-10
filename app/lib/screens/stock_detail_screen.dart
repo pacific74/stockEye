@@ -139,29 +139,31 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
               // ---- 설명 (V3 기준) ----
               if (explanation != null) _ExplainCard(code: widget.code, initial: explanation),
 
-              // ---- 지금 가격 (요약 설명 아래) ----
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(children: [
-                    Text(q?.price != null ? '지금 가격' : '분석 기준가', style: Theme.of(context).textTheme.bodyMedium),
-                    const Spacer(),
-                    Text(won(q?.price ?? (p['price'] as num?)?.toDouble()),
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    if (q != null) ...[
-                      const SizedBox(width: 8),
-                      Text(pct(q.ratio),
-                          style: TextStyle(color: q.ratio >= 0 ? upColor : downColor, fontWeight: FontWeight.bold)),
-                    ],
-                  ]),
-                ),
-              ),
+              // ---- 주의사항 (요약 설명 바로 아래) ----
+              if (selW.isNotEmpty) ...[
+                const SectionTitle('주의사항'),
+                ...selW.map((w) => _bullet('⚠', _clean(w), Colors.orange)),
+              ],
 
               // ---- 매매 계획 ----
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    // 제목 줄 오른쪽에 지금 가격 (장중이면 실시간, 아니면 분석 기준가)
+                    Row(children: [
+                      const Text('매매 계획', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const Spacer(),
+                      Text(q?.price != null ? '현재가 ' : '기준가 ', style: Theme.of(context).textTheme.bodyMedium),
+                      Text(won(q?.price ?? (p['price'] as num?)?.toDouble()),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      if (q != null) ...[
+                        const SizedBox(width: 6),
+                        Text(pct(q.ratio),
+                            style: TextStyle(color: q.ratio >= 0 ? upColor : downColor, fontWeight: FontWeight.bold)),
+                      ],
+                    ]),
+                    const SizedBox(height: 8),
                     // 분할 매수 구간 1·2·3차 (지지·이평선·매물대 기준)
                     if (p['zones'] is List && (p['zones'] as List).isNotEmpty) ...[
                       for (final z in asList(p['zones'])) ...[
@@ -258,10 +260,6 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
               if (selR.isNotEmpty) ...[
                 const SectionTitle('매수 근거'),
                 ...selR.map((r) => _bullet('✓', _clean(r), Colors.green)),
-              ],
-              if (selW.isNotEmpty) ...[
-                const SectionTitle('주의사항'),
-                ...selW.map((w) => _bullet('⚠', _clean(w), Colors.orange)),
               ],
               // 다음 거래일 확인 (익일유망주·상파만)
               if (watchLines.isNotEmpty) ...[
@@ -518,11 +516,6 @@ class _V3Score extends StatelessWidget {
               color: counted ? Colors.teal : Colors.grey,
               borderRadius: BorderRadius.circular(4),
             ),
-          ),
-          SizedBox(
-            width: 70,
-            child: Text(got == null ? '데이터없음' : '${got.toStringAsFixed(1)}/$max',
-                textAlign: TextAlign.right, style: TextStyle(fontSize: 12, color: counted ? null : Colors.grey)),
           ),
         ]),
       );

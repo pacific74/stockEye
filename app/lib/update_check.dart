@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:ota_update/ota_update.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'version.dart';
@@ -12,7 +14,7 @@ import 'version.dart';
 /// 앱 업데이트 안내 (안드로이드 APK 만)
 ///   빌드할 때 웹 주소에 version.json({"build": N, "apk": "stockeye.apk"}) 을 같이 올린다 (app.yml).
 ///   앱을 켜면 그 파일을 읽어, 설치된 빌드 번호보다 크면 '새 버전' 안내 → [업데이트] 누르면 앱 안에서 APK 를 받고
-///   바로 안드로이드 설치 화면을 연다 (ota_update). 안드로이드 보안상 마지막 [설치] 한 번은 직접 눌러야 함.
+///   바로 안드로이드 설치 화면을 연다 (http 로 받고 open_filex 로 열기). 안드로이드 보안상 마지막 [설치] 한 번은 직접 눌러야 함.
 ///   앱 안 다운로드가 안 되면 브라우저로 APK 주소를 연다.
 ///   웹은 새로고침이면 최신이라 안내하지 않음. PC 개발 빌드(빌드 번호 없음)도 안내하지 않음.
 const _webUrl = String.fromEnvironment('WEB_URL');
@@ -86,18 +88,31 @@ Future<void> _install(BuildContext context, String apk, int build) async {
   }
 
   try {
-    await for (final e in OtaUpdate().execute(apk, destinationFilename: 'stockeye_$build.apk')) {
-      if (e.status == OtaStatus.DOWNLOADING) {
-        progress.value = '내려받는 중… ${e.value ?? 0}%';
-      } else if (e.status == OtaStatus.INSTALLING) {
-        progress.value = '설치 화면을 여는 중…';
-        close();
-        return; // 안드로이드 설치 화면에서 [설치] (처음 한 번은 '이 출처 허용'도)
-      } else {
-        throw Exception('${e.status.name} ${e.value ?? ''}');
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/stockeye_$build.apk');
+    final client = http.Client();
+    try {
+      final res = await client.send(http.Request('GET', Uri.parse(apk)));
+      if (res.statusCode != 200) throw Exception('다운로드 실패 ${res.statusCode}');
+      final total = res.contentLength ?? 0;
+      final sink = file.openWrite();
+      var got = 0;
+      await for (final chunk in res.stream) {
+        sink.add(chunk);
+        got += chunk.length;
+        progress.value = total > 0
+            ? '내려받는 중… ${(got * 100 / total).floor()}%'
+            : '내려받는 중… ${(got / 1048576).toStringAsFixed(1)}MB';
       }
+      await sink.close();
+    } finally {
+      client.close();
     }
-    throw Exception('설치 단계 없이 끝남');
+    progress.value = '설치 화면을 여는 중…';
+    final r = await OpenFilex.open(file.path, type: 'application/vnd.android.package-archive');
+    close();
+    if (r.type != ResultType.done) throw Exception(r.message);
+    return; // 안드로이드 설치 화면에서 [설치] (처음 한 번은 '이 출처 허용'도)
   } catch (_) {
     close();
     // 앱 안 설치가 안 되는 기기 → 브라우저로 내려받기

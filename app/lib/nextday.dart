@@ -47,7 +47,6 @@ class NextdayTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = asMap(c['nextday']);
-    final parts = asMap(v['parts']), labels = asMap(v['labels']), maxes = asMap(v['maxes']);
     final w = asMap(v['watch']);
     final live = asMap(v['live']);
     final tags = (v['tags'] is List) ? (v['tags'] as List).map((e) => '$e').toList() : <String>[];
@@ -65,8 +64,6 @@ class NextdayTile extends StatelessWidget {
           const SizedBox(height: 2),
           Wrap(spacing: 4, runSpacing: 2, children: [
             _chip('${v['type'] ?? ''}', col),
-            for (final k in nextdayKind.parts)
-              _chip('${labels[k] ?? k} ${(parts[k] as num?)?.toStringAsFixed(1) ?? '-'}/${maxes[k] ?? ''}', Colors.indigo),
             for (final tg in tags) _chip(tg, Colors.orange),
           ]),
           const SizedBox(height: 2),
@@ -76,7 +73,7 @@ class NextdayTile extends StatelessWidget {
           else if (w.isNotEmpty)
             Text('종가 ${num0(w['close'] as num?)} · 돌파 ${num0(w['breakout'] as num?)} · 지지 ${num0(w['support'] as num?)} · '
                 '추격 금지 ${num0(w['no_chase'] as num?)}↑', style: t.bodySmall),
-          PlanLine(c: c, price: price, live: price != null),
+          PlanLine(c: c, price: price, live: price != null, showPrice: true),
         ]),
         isThreeLine: true,
         trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [

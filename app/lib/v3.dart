@@ -51,12 +51,6 @@ String? holdingSellDate(Json meta, String? buyDate) {
   return nthTradingDay(v3Calendar(meta), buyDate, 20);
 }
 
-Widget _chip(String s, Color color) => Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.13), borderRadius: BorderRadius.circular(6)),
-      child: Text(s, style: TextStyle(fontSize: 11, color: color)),
-    );
-
 /// 선정 상태 한 줄: 오늘 선정일이면 매수·매도 예정일, 아니면 다음 선정일
 class V3ScheduleLine extends StatelessWidget {
   const V3ScheduleLine({super.key, required this.v});
@@ -85,21 +79,13 @@ class V3PickTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = asMap(c['v3']);
-    final parts = asMap(v['parts']);
-    final labels = asMap(v['labels']);
-    final maxes = asMap(v['maxes']);
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
         leading: CircleAvatar(child: Text('$rank')),
         title: StockName('${c['name']}', market: c['market'] as String?),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const SizedBox(height: 2),
-          Wrap(spacing: 4, runSpacing: 2, children: [
-            for (final k in ['vola15', 'fin25', 'pos20'])
-              _chip('${labels[k] ?? k} ${num0(parts[k] as num?)}/${maxes[k] ?? ''}', Colors.teal),
-          ]),
-          PlanLine(c: c, price: price, live: price != null),
+          PlanLine(c: c, price: price, live: price != null, showPrice: true),
         ]),
         isThreeLine: true,
         trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [

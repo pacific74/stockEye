@@ -52,11 +52,13 @@ Widget planChip(String s, Color color) => Container(
     );
 
 class PlanLine extends StatelessWidget {
-  const PlanLine({super.key, required this.c, this.price, this.live = false, this.extraChips = const []});
+  const PlanLine(
+      {super.key, required this.c, this.price, this.live = false, this.extraChips = const [], this.showPrice = false});
   final Json c;
   final double? price;
   final bool live; // true = 지금 시세 기준, false = 분석일 종가 기준
   final List<Widget> extraChips;
+  final bool showPrice; // 관심 탭 목록: '현재가 · 매수구간' 한 줄 추가
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +66,18 @@ class PlanLine extends StatelessWidget {
     if (s == null) return const SizedBox.shrink();
     final t = Theme.of(context).textTheme;
     final tags = (c['tags'] is List) ? (c['tags'] as List).map((e) => '$e').toList() : <String>[];
+    final p = asMap(c['plan']);
+    final px = price ?? (p['price'] as num?)?.toDouble();
+    final lo = p['entry_low'] as num?, hi = p['entry_high'] as num?;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      if (showPrice)
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text(
+              '${live ? '현재가' : '기준가'} ${won(px)}'
+              '${lo != null && hi != null ? ' · 매수구간 ${num0(lo)}~${num0(hi)}' : ''}',
+              style: t.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+        ),
       const SizedBox(height: 3),
       Wrap(spacing: 4, runSpacing: 2, children: [
         planChip(s.zone, s.color),

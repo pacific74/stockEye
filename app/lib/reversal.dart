@@ -94,7 +94,6 @@ class ReversalTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = asMap(c[kind.field]);
-    final parts = asMap(v['parts']), labels = asMap(v['labels']), maxes = asMap(v['maxes']);
     final score = v['score'] as num?;
     final col = reversalColor(score);
     return Card(
@@ -111,11 +110,9 @@ class ReversalTile extends StatelessWidget {
                 _chip('${w}'.split(' — ').first, Colors.orange),
               if (asMap(v['live']).isNotEmpty) _chip('${asMap(v['live'])['status']}', Colors.teal),
             ],
-            for (final k in kind.parts)
-              _chip('${labels[k] ?? k} ${(parts[k] as num?)?.toStringAsFixed(1) ?? '-'}/${maxes[k] ?? ''}', Colors.indigo),
           ]),
           const SizedBox(height: 2),
-          PlanLine(c: c, price: price, live: price != null),
+          PlanLine(c: c, price: price, live: price != null, showPrice: true),
         ]),
         isThreeLine: true,
         trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [

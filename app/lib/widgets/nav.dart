@@ -12,10 +12,10 @@ const navDestinations = [
   NavigationDestination(icon: Icon(Icons.trending_up), label: '관심'),
   NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined), label: '보유'),
   NavigationDestination(icon: Icon(Icons.menu_book_outlined), label: '일지'),
-  NavigationDestination(icon: Icon(Icons.history), label: '백테스트'),
+  NavigationDestination(icon: Icon(Icons.fact_check_outlined), label: '검증'),
 ];
 
-/// 백테스트 탭은 관리자만 (PC 서버 모드는 혼자 쓰므로 항상 보임)
+/// 검증(백테스트) 탭은 관리자만 (PC 서버 모드는 혼자 쓰므로 항상 보임)
 bool get canSeeBacktest => !useCloud || isAdminUser;
 
 /// 지금 사용자에게 보이는 하단 메뉴

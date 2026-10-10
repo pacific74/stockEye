@@ -1,0 +1,39 @@
+# 매주 토요일 10:00(한국시간): 전략 A~E + 종합 엔진 5년 백테스트 → 앱의 백테스트 화면
+name: weekly-backtest
+
+on:
+  schedule:
+    - cron: "0 1 * * 6"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "일부만 (예: VALID = 관심종목 검증만 · A,D / engine). 비우면 전부"
+        required: false
+        default: ""
+
+concurrency:
+  group: stockeye-batch
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    if: github.event_name == 'workflow_dispatch' || vars.BACKTEST_RUNNER != 'vm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      TZ: Asia/Seoul
+      PYTHONUTF8: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
+      - name: 백테스트
+        working-directory: backend
+        run: python -m scripts.cloud_backtest ${{ inputs.only && format('--only {0}', inputs.only) || '' }}

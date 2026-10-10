@@ -8,6 +8,7 @@ import '../v3.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
+import 'validation_screen.dart';
 
 class BacktestScreen extends StatefulWidget {
   const BacktestScreen({super.key});
@@ -25,6 +26,7 @@ class _BacktestScreenState extends State<BacktestScreen> {
   String? error;
   String? info;
   late Future<List<Json>> _reqs = backtestRequests();
+  late Future<Json> _val = loadValidation();
 
   @override
   void initState() {
@@ -65,11 +67,12 @@ class _BacktestScreenState extends State<BacktestScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-          title: const LogoTitle('백테스트'),
+          title: const LogoTitle('검증'),
           actions: topActions(context, onRefresh: () {
             setState(() {
               _strategies = Api.strategies();
               _reqs = backtestRequests();
+              _val = loadValidation();
             });
             Api.latestBacktest().then((r) {
               if (mounted) setState(() => result = r);
@@ -78,6 +81,9 @@ class _BacktestScreenState extends State<BacktestScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
+          // ---- 관심종목 검증 (5개 탭 공통 기준) ----
+          ValidationList(future: _val),
+          const SectionTitle('직접 백테스트'),
           Card(
             color: Colors.teal.withValues(alpha: 0.08),
             child: ListTile(

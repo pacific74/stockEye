@@ -123,16 +123,38 @@ class _SimilarScreenState extends State<SimilarScreen> {
                     const SizedBox(height: 6),
                     ...stats.entries.map((e) {
                       final s = asMap(e.value);
+                      final hasRange = s['max_median'] != null;
                       return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 3),
-                        child: Row(children: [
-                          SizedBox(width: 48, child: Text(e.key.replaceAll('d', '일'))),
-                          Expanded(child: Text('상승 비율 ${s['up_ratio']}%')),
-                          Text('중앙값 ${pct(s['median'] as num)}  (${pct(s['p25'] as num)} ~ ${pct(s['p75'] as num)})',
-                              style: t.bodySmall),
+                        padding: const EdgeInsets.symmetric(vertical: 5),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          SizedBox(width: 44, child: Text(e.key.replaceAll('d', '일'), style: const TextStyle(fontWeight: FontWeight.w600))),
+                          Expanded(
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              // 그날 종가 기준
+                              Text('종가  상승 ${s['up_ratio']}% · 중앙 ${pct(s['median'] as num)}'
+                                  '  (${pct(s['p25'] as num)} ~ ${pct(s['p75'] as num)})',
+                                  style: t.bodySmall),
+                              // 그 기간 동안 장중 최고·최저 (중간에 급등·급락했다 빠진 것까지)
+                              if (hasRange)
+                                Text.rich(TextSpan(style: t.bodySmall, children: [
+                                  const TextSpan(text: '기간 중  최고 '),
+                                  TextSpan(text: pct(s['max_median'] as num?), style: const TextStyle(color: upColor)),
+                                  const TextSpan(text: ' · 최저 '),
+                                  TextSpan(text: pct(s['min_median'] as num?), style: const TextStyle(color: downColor)),
+                                  TextSpan(text: '  · +10% 닿음 ${s['hit_up10']}% · −10% 닿음 ${s['hit_dn10']}%'),
+                                ])),
+                            ]),
+                          ),
                         ]),
                       );
                     }),
+                    if (stats.values.any((v) => asMap(v)['max_median'] != null))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text('종가 = 그날 종가로 본 수익률 · 기간 중 = 그 기간 동안의 장중 최고가·최저가 (중앙값). '
+                            '중간에 급등했다 밀린 경우도 보입니다. 장중 최고가에 팔 수 있었다는 뜻은 아닙니다.',
+                            style: t.bodySmall?.copyWith(color: Colors.grey)),
+                      ),
                   ]),
                 ),
               ),
@@ -162,6 +184,9 @@ class _SimilarScreenState extends State<SimilarScreen> {
                             const SizedBox(height: 4),
                             Sparkline(values: [..._path(mm['path']), ..._path(mm['future'])], height: 32,
                                 color: selected ? orange : null),
+                            const SizedBox(height: 2),
+                            Text('종가  5일 ${pct(mm['ret5'] as num?)} · 10일 ${pct(mm['ret10'] as num?)} · 20일 ${pct(mm['ret20'] as num?)}',
+                                style: t.bodySmall),
                           ]),
                         ),
                         const SizedBox(width: 12),
@@ -170,7 +195,14 @@ class _SimilarScreenState extends State<SimilarScreen> {
                           Text(pct(r20),
                               style: TextStyle(
                                   fontSize: 18, fontWeight: FontWeight.bold, color: r20 >= 0 ? upColor : downColor)),
-                          Text('5일 ${pct(mm['ret5'] as num?)}', style: t.bodySmall),
+                          // 20일 동안 장중 최고·최저와 그날 (2일째 상한가 후 음봉 같은 경우도 보이게)
+                          if (mm['max20'] != null)
+                            Text('최고 ${pct(mm['max20'] as num?)} (${mm['max_day']}일째)',
+                                style: t.bodySmall?.copyWith(color: upColor)),
+                          if (mm['min20'] != null)
+                            Text('최저 ${pct(mm['min20'] as num?)} (${mm['min_day']}일째)',
+                                style: t.bodySmall?.copyWith(color: downColor)),
+                          if (mm['max20'] == null) Text('5일 ${pct(mm['ret5'] as num?)}', style: t.bodySmall),
                         ]),
                       ]),
                     ),

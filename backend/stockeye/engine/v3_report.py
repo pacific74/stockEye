@@ -286,7 +286,9 @@ def history_entries(pit, cfg: dict, feat: pd.DataFrame, start: str = "2021-07-01
         f = fi.at(list(s1.index), d + pd.Timedelta(hours=18)) if fi is not None else pd.DataFrame()
         sc = v3.score(s1, ev["blocked"], f, sector_of, ev)
         t = v3.top(sc, x=s1)
-        out.append({"date": d.strftime("%Y-%m-%d"), "picks": list(t.index), "eligible": list(sc.index[sc["eligible"]])})
+        el = sc[sc["eligible"]]
+        out.append({"date": d.strftime("%Y-%m-%d"), "picks": list(t.index), "eligible": list(el.index),
+                    "scores": {k: round(float(v), 2) for k, v in el["v3b"].items()}})   # 검증(5분위·IC)용
     return out
 
 

@@ -26,7 +26,7 @@ log = logging.getLogger("stockeye.cloud_backtest")
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", help="예: A,D  (engine = 종합 엔진)")
+    ap.add_argument("--only", help="예: A,D  (engine = 종합 엔진) · VALID = 관심종목 검증만")
     ap.add_argument("--min-score", type=float, default=75)
     args = ap.parse_args()
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
@@ -40,11 +40,25 @@ def main():
     pit = PointInTimeData.from_store(store)
     t0 = time.time()
     log.info("지표 계산 중 (전 종목 × 전 기간)...")
+    if args.only == "VALID":                      # 관심종목 검증만 (V3 과거 선정 + 4개 탭)
+        from stockeye.indicators import compute_features
+        from stockeye.engine.v3_report import history_entries
+        from stockeye.analysis import validation
+        feat = compute_features(pit.ohlcv, pit.flows, pit.fund)
+        ent = history_entries(pit, cfg, feat)
+        del feat
+        val = validation.run(pit, v3_entries=ent)
+        pub.publish_backtest(sb, "VALID", "관심종목 검증", val)
+        for st_ in val["strategies"]:
+            log.info("[검증] %s: %s", st_["name"], st_["verdict"]["label"])
+        log.info("관심종목 검증 %.0f분", (time.time() - t0) / 60)
+        return
     if not args.only:
         from stockeye.backtest.engine_v2 import BacktesterV2
         from stockeye.indicators import compute_features
         feat = compute_features(pit.ohlcv, pit.flows, pit.fund)
         # ---- V3 기준 전략 검증: ① 종목 선정력 ② 실제 매매 (기간별, 고정 이후 포함) ----
+        ent = None
         try:
             from stockeye.engine.v3_report import history_entries, validate, LOG_KEY
             t3 = time.time()
@@ -71,7 +85,19 @@ def main():
                  m.get("expectancy_pct"), m.get("profit_factor"), m.get("total_return_pct"), m.get("mdd_pct"),
                  (time.time() - t0) / 60)
         pub.process_backtest_requests(sb, pit, cfg, limit=5, features=feat)
-        pub.publish_status(sb, "backtest", {"done": ["V2"], "minutes": round((time.time() - t0) / 60, 1)})
+        del feat, res
+        # ---- 관심종목 검증 (VAL): 5개 탭 공통 기준 — 앱 '검증' 화면 ----
+        try:
+            from stockeye.analysis import validation
+            tv = time.time()
+            val = validation.run(pit, v3_entries=ent)
+            pub.publish_backtest(sb, "VALID", "관심종목 검증", val)
+            for st_ in val["strategies"]:
+                log.info("[검증] %s: %s", st_["name"], st_["verdict"]["label"])
+            log.info("관심종목 검증 %.0f분", (time.time() - tv) / 60)
+        except Exception as e:  # noqa: BLE001
+            log.error("관심종목 검증 실패: %s", e)
+        pub.publish_status(sb, "backtest", {"done": ["V2", "VALID"], "minutes": round((time.time() - t0) / 60, 1)})
         return
     bt = Backtester(pit, cfg)
     keys = args.only.split(",")

@@ -33,7 +33,8 @@ class PatternIndex:
     def __init__(self, ohlcv: pd.DataFrame, window: int = 20, step: int = 2, horizons=(5, 10, 20),
                  min_value: float = 1e9, prefilter: int = 4000):
         self.window, self.step, self.horizons = window, step, tuple(horizons)
-        df = ohlcv[["date", "code", "close", "value"] + (["chg_pct"] if "chg_pct" in ohlcv else [])].copy()
+        extra = [c for c in ("chg_pct", "high", "low") if c in ohlcv]
+        df = ohlcv[["date", "code", "close", "value"] + extra].copy()
         if "chg_pct" in df:
             df["r"] = df["chg_pct"] / 100.0
         else:
@@ -41,6 +42,17 @@ class PatternIndex:
             df["r"] = df.groupby("code")["close"].pct_change(fill_method=None)
         self.r = df.pivot(index="date", columns="code", values="r").sort_index().astype("float32")
         self.val = df.pivot(index="date", columns="code", values="value").reindex_like(self.r).astype("float32")
+        # 장중 고가·저가 ÷ 그날 종가 (분할 영향 없는 비율) → 패턴 이후 '기간 중 최고·최저' 계산용
+        cl = df.pivot(index="date", columns="code", values="close").reindex_like(self.r).astype("float32")
+        cl = cl.where(cl > 0)
+        for nm_ in ("high", "low"):
+            if nm_ in df:
+                x = df.pivot(index="date", columns="code", values=nm_).reindex_like(self.r).astype("float32")
+                ratio = (x.where(x > 0) / cl).to_numpy()
+                ratio = np.where(np.isfinite(ratio) & (ratio > 0.5) & (ratio < 2.0), ratio, 1.0)
+            else:
+                ratio = np.ones(self.r.shape, dtype="float32")
+            setattr(self, nm_ + "_r", ratio.astype("float32"))
         self.dates = self.r.index
         self.codes = np.array(self.r.columns)
         self.min_value = min_value
@@ -136,6 +148,7 @@ class PatternIndex:
             if len(res) < top:
                 extra["ma"] = self._ma_state(e, ci)
             fwd = {f"ret{h}": float(np.expm1(self.cum[e + 1 + h, ci] - self.cum[e + 1, ci])) for h in self.horizons}
+            ext = self._extremes(e, ci, H)
             res.append({"code": c, "start": str(self.dates[e + 1 - W].date()), "end": str(self.dates[e].date()),
                         "similarity": sim(comb[j]), **extra,
                         "path": [round(float(v), 4) for v in
@@ -143,22 +156,48 @@ class PatternIndex:
                         # 패턴 이후 H일 (같은 기준점에서의 누적 수익률) — 화면에서 '그 뒤' 점선으로 비교
                         "future": [round(float(v), 4) for v in
                                    np.expm1(self.cum[e + 2:e + 2 + H, ci] - self.cum[e + 1 - W, ci])],
-                        **{k2: round(v * 100, 2) for k2, v in fwd.items()}})
+                        **{k2: round(v * 100, 2) for k2, v in fwd.items()}, **ext})
         if not res:
             return {"error": "비슷한 구간 없음"}
         stats = {}
         for h in self.horizons:
             arr = np.array([r[f"ret{h}"] for r in res])
+            hi = np.array([r.get(f"max{h}", np.nan) for r in res], dtype=float)
+            lo = np.array([r.get(f"min{h}", np.nan) for r in res], dtype=float)
             stats[f"{h}d"] = {"up_ratio": round(float((arr > 0).mean()) * 100, 1),
                               "median": round(float(np.median(arr)), 2),
                               "p25": round(float(np.percentile(arr, 25)), 2),
-                              "p75": round(float(np.percentile(arr, 75)), 2)}
+                              "p75": round(float(np.percentile(arr, 75)), 2),
+                              # 그 h일 동안 장중 최고·최저 (그날 종가만 보면 놓치는 급등·급락)
+                              "max_median": round(float(np.nanmedian(hi)), 2),
+                              "min_median": round(float(np.nanmedian(lo)), 2),
+                              "hit_up10": round(float(np.nanmean(hi >= 10)) * 100, 1),
+                              "hit_dn10": round(float(np.nanmean(lo <= -10)) * 100, 1)}
         return {"code": code, "as_of": str(as_of.date()), "window": W, "weights": dict(self.WEIGHTS),
                 "basis": "가격 모양 50% · 이동평균선(20·60일) 30% · 거래량 20%",
                 "query_ma": self._ma_state(T, col),
                 "query_path": [round(float(v), 4) for v in np.expm1(q)],
                 "matches": res[:top], "sample_size": len(res), "stats": stats,
                 "disclaimer": "과거 유사 패턴의 결과일 뿐이며 미래 수익을 예측하지 않습니다. 참고자료로만 사용하세요."}
+
+    def _extremes(self, e: int, ci: int, H: int) -> dict:
+        """패턴 끝날(e) 종가 기준 1~H일 동안 장중 최고가·최저가(%)와 그날(몇 일째) + h일별 최고·최저, 최고 종가"""
+        rel = np.expm1(self.cum[e + 2:e + 2 + H, ci] - self.cum[e + 1, ci])          # k=1..H 종가 (기준 대비)
+        c = 1.0 + rel
+        hi = c * self.high_r[e + 1:e + 1 + H, ci] - 1.0
+        lo = c * self.low_r[e + 1:e + 1 + H, ci] - 1.0
+        out = {}
+        if len(hi) == 0:
+            return out
+        for h in self.horizons:
+            if h <= len(hi):
+                out[f"max{h}"] = round(float(hi[:h].max()) * 100, 2)
+                out[f"min{h}"] = round(float(lo[:h].min()) * 100, 2)
+        out["max_day"] = int(np.argmax(hi)) + 1
+        out["min_day"] = int(np.argmin(lo)) + 1
+        out["max_close"] = round(float(rel.max()) * 100, 2)
+        out["max_close_day"] = int(np.argmax(rel)) + 1
+        return out
 
     # ---------------------------------------------------------------- 이평선·거래량 비교
     def _rows(self, e: np.ndarray) -> np.ndarray:

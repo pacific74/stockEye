@@ -247,7 +247,7 @@ def notify_members(sb: Supabase, report: dict, notifier, skip_topics=(), app_url
                                     priority="high", url=app_url)
                 sent += 1
         if u.get("notify_daily", True):
-            notifier.send_topic(topic, title, summary, url=app_url)
+            notifier.send_topic(topic, title, summary, url=app_url, markdown=True)
             sent += 1
     log.info("회원 알림 %d건 발송", sent)
     return sent

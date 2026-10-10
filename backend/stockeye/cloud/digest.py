@@ -70,31 +70,34 @@ def _pct(v, nd=1) -> str:
     return "-" if v is None or v != v else f"{'+' if v >= 0 else ''}{float(v):.{nd}f}%"
 
 
+BR = "  "          # Markdown 줄바꿈 (줄 끝 공백 두 칸) — 한 항목을 맥락에 맞춰 2줄로 나눌 때
+IND = "   "         # 목록 항목 아래 둘째 줄 들여쓰기
+
+
 def today_brief(report: dict) -> list[str]:
+    """금일장 브리핑 (Markdown 목록, 긴 항목은 맥락 단위로 2줄)"""
     m = report.get("market") or {}
     b = report.get("brief") or {}
     lines = []
     for i in b.get("indices", []):
-        pos = []
-        for n in (20, 60):
-            pos.append(f"{n}일선 {'위' if i['close'] >= i[f'ma{n}'] else '아래'}")
+        pos = " · ".join(f"{n}일선 {'위' if i['close'] >= i[f'ma{n}'] else '아래'}" for n in (20, 60))
         st = i.get("streak") or 0
         tail = f" · {abs(st)}일 연속 {'상승' if st > 0 else '하락'}" if abs(st) >= 3 else ""
-        lines.append(f"{i['name']} {i['close']:,.2f} ({_pct(i['chg1'], 2)}, 5일 {_pct(i['chg5'])}) · {'·'.join(pos)}{tail}")
+        lines.append(f"- **{i['name']}** {i['close']:,.2f} ({_pct(i['chg1'], 2)}, 5일 {_pct(i['chg5'])}){BR}")
+        lines.append(f"{IND}{pos}{tail}")
     if not lines:                                   # 예전 리포트
         for i in m.get("indices", []):
-            lines.append(f"{IDX_NAME.get(i['code'], i['code'])} {i['close']:,.2f} ({_pct(i['change_pct'], 2)})")
+            lines.append(f"- **{IDX_NAME.get(i['code'], i['code'])}** {i['close']:,.2f} ({_pct(i['change_pct'], 2)})")
     adv, dec = m.get("advancers"), m.get("decliners")
     if adv is not None:
-        bits = [f"상승 {adv:,} · 하락 {dec:,}"]
-        if m.get("limit_up"):
-            bits.append(f"상한가 {m['limit_up']}")
-        if b.get("value_today"):
-            bits.append(f"거래대금 {b['value_today']}조 (20일 평균의 {b['value_ratio']:.1f}배)")
-        lines.append(" · ".join(bits) + f" {m.get('mood_icon', '')}{m.get('mood', '')}")
+        first = f"상승 {adv:,} · 하락 {dec:,}" + (f" · 상한가 {m['limit_up']}" if m.get("limit_up") else "")
+        second = (f"거래대금 {b['value_today']}조 (20일 평균의 {b['value_ratio']:.1f}배) · " if b.get("value_today") else "") \
+            + f"{m.get('mood_icon', '')} **{m.get('mood', '')}**"
+        lines.append(f"- {first}{BR}")
+        lines.append(f"{IND}{second}")
     sec = [s for s in (report.get("sectors") or [])][:3]
     if sec:
-        lines.append("강한 업종: " + ", ".join(f"{s['group']}({_pct(s.get('ret1_pct'))})" for s in sec))
+        lines.append("- 강한 업종: " + ", ".join(f"{s['group']}({_pct(s.get('ret1_pct'))})" for s in sec))
     return lines
 
 
@@ -127,16 +130,18 @@ def outlook(report: dict) -> list[str]:
         if g is not None:
             why.append(f"어제 후보 시초 갭 평균 {_pct(g, 2)}")
     view = "우호적 🟢" if pts >= 1 else "경계 🔴" if pts <= -1 else "중립 🟡"
-    lines = [f"{view} (지표 점수 {pts:+.1f}) — " + " · ".join(why[:4])]
+    lines = [f"**{view}** (지표 점수 {pts:+.1f}){BR}", " · ".join(why[:4]), ""]
     for i in b.get("indices", []):
         c, m20, m60 = i["close"], i["ma20"], i["ma60"]
         if c >= m20:
-            lines.append(f"{i['name']}: 20일선 {m20:,.0f} 지지 확인, 20일 고점까지 {_pct(-i['from_high20'])}")
+            a, z = f"20일선 {m20:,.0f} 지지 확인", (f"20일 고점까지 {_pct(-i['from_high20'])}" if i["from_high20"] < -0.05 else "20일 고점 부근")
         elif c >= m60:
-            lines.append(f"{i['name']}: 20일선 {m20:,.0f} 회복 여부 · 60일선 {m60:,.0f} 지지")
+            a, z = f"20일선 {m20:,.0f} 회복 여부", f"60일선 {m60:,.0f} 지지"
         else:
-            lines.append(f"{i['name']}: 60일선 {m60:,.0f} 아래 — 반등해도 {m20:,.0f}(20일선) 저항")
-    lines.append("※ 지표 정리이며 예측이 아닙니다. 시초가 갭 추격은 피하세요.")
+            a, z = f"60일선 {m60:,.0f} 아래", f"반등해도 {m20:,.0f}(20일선) 저항"
+        lines.append(f"- **{i['name']}** {a}{BR}")
+        lines.append(f"{IND}{z}")
+    lines += ["", "_※ 지표 정리이며 예측이 아닙니다. 시초가 갭 추격은 피하세요._"]
     return lines
 
 
@@ -146,32 +151,44 @@ def _tab_keys(report: dict) -> list[str]:
 
 
 def picks(report: dict, per_tab: int = 3) -> list[str]:
+    """내일 관심주: 탭마다 [탭 이름] → 1. 종목명 (코드) · 점수 / 다음 줄 들여써서 현재가·목표·손절, 탭 사이 한 줄 띄움"""
     lines = []
     for k in _tab_keys(report):
         v = report["strategies"][k] or {}
-        cs = (v.get("candidates") or [])[:per_tab]
-        lines.append(f"[{v.get('short') or v.get('name') or k}]")
+        cs = sorted(v.get("candidates") or [], key=lambda c: -(c.get("score") or -1))[:per_tab]
+        if lines:
+            lines.append("")
+        lines.append(f"**[{v.get('short') or v.get('name') or k}]**")
         if not cs:
-            lines.append(" 오늘 조건을 만족한 종목 없음")
+            lines.append(f"{IND}오늘 조건을 만족한 종목 없음")
             continue
         for n, c in enumerate(cs, 1):
             p = c.get("plan") or {}
             sc = c.get("score")
-            lines.append(f"{n}. {c['name']}({c['code']}) {sc:.0f}점 · 현 {_won(p.get('price'))} · "
-                         f"목 {_won(p.get('target1'))} · 손 {_won(p.get('stop'))}" if sc is not None else
-                         f"{n}. {c['name']}({c['code']}) · 현 {_won(p.get('price'))}")
+            lines.append(f"{n}. **{c['name']}** ({c['code']})" + (f" · {sc:.0f}점" if sc is not None else "") + BR)
+            lines.append(f"{IND}현 {_won(p.get('price'))} · 목 {_won(p.get('target1'))} · 손 {_won(p.get('stop'))}")
     return lines
 
 
 def build(report: dict, per_tab: int = 3, max_bytes: int = MAX_BYTES) -> tuple[str, str]:
-    """(제목, 본문). 길면 탭별 종목 수 → 브리핑 줄 순서로 줄여 max_bytes 안으로"""
+    """(제목, 본문 Markdown). 길면 탭별 종목 수를 줄여 max_bytes 안으로"""
     title = f"📊 {_md(report['date'])} 장마감 리포트"
     tb, ol = today_brief(report), outlook(report)
+    body = ""
     for k in range(per_tab, 0, -1):
-        body = "\n".join(["■ 금일장 브리핑", *tb, "", "■ 내일장 예상", *ol, "", "■ 내일 관심주", *picks(report, k),
-                          "", "목표·손절 = 차트 저항·지지(스윙 고저점·매물대·이평선) 기준 참고 가격"])
+        body = "\n".join(["### ■ 금일장 브리핑", *tb, "", "### ■ 내일장 예상", *ol, "",
+                          "### ■ 내일 관심주", *picks(report, k), "",
+                          "_목표·손절 = 차트 저항·지지(스윙 고저점·매물대·이평선) 기준 참고 가격_"])
         if len(body.encode("utf-8")) <= max_bytes:
             return title, body
     while len(body.encode("utf-8")) > max_bytes and "\n" in body:
         body = body.rsplit("\n", 1)[0]
     return title, body
+
+
+def plain(body: str) -> str:
+    """Markdown 을 못 보여주는 곳(예전 앱·텔레그램)용: 기호를 덜어낸 글"""
+    import re
+    t = body.replace("### ", "").replace("**", "")
+    t = re.sub(r"(^|\s)_([^_\n]+)_(?=\s|$)", r"\1\2", t)
+    return re.sub(r" +\n", "\n", t)

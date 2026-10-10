@@ -26,10 +26,18 @@ def test_sections_and_order():
     assert t.startswith("📊 10/9(금) 장마감 리포트")
     for h in ("■ 금일장 브리핑", "■ 내일장 예상", "■ 내일 관심주"):
         assert h in b
-    order = [b.index(f"[{k}]") for k in ("v3", "nextday", "early", "reversal")]   # 앱 탭 순서
+    order = [b.index(f"**[{k}]**") for k in ("v3", "nextday", "early", "reversal")]   # 앱 탭 순서
     assert order == sorted(order)
-    assert "종목0(000000) 80점 · 현 10,000 · 목 10,800 · 손 9,500" in b
-    assert "코스피 3,300.00" in b and "20일선 위" in b
+    assert "1. **종목0** (000000) · 80점  \n   현 10,000 · 목 10,800 · 손 9,500" in b   # 이름·점수 / 다음 줄 가격
+    assert "\n\n**[nextday]**" in b                                   # 탭 사이 한 줄 띄움
+    assert "### ■ 내일 관심주" in b and "- **코스피** 3,300.00" in b and "20일선 위" in b
+
+
+def test_plain_strips_markdown():
+    t, b = digest.build(_report())
+    p = digest.plain(b)
+    assert "**" not in p and "### " not in p and "  \n" not in p
+    assert "1. 종목0 (000000) · 80점\n   현 10,000" in p
 
 
 def test_byte_limit_trims_per_tab():
@@ -38,4 +46,4 @@ def test_byte_limit_trims_per_tab():
                             for i in range(30)})
     t, b = digest.build(r)
     assert len(b.encode("utf-8")) <= digest.MAX_BYTES
-    assert "[새탭0]" in b                                       # 새 탭도 자동 포함
+    assert "**[새탭0]**" in b                                       # 새 탭도 자동 포함

@@ -208,24 +208,26 @@ class CandidateTile extends StatelessWidget {
 
 /// 작은 선 그래프 (패턴 비교용). values 는 0 기준 누적 수익률 (예: 0.05 = +5%)
 class Sparkline extends StatelessWidget {
-  const Sparkline({super.key, required this.values, this.color, this.height = 40, this.width});
+  const Sparkline({super.key, required this.values, this.color, this.height = 40, this.width, this.split});
   final List<double> values;
   final Color? color;
   final double height;
-  final double? width;
+  final double? width; // 없으면 가로를 꽉 채움
+  final int? split; // 이 위치부터 '그 뒤' (세로 점선 + 연한 색)
 
   @override
   Widget build(BuildContext context) => SizedBox(
         height: height,
-        width: width,
-        child: CustomPaint(painter: _SparkPainter(values, color ?? Theme.of(context).colorScheme.primary)),
+        width: width ?? double.infinity,
+        child: CustomPaint(painter: _SparkPainter(values, color ?? Theme.of(context).colorScheme.primary, split)),
       );
 }
 
 class _SparkPainter extends CustomPainter {
-  _SparkPainter(this.v, this.color);
+  _SparkPainter(this.v, this.color, this.split);
   final List<double> v;
   final Color color;
+  final int? split;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -234,17 +236,32 @@ class _SparkPainter extends CustomPainter {
     final lo = all.reduce(math.min), hi = all.reduce(math.max);
     final range = (hi - lo).abs() < 1e-9 ? 1.0 : hi - lo;
     double y(double val) => size.height - (val - lo) / range * size.height;
-    final path = Path()..moveTo(0, y(0));
-    for (var i = 0; i < v.length; i++) {
-      path.lineTo((i + 1) / v.length * size.width, y(v[i]));
-    }
+    double x(int i) => (i + 1) / v.length * size.width;
     canvas.drawLine(Offset(0, y(0)), Offset(size.width, y(0)), Paint()..color = Colors.grey.withValues(alpha: 0.4));
-    canvas.drawPath(
-        path,
-        Paint()
-          ..color = color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.6);
+    final sp = (split == null || split! <= 0 || split! >= v.length) ? v.length : split!;
+    final a = Path()..moveTo(0, y(0));
+    for (var i = 0; i < sp; i++) {
+      a.lineTo(x(i), y(v[i]));
+    }
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6;
+    canvas.drawPath(a, paint);
+    if (sp < v.length) {
+      final b = Path()..moveTo(x(sp - 1), y(v[sp - 1]));
+      for (var i = sp; i < v.length; i++) {
+        b.lineTo(x(i), y(v[i]));
+      }
+      canvas.drawPath(b, paint..color = color.withValues(alpha: 0.45));
+      final gx = x(sp - 1);
+      final dash = Paint()
+        ..color = Colors.grey.withValues(alpha: 0.6)
+        ..strokeWidth = 1;
+      for (double yy = 0; yy < size.height; yy += 4) {
+        canvas.drawLine(Offset(gx, yy), Offset(gx, math.min(yy + 2, size.height)), dash);
+      }
+    }
   }
 
   @override

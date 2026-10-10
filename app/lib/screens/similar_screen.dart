@@ -182,8 +182,9 @@ class _SimilarScreenState extends State<SimilarScreen> {
                               Text('가격 ${mm['sim_price']} · 이평선 ${mm['sim_ma']} · 거래량 ${mm['sim_volume']}',
                                   style: t.bodySmall?.copyWith(color: Colors.grey)),
                             const SizedBox(height: 4),
-                            Sparkline(values: [..._path(mm['path']), ..._path(mm['future'])], height: 32,
-                                color: selected ? orange : null),
+                            // 작은 차트: 비슷했던 20일(진한 선) | 점선 | 그 뒤 20일(연한 선)
+                            Sparkline(values: [..._path(mm['path']), ..._path(mm['future'])], height: 36,
+                                split: _path(mm['path']).length, color: selected ? orange : null),
                             const SizedBox(height: 2),
                             Text('종가  5일 ${pct(mm['ret5'] as num?)} · 10일 ${pct(mm['ret10'] as num?)} · 20일 ${pct(mm['ret20'] as num?)}',
                                 style: t.bodySmall),

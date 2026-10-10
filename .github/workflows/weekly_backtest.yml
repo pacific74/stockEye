@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       only:
-        description: "일부만 (예: A,D  / engine). 비우면 전부"
+        description: "일부만 (예: VALID = 관심종목 검증만 · A,D / engine). 비우면 전부"
         required: false
         default: ""
 

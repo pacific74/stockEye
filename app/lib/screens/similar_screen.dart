@@ -366,8 +366,6 @@ class _PatternRequestState extends State<_PatternRequest> {
             const Text('매일 저녁 배치는 후보 메뉴의 모든 탭 종목과 보유종목만 미리 계산합니다. '
                 '요청하면 이 종목도 계산해서, 다른 회원도 같이 볼 수 있게 저장합니다. '
                 '요청한 종목은 며칠 동안 저녁 배치에서 계속 새로 계산됩니다.'),
-            const SizedBox(height: 4),
-            Text('비교 기준: 가격 모양 50% · 이동평균선(20·60일) 30% · 거래량 20%', style: t.bodySmall),
             const SizedBox(height: 12),
             if (_waiting) ...[
               Row(children: [
@@ -386,7 +384,7 @@ class _PatternRequestState extends State<_PatternRequest> {
                 ),
               FilledButton.icon(
                 icon: const Icon(Icons.timeline),
-                label: Text(_busy ? '요청 중…' : '비슷한 과거 패턴 찾기 요청'),
+                label: Text(_busy ? '요청 중…' : '패턴 찾기'),
                 onPressed: _busy ? null : _request,
               ),
             ],

@@ -216,6 +216,20 @@ def report_summary(report: dict) -> str:
     return f"{m.get('mood_icon', '')} {m.get('mood', '')} · TOP3 {top}"
 
 
+def holding_alerts(sb: Supabase, user_id: str, limit: int = 10) -> list[str]:
+    """보유종목 점검: 그 사용자의 열린 포지션 중 손절·매도 임박 등 경고 상태인 것 한 줄씩"""
+    reviews = sb.select("position_reviews", {"select": "position_id,payload", "user_id": f"eq.{user_id}"})
+    names = {p["id"]: p["name"] for p in sb.select("positions", {
+        "select": "id,name", "user_id": f"eq.{user_id}", "status": "eq.open"})}
+    lines = []
+    for r in reviews:
+        pl = r["payload"] or {}
+        if r["position_id"] in names and pl.get("status") in ALERT_STATUSES:
+            first = (pl.get("alerts") or [""])[0]
+            lines.append(f"⚠ {names[r['position_id']]} [{pl['status']}] {first}")
+    return lines[:limit]
+
+
 def notify_members(sb: Supabase, report: dict, notifier, skip_topics=(), app_url: str | None = None) -> int:
     """알림 토픽을 등록한 승인 회원에게 각자 알림: 오늘 리포트 요약 + 내 보유종목 경고."""
     try:
@@ -233,17 +247,9 @@ def notify_members(sb: Supabase, report: dict, notifier, skip_topics=(), app_url
         if not topic or topic in skip:
             continue
         if u.get("notify_holdings", True):
-            reviews = sb.select("position_reviews", {"select": "position_id,payload", "user_id": f"eq.{u['user_id']}"})
-            names = {p["id"]: p["name"] for p in sb.select("positions", {
-                "select": "id,name", "user_id": f"eq.{u['user_id']}", "status": "eq.open"})}
-            lines = []
-            for r in reviews:
-                pl = r["payload"] or {}
-                if r["position_id"] in names and pl.get("status") in ALERT_STATUSES:
-                    first = (pl.get("alerts") or [""])[0]
-                    lines.append(f"⚠ {names[r['position_id']]} [{pl['status']}] {first}")
+            lines = holding_alerts(sb, u["user_id"])
             if lines:
-                notifier.send_topic(topic, f"StockEye 보유종목 점검 ({report['date']})", "\n".join(lines[:10]),
+                notifier.send_topic(topic, f"StockEye 보유종목 점검 ({report['date']})", "\n".join(lines),
                                     priority="high", url=app_url)
                 sent += 1
         if u.get("notify_daily", True):

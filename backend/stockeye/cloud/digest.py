@@ -73,6 +73,7 @@ def _pct(v, nd=1) -> str:
 
 BR = "  "          # Markdown 줄바꿈 (줄 끝 공백 두 칸) — 한 항목을 맥락에 맞춰 2줄로 나눌 때
 IND = "   "         # 목록 항목 아래 둘째 줄 들여쓰기
+NB = "\u00a0" * 4   # 문단 안 들여쓰기 (일반 공백은 Markdown 이 지움)
 
 
 def today_brief(report: dict) -> list[str]:
@@ -152,22 +153,24 @@ def _tab_keys(report: dict) -> list[str]:
 
 
 def picks(report: dict, per_tab: int = 3) -> list[str]:
-    """내일 관심주: 탭마다 [탭 이름] → 1. 종목명 (코드) · 점수 / 다음 줄 들여써서 현재가·목표·손절, 탭 사이 한 줄 띄움"""
+    """내일 관심주: 탭 하나 = 한 문단(줄 끝 강제 줄바꿈) → [탭]과 종목 사이는 띄지 않고, 탭과 탭 사이만 한 줄 띄움.
+    Markdown 목록(1. 2.)을 쓰면 앱이 점·여백으로 바꿔 보여서, 번호는 '1\\.' 로 이스케이프한 일반 글로 쓴다."""
     lines = []
     for k in _tab_keys(report):
         v = report["strategies"][k] or {}
         cs = sorted(v.get("candidates") or [], key=lambda c: -(c.get("score") or -1))[:per_tab]
         if lines:
             lines.append("")
-        lines.append(f"**[{TAB_LABEL.get(k) or v.get('short') or v.get('name') or k}]**")
+        lines.append(f"**[{TAB_LABEL.get(k) or v.get('short') or v.get('name') or k}]**{BR}")
         if not cs:
-            lines.append(f"{IND}오늘 조건을 만족한 종목 없음")
+            lines.append(f"{NB}오늘 조건을 만족한 종목 없음")
             continue
         for n, c in enumerate(cs, 1):
             p = c.get("plan") or {}
             sc = c.get("score")
-            lines.append(f"{n}. **{c['name']}** ({c['code']})" + (f" · {sc:.0f}점" if sc is not None else "") + BR)
-            lines.append(f"{IND}현 {_won(p.get('price'))} · 목 {_won(p.get('target1'))} · 손 {_won(p.get('stop'))}")
+            lines.append(f"{n}\\. **{c['name']}** ({c['code']})" + (f" · {sc:.0f}점" if sc is not None else "") + BR)
+            lines.append(f"{NB}현 {_won(p.get('price'))} · 목 {_won(p.get('target1'))} · 손 {_won(p.get('stop'))}"
+                         + (BR if n < len(cs) else ""))
     return lines
 
 
@@ -190,6 +193,6 @@ def build(report: dict, per_tab: int = 3, max_bytes: int = MAX_BYTES) -> tuple[s
 def plain(body: str) -> str:
     """Markdown 을 못 보여주는 곳(예전 앱·텔레그램)용: 기호를 덜어낸 글"""
     import re
-    t = body.replace("### ", "").replace("**", "")
+    t = body.replace("### ", "").replace("**", "").replace("\\.", ".").replace("\u00a0", " ")
     t = re.sub(r"(^|\s)_([^_\n]+)_(?=\s|$)", r"\1\2", t)
     return re.sub(r" +\n", "\n", t)

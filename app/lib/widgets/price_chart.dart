@@ -58,8 +58,6 @@ class PriceChart extends StatelessWidget {
             const SizedBox(width: 3),
             Text('$n일', style: TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.75))),
           ]),
-        if (showVolume)
-          Text('아래 막대: 거래량', style: TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.5))),
       ]),
       const SizedBox(height: 4),
       Expanded(child: chart),

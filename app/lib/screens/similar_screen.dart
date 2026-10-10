@@ -73,23 +73,16 @@ class _SimilarScreenState extends State<SimilarScreen> {
             controller: _scroll,
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
             children: [
-              Text('⚠ ${d['disclaimer']}', style: t.bodySmall?.copyWith(color: Colors.orange)),
-              if (d['basis'] != null)
-                Text('비교 기준: ${d['basis']} · ${d['as_of']} 기준', style: t.bodySmall),
-              if (asMap(d['query_ma']).isNotEmpty) Text('지금: ${_maText(asMap(d['query_ma']))}', style: t.bodySmall),
-              const SizedBox(height: 8),
               // ① 지금 이 종목
               _ChartCard(
-                title: '지금 ${widget.name} · 최근 $win일',
-                subtitle: '오른쪽 빈칸 = 앞으로의 $slots일 중 남은 기간 (아직 모름)',
-                trailing: pct(q.isEmpty ? 0 : q.last * 100),
+                title: widget.name,
                 child: PriceChart(bars: curBars, slots: slots, markIndex: win),
               ),
               // ② 고른 과거 패턴
               if (m != null)
                 _ChartCard(
                   title: '패턴 ${_sel + 1} · ${m['name']}  (유사도 ${m['similarity']})',
-                  subtitle: '${m['start']} ~ ${m['end']} · 점선 오른쪽 = 그 뒤 ${fut.length}일 실제 흐름',
+                  subtitle: '${m['start']} ~ ${m['end']}',
                   trailing: '20일 후 ${pct(m['ret20'] as num?)}',
                   trailingColor: ((m['ret20'] as num?) ?? 0) >= 0 ? upColor : downColor,
                   child: mBars.isEmpty
@@ -166,8 +159,6 @@ class _SimilarScreenState extends State<SimilarScreen> {
                             if (mm['sim_price'] != null)
                               Text('가격 ${mm['sim_price']} · 이평선 ${mm['sim_ma']} · 거래량 ${mm['sim_volume']}',
                                   style: t.bodySmall?.copyWith(color: Colors.grey)),
-                            if (asMap(mm['ma']).isNotEmpty)
-                              Text('그때: ${_maText(asMap(mm['ma']))}', style: t.bodySmall?.copyWith(color: Colors.grey)),
                             const SizedBox(height: 4),
                             Sparkline(values: [..._path(mm['path']), ..._path(mm['future'])], height: 32,
                                 color: selected ? orange : null),
@@ -193,12 +184,6 @@ class _SimilarScreenState extends State<SimilarScreen> {
     );
   }
 
-  static String _maText(Json m) {
-    String p(num? v, [int d = 1]) => v == null ? '-' : '${v >= 0 ? '+' : ''}${v.toStringAsFixed(d)}%';
-    return '20일선 대비 ${p(m['dist20'] as num?)}(기울기 ${p(m['slope20'] as num?, 2)}) · '
-        '60일선 대비 ${p(m['dist60'] as num?)} · 거래대금 ${p(m['vol_change'] as num?, 0)}';
-  }
-
   Widget _legend(Color c, String label, {bool dashed = false}) => Row(mainAxisSize: MainAxisSize.min, children: [
         Container(width: 16, height: 3, color: dashed ? c.withValues(alpha: 0.5) : c),
         const SizedBox(width: 4),
@@ -207,10 +192,9 @@ class _SimilarScreenState extends State<SimilarScreen> {
 }
 
 class _ChartCard extends StatelessWidget {
-  const _ChartCard(
-      {required this.title, required this.subtitle, required this.child, this.trailing, this.trailingColor});
+  const _ChartCard({required this.title, this.subtitle, required this.child, this.trailing, this.trailingColor});
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final Widget child;
   final String? trailing;
   final Color? trailingColor;
@@ -227,7 +211,7 @@ class _ChartCard extends StatelessWidget {
             if (trailing != null)
               Text(trailing!, style: TextStyle(fontWeight: FontWeight.bold, color: trailingColor)),
           ]),
-          Text(subtitle, style: t.bodySmall),
+          if (subtitle != null) Text(subtitle!, style: t.bodySmall),
           const SizedBox(height: 8),
           SizedBox(height: 230, child: child),
         ]),

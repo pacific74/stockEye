@@ -13,6 +13,7 @@ dependencies:
   intl: any
   supabase_flutter: ^2.8.0
   url_launcher: ^6.3.0
+  ota_update: ">=6.0.0 <7.0.0"   # 앱 안에서 새 APK 받아 바로 설치 화면 (7.x 는 gradle desugaring 필요해서 6.x)
 
 dev_dependencies:
   flutter_test:

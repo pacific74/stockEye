@@ -162,13 +162,6 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('매매 계획', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
-                    if (v3['rank'] != null && v3['entry_day'] == true) ...[
-                      _row('매수', '${v3['buy_date']} 시가', bold: true),
-                      _row('매도 예정', '${v3['sell_date']} 종가 (20거래일째)', bold: true),
-                      const Divider(),
-                    ],
                     // 분할 매수 구간 1·2·3차 (지지·이평선·매물대 기준)
                     if (p['zones'] is List && (p['zones'] as List).isNotEmpty) ...[
                       for (final z in asList(p['zones'])) ...[
@@ -563,40 +556,28 @@ class _V3Score extends StatelessWidget {
   }
 }
 
-/// 상단 카드: V3 상태 (상위 10 n위 / 자격 있음 / 자격 없음+사유) · V3B 점수 · 지금 가격 · 매수/매도 예정
+/// 상단 카드: 다른 탭 상세처럼 '상태 + 점수' 한 줄 (V3 선정 n위 / V3 관심 / V3 보류)
 class _V3Head extends StatelessWidget {
   const _V3Head({required this.v});
   final Json v;
 
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    final top = v['rank'] != null;
-    final why = (v['why_not'] is List) ? (v['why_not'] as List).map((e) => '$e').toList() : <String>[];
+    final rank = v['rank'] as num?;
+    final eligible = v['eligible'] == true;
     final score = v['score'] as num?;
+    final label = rank != null ? 'V3 선정 (${rank.toInt()}위)' : (eligible ? 'V3 관심' : 'V3 보류');
+    final color = rank != null ? Colors.teal : (eligible ? Colors.indigo : Colors.blueGrey);
     return Card(
-      color: (top ? Colors.teal : Colors.blueGrey).withValues(alpha: 0.10),
+      color: color.withValues(alpha: 0.10),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(children: [
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              if (top) ...[
-                Text('${v['status'] ?? ''}',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.teal)),
-                const SizedBox(height: 4),
-                if (v['entry_day'] == true)
-                  Text('${v['buy_date']} 시가 매수 → ${v['sell_date']} 종가 매도 예정 (20거래일)', style: t.bodyMedium)
-                else
-                  Text('다음 선정일 ${v['next_entry'] ?? '-'}', style: t.bodyMedium),
-              ],
-              ...why.map((w) => Text('· $w', style: t.bodySmall?.copyWith(color: Colors.orange))),
-            ]),
+            child: Text(label, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
           ),
-          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(score == null ? 'V3 -' : 'V3 ${score.toStringAsFixed(0)}점',
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          ]),
+          Text(score == null ? '-' : '${score.toStringAsFixed(0)}점',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color)),
         ]),
       ),
     );

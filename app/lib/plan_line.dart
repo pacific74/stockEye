@@ -75,7 +75,7 @@ class PlanLine extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.only(top: 2),
           child: Text(
-              '${live ? '지금 사면' : '종가 기준'} 목표 ${pct(s.up)} · 손절 ${pct(s.down)}'
+              '목표 ${pct(s.up)} · 손절 ${pct(s.down)}'
               '${s.rr == null ? '' : ' · 손익비 1:${s.rr!.toStringAsFixed(1)}'}',
               style: t.bodySmall),
         ),

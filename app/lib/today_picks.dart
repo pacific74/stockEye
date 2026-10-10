@@ -111,7 +111,7 @@ class TodayPickTile extends StatelessWidget {
             ...tags.map((k) => _chip(strategyLabels[k] ?? k, Colors.teal)),
           ]),
           const SizedBox(height: 2),
-          Text('지금 사면 목표 ${pct(p.up)} · 손절 ${pct(p.down)} · 손익비 1:${p.rr.toStringAsFixed(1)}',
+          Text('목표 ${pct(p.up)} · 손절 ${pct(p.down)} · 손익비 1:${p.rr.toStringAsFixed(1)}',
               style: t.bodySmall),
         ]),
         isThreeLine: true,

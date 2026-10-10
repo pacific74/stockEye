@@ -86,8 +86,13 @@ class Supabase:
                 time.sleep(2 * (i + 1))
                 continue
             if r.status_code >= 500 or r.status_code == 429:
-                last = SupabaseError(f"{method} {path} → {r.status_code}: {r.text[:300]}")
-                time.sleep(2 * (i + 1))
+                txt = r.text
+                if "<!DOCTYPE" in txt[:200] or "<html" in txt[:200].lower():      # Cloudflare 오류 페이지: HTML 대신 한 줄
+                    import re
+                    m = re.search(r"<title>(.*?)</title>", txt, re.S)
+                    txt = "Cloudflare " + (m.group(1).strip() if m else "오류 페이지")
+                last = SupabaseError(f"{method} {path} → {r.status_code}: {txt[:300]}")
+                time.sleep(3 * (i + 1))
                 continue
             return r
         raise SupabaseError(str(last))
@@ -109,14 +114,33 @@ class Supabase:
                         f"{table} 추가")
         return r.json() if returning else []
 
-    def upsert(self, table: str, rows: list[dict], on_conflict: str, chunk: int = 300) -> int:
+    def upsert(self, table: str, rows: list[dict], on_conflict: str, chunk: int = 300,
+               max_bytes: int = 2_000_000) -> int:
+        """여러 번에 나눠 올림: 행 수(chunk)와 요청 크기(max_bytes) 둘 다 제한.
+        서버가 5xx(Cloudflare 520~525·타임아웃 등)로 계속 실패하면 그 묶음을 반으로 나눠 다시 시도."""
         if not rows:
             return 0
         h = {"Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"}
+
+        def send(part: list[dict]) -> None:
+            data = _dumps(part).encode()
+            if len(part) > 1 and len(data) > max_bytes:
+                mid = len(part) // 2
+                send(part[:mid]), send(part[mid:])
+                return
+            try:
+                self._check(self._req("POST", f"/rest/v1/{table}", headers=h, params={"on_conflict": on_conflict},
+                                      data=data, timeout=180), f"{table} 업로드")
+            except SupabaseError as e:
+                if len(part) > 1 and any(f"→ {c}" in str(e) for c in range(500, 600)):
+                    log.warning("%s 업로드 %d행 실패 → 반으로 나눠 재시도 (%s)", table, len(part), str(e)[:60])
+                    mid = len(part) // 2
+                    send(part[:mid]), send(part[mid:])
+                    return
+                raise
+
         for i in range(0, len(rows), chunk):
-            part = clean(rows[i:i + chunk])
-            self._check(self._req("POST", f"/rest/v1/{table}", headers=h, params={"on_conflict": on_conflict},
-                                  data=_dumps(part).encode(), timeout=120), f"{table} 업로드")
+            send(clean(rows[i:i + chunk]))
         return len(rows)
 
     def update(self, table: str, filters: dict, patch: dict, returning: bool = False) -> list[dict]:

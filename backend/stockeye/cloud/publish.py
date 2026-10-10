@@ -67,7 +67,7 @@ def publish_report(sb: Supabase, report: dict, keep_days: int = 60) -> None:
 
 
 def publish_details(sb: Supabase, rows: list[dict], date: str, stale_days: int = 30) -> None:
-    sb.upsert("stock_details", rows, "code", chunk=150)
+    sb.upsert("stock_details", rows, "code", chunk=60, max_bytes=1_500_000)   # 상세가 커져 한 번에 작게 (525 방지)
     old = (pd.Timestamp(date) - pd.Timedelta(days=stale_days)).strftime("%Y-%m-%d")
     sb.delete("stock_details", {"date": f"lt.{old}"})         # 상장폐지 등으로 더 이상 안 나오는 종목
     log.info("종목 상세 발행: %d종목", len(rows))

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../api.dart';
-import '../version.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
 
@@ -89,7 +88,7 @@ class _NotifySettingsScreenState extends State<NotifySettingsScreen> {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     return Scaffold(
-      bottomNavigationBar: widget.showNav ? const MainNavBar() : const VersionFooter(),
+      bottomNavigationBar: widget.showNav ? const MainNavBar() : null,
       appBar: AppBar(
           title: widget.showNav ? const LogoTitle('알림 설정') : const Text('알림 설정'),
           actions: widget.showNav ? topActions(context) : null),

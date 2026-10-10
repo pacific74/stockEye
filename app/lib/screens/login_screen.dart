@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../version.dart';
 import 'help_screen.dart';
 import 'notify_screen.dart';
 
@@ -90,7 +89,6 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final title = {_Mode.login: '로그인', _Mode.signup: '회원가입', _Mode.reset: '비밀번호 찾기'}[_mode]!;
     return Scaffold(
-      bottomNavigationBar: const VersionFooter(),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -264,7 +262,6 @@ class PendingScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     return Scaffold(
-      bottomNavigationBar: const VersionFooter(),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),

@@ -20,6 +20,10 @@ class ExpKind {
 const reversalKind = ExpKind('reversal', '추세전환', ['bottom15', 'base25', 'ma35', 'rebound15', 'volume10'],
     '기준 사이를 직선으로 이어 소수점까지 계산 · 70점 이상 후보 · 80점 이상 우선 관찰 · 관찰용 (매매 규칙 없음)');
 
+/// 상한가 파동 V1: A 상한가 도달·종가 / B 상한가 다음 날 거래량 감소 음봉 (B1~B4)
+const uplimitKind = ExpKind('uplimit', '상파', ['limit20', 'vol25', 'pull20', 'liq15', 'trend10', 'risk10'],
+    '정렬용 보조 점수 (80점 이상이어도 점수만으로 매수하지 않음) · 관찰용 · 다음 날 지지·거래량 확인');
+
 /// 상승초기형 V1: 20일선 회복 + 단기 상승 시작
 const earlyKind = ExpKind('early', '상승초기', ['trend25', 'mom20', 'mid20', 'vol20', 'risk15'],
     '기준 사이를 직선으로 이어 소수점까지 계산 · 80↑ 우선 관찰 · 70~79 관찰 후보 · 60~69 보류 · 관찰용 (매매 규칙 없음)');
@@ -62,6 +66,12 @@ class ReversalTile extends StatelessWidget {
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const SizedBox(height: 2),
           Wrap(spacing: 4, runSpacing: 2, children: [
+            if (kind.field == 'uplimit') ...[
+              _chip('${v['label'] ?? ''}', Colors.red),
+              for (final w in (v['warnings'] is List ? (v['warnings'] as List).take(2) : const []))
+                _chip('${w}'.split(' — ').first, Colors.orange),
+              if (asMap(v['live']).isNotEmpty) _chip('${asMap(v['live'])['status']}', Colors.teal),
+            ],
             for (final k in kind.parts)
               _chip('${labels[k] ?? k} ${(parts[k] as num?)?.toStringAsFixed(1) ?? '-'}/${maxes[k] ?? ''}', Colors.indigo),
           ]),

@@ -100,6 +100,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
           final rev = asMap(c['reversal']);
           final early = asMap(c['early']);
           final nextd = asMap(c['nextday']);
+          final upl = asMap(c['uplimit']);
           num? pv(String k) => p[k] as num?;
 
           return ListView(
@@ -253,6 +254,16 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 NextdayCard(v: nextd),
                 ...((nextd['reasons'] is List) ? nextd['reasons'] as List : const []).map((r) => _bullet('✓', '$r', Colors.indigo)),
                 ...((nextd['warnings'] is List) ? nextd['warnings'] as List : const []).map((w) => _bullet('⚠', '$w', Colors.orange)),
+              ],
+
+              // ---- 상파 (실험 탭 · 관찰용) ----
+              if (upl.isNotEmpty) ...[
+                const SectionTitle('상파 (상한가 파동)'),
+                ReversalScore(v: upl, kind: uplimitKind),
+                ...((upl['reasons'] is List) ? upl['reasons'] as List : const []).map((r) => _bullet('✓', '$r', Colors.indigo)),
+                ...((upl['warnings'] is List) ? upl['warnings'] as List : const []).map((w) => _bullet('⚠', '$w', Colors.orange)),
+                for (final l in (asMap(upl['watch'])['lines'] is List ? asMap(upl['watch'])['lines'] as List : const []))
+                  _bullet('→', '$l', Colors.teal),
               ],
 
               // ---- 추세전환 점수 (실험 탭 · 관찰용) ----
@@ -606,7 +617,7 @@ class _TabHead extends StatelessWidget {
   final String source;
   final Json v;
 
-  static const _titles = {'nextday': '익일유망주', 'early': '상승초기', 'reversal': '추세전환'};
+  static const _titles = {'nextday': '익일유망주', 'early': '상승초기', 'reversal': '추세전환', 'uplimit': '상파'};
 
   @override
   Widget build(BuildContext context) {

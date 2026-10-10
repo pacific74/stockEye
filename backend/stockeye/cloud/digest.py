@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 MAX_BYTES = 3900
-TAB_ORDER = ["v3", "nextday", "early", "reversal"]       # 앱 후보 메뉴 순서 (새 탭은 뒤에 자동으로)
+TAB_ORDER = ["v3", "nextday", "early", "reversal", "uplimit"]       # 앱 후보 메뉴 순서 (새 탭은 뒤에 자동으로)
 WEEK = "월화수목금토일"
 IDX_NAME = {"KOSPI": "코스피", "KOSDAQ": "코스닥"}
 

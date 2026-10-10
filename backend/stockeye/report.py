@@ -135,6 +135,15 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
             res.nextday_scores = nds["scores"]
         except Exception as e:  # noqa: BLE001
             log.warning("익일 유망주 계산 실패: %s", e)
+        # ---- 상파 (실험 탭 · 관찰용): 상한가 도달 / 상한가 다음 날 거래량 감소 음봉 ----
+        try:
+            from .engine.uplimit_report import build_section as ul_section
+            uls = ul_section(pit, view, x, ev, name_of, theme_of, as_of, market)
+            report.setdefault("strategies", {})["uplimit"] = uls["list"]
+            report["uplimit"] = uls["meta"]
+            res.uplimit_scores = uls["scores"]
+        except Exception as e:  # noqa: BLE001
+            log.warning("상파 계산 실패: %s", e)
     else:
         # ---- (예전) V1: 종합 점수 + 전략 A~E ----
         weak = weak_markets(market, cfg)

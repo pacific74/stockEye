@@ -137,6 +137,7 @@ const strategyLabels = {
   'reversal': '추세전환',
   'early': '상승초기',
   'nextday': '익일유망주',
+  'uplimit': '상파',
   'now': '지금 매수구간',
   'signal': '매수 신호',
   'buy': '강력·매수 후보',

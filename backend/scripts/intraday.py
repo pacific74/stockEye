@@ -103,6 +103,9 @@ def main():
         from stockeye.engine.nextday_report import carry_over
         carry_over(report, DataSync(store, sb).get_json("reports/latest.json"), bars, hm)
         res.nextday_scores = None             # 상세에도 장중 값으로 다시 매기지 않음
+        from stockeye.engine.uplimit_report import carry_over as ul_carry
+        ul_carry(report, DataSync(store, sb).get_json("reports/latest.json"), bars, hm)
+        res.uplimit_scores = None
     except Exception as e:  # noqa: BLE001
         log.warning("익일 유망주 장중 상태 실패: %s", e)
         report.get("strategies", {}).pop("nextday", None)

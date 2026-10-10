@@ -44,7 +44,7 @@ def _bars(g: pd.DataFrame) -> list[dict]:
     return out
 
 
-EXP_TABS = ("nextday", "early", "reversal")     # 점수 체계가 다른 실험 탭 (기본 후보로는 안 쓰고 상세에 따로 붙임)
+EXP_TABS = ("nextday", "early", "reversal", "uplimit")     # 점수 체계가 다른 실험 탭 (기본 후보로는 안 쓰고 상세에 따로 붙임)
 
 
 def is_experimental(key: str, lst: dict | None) -> bool:
@@ -80,6 +80,7 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
     titles = titles_from_view(view, x.index) or {}
     rep_idx = _report_index(report)
     nd_idx = {c["code"]: c.get("nextday") for c in (report.get("strategies", {}).get("nextday") or {}).get("candidates", [])}
+    ul_idx = {c["code"]: c.get("uplimit") for c in (report.get("strategies", {}).get("uplimit") or {}).get("candidates", [])}
     expl = report.get("explanations", {})
     theme_of = {c["code"]: c.get("theme") for c in rep_idx.values()}
 
@@ -170,6 +171,12 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
             cand = {**cand, "nextday": nd_info(nds.loc[code])}
         elif code in nd_idx:                     # 장중: 전날 장 마감 점수 + 지금 상태
             cand = {**cand, "nextday": nd_idx[code]}
+        uls = getattr(res, "uplimit_scores", None)
+        if uls is not None and code in getattr(uls, "index", []):
+            from .engine.uplimit_report import info as ul_info
+            cand = {**cand, "uplimit": ul_info(uls.loc[code])}
+        elif code in ul_idx:
+            cand = {**cand, "uplimit": ul_idx[code]}
         e = expl.get(code) if v3s is None else None
         # 요약 설명: 보조지표·이평선·거래량·수급·지지/저항 기준 (V3 점수 설명은 candidate.v3.text 로 따로 남음)
         try:

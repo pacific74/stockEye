@@ -18,7 +18,7 @@ class CandidateListScreen extends StatefulWidget {
 
   // v3 = V3 기준 전략 (🔒 고정) / now = 오늘 지금 가격 기준 / signal·buy·watch = 매수후보 V2 (참고)
   // nextday = 익일 유망주 (실험 탭 · 60점 이상) / early = 상승초기 (실험 탭 · 60점 이상) / reversal = 추세전환 (실험 탭 · 70점 이상)
-  static const keys = ['v3', 'nextday', 'early', 'reversal']; // V2 목록(지금 매수구간·매수 신호·강력 후보·관심)은 숨김
+  static const keys = ['v3', 'nextday', 'early', 'reversal', 'uplimit']; // V2 목록(지금 매수구간·매수 신호·강력 후보·관심)은 숨김
 
   @override
   State<CandidateListScreen> createState() => _CandidateListScreenState();
@@ -36,7 +36,7 @@ class _CandidateListScreenState extends State<CandidateListScreen> {
       initialIndex: keys.contains(list) ? keys.indexOf(list) : 0,
       child: Scaffold(
         appBar: AppBar(
-          title: const LogoTitle('매수 후보'),
+          title: const LogoTitle('관심'),
           actions: topActions(context, onRefresh: () => setState(() => _gen++)),
           bottom: TabBar(
             isScrollable: true,
@@ -119,7 +119,8 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
         final rev = widget.listKey == 'reversal';
         final early = widget.listKey == 'early';
         final nextd = widget.listKey == 'nextday';
-        final all = widget.listKey == 'v3' || rev || early || nextd ? sortByScore(asList(d['candidates'])) : _sorted(asList(d['candidates']));
+        final upl = widget.listKey == 'uplimit';
+        final all = widget.listKey == 'v3' || rev || early || nextd || upl ? sortByScore(asList(d['candidates'])) : _sorted(asList(d['candidates']));
         final cands = all.take(maxShow).toList(); // 정렬한 뒤 상위 10개만 (모든 탭)
         final qs = d['_quotes'] is Map ? d['_quotes'] as Map : const {};
         double? px(Json c) => (qs['${c['code']}'] as LiveQuote?)?.price;
@@ -169,6 +170,8 @@ class _ListTabState extends State<_ListTab> with AutomaticKeepAliveClientMixin {
               ...cands.asMap().entries.map((e) => ReversalTile(c: e.value, rank: e.key + 1, price: px(e.value)))
             else if (early)
               ...cands.asMap().entries.map((e) => ReversalTile(c: e.value, rank: e.key + 1, kind: earlyKind, price: px(e.value)))
+            else if (upl)
+              ...cands.asMap().entries.map((e) => ReversalTile(c: e.value, rank: e.key + 1, kind: uplimitKind, price: px(e.value)))
             else if (nextd)
               ...cands.asMap().entries.map((e) => NextdayTile(c: e.value, rank: e.key + 1, price: px(e.value)))
             else

@@ -52,6 +52,8 @@ jobs:
           M=android/app/src/main/AndroidManifest.xml
           grep -q "android.permission.INTERNET" $M || sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' $M
           sed -i 's#android:label="[^"]*"#android:label="StockEye"#' $M
+          # 업데이트 안내에서 APK 주소(https)를 브라우저로 열기 (안드로이드 11+ 패키지 공개 범위)
+          grep -q 'android:scheme="https"' $M || sed -i 's#</manifest>#    <queries><intent><action android:name="android.intent.action.VIEW"/><data android:scheme="https"/></intent></queries>\n</manifest>#' $M
           sed -i 's#<title>.*</title>#<title>StockEye</title>#' web/index.html
       - run: flutter pub get
       - name: 앱 아이콘
@@ -80,8 +82,12 @@ jobs:
           done
           "$ANDROID_HOME/build-tools/$BT/apksigner" verify --print-certs build/app/outputs/flutter-apk/app-arm64-v8a-release.apk | head -3
           rm -f "$RUNNER_TEMP/stockeye.jks"
-      - name: APK 를 웹 주소에 올릴 준비
-        run: cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk build/web/stockeye.apk
+      - name: APK 를 웹 주소에 올릴 준비 (+ 앱 업데이트 안내용 version.json)
+        run: |
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk build/web/stockeye.apk
+          printf '{"build": %s, "time": "%s", "commit": "%s", "apk": "stockeye.apk"}\n' \
+            "${{ github.run_number }}" "$APP_TIME" "${GITHUB_SHA::7}" > build/web/version.json
+          cat build/web/version.json
       - uses: actions/upload-artifact@v4
         with:
           name: stockeye-apk

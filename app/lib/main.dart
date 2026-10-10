@@ -10,6 +10,7 @@ import 'screens/home_screen.dart';
 import 'screens/journal_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/portfolio_screen.dart';
+import 'update_check.dart';
 import 'widgets/nav.dart';
 
 Future<void> main() async {
@@ -67,6 +68,10 @@ class _HomeShellState extends State<HomeShell> {
     tabIndex.addListener(_changed);
     tabTap.addListener(_tapped);
     candidateListKey.addListener(_changed);
+    // 새 APK 가 올라와 있으면 안내 (안드로이드만, 앱 켤 때 한 번)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) checkForUpdate(context);
+    });
   }
 
   @override

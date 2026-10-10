@@ -97,10 +97,23 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
           final warnings = (c['warnings'] is List) ? (c['warnings'] as List).map((e) => '$e').toList() : <String>[];
           final explanation = d['explanation'] == null ? null : asMap(d['explanation']);
           final v3 = asMap(c['v3']);
-          final rev = asMap(c['reversal']);
-          final early = asMap(c['early']);
           final nextd = asMap(c['nextday']);
           final upl = asMap(c['uplimit']);
+          // 어느 탭에서 열었는지 → 그 탭의 근거·주의·점수표만 (없으면 V3)
+          const kinds = {'nextday': nextdayKind, 'early': earlyKind, 'reversal': reversalKind, 'uplimit': uplimitKind};
+          final selKey = (widget.source != null && kinds.containsKey(widget.source) && asMap(c[widget.source]).isNotEmpty)
+              ? widget.source!
+              : null;
+          final sel = selKey == null ? <String, dynamic>{} : asMap(c[selKey]);
+          final selKind = selKey == null ? null : kinds[selKey];
+          List<String> strs(dynamic v) => v is List ? v.map((e) => '$e').toList() : <String>[];
+          final selR = selKey == null ? reasons : strs(sel['reasons']);
+          final selW = selKey == null ? warnings : strs(sel['warnings']);
+          final watchLines = selKey == 'nextday'
+              ? strs(asMap(nextd['watch'])['lines'])
+              : selKey == 'uplimit'
+                  ? strs(asMap(upl['watch'])['lines'])
+                  : <String>[];
           num? pv(String k) => p[k] as num?;
 
           return ListView(
@@ -117,12 +130,32 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
               ),
 
               // ---- V3 기준 전략: 오늘 상태 · 점수 · 매수/매도 예정 ----
+              // 후보 탭에서 열면: '탭 점수 (V3 점수)' 한 장, 아니면 V3 카드
               if (widget.source != null && widget.source != 'v3' && asMap(c[widget.source]).isNotEmpty)
-                _TabHead(source: widget.source!, v: asMap(c[widget.source])),
-              _V3Head(v: v3, price: q?.price, ratio: q?.ratio, basePrice: (p['price'] as num?)?.toDouble()),
+                _TabHead(source: widget.source!, v: asMap(c[widget.source]), v3score: v3['score'] as num?)
+              else
+                _V3Head(v: v3),
 
               // ---- 설명 (V3 기준) ----
               if (explanation != null) _ExplainCard(code: widget.code, initial: explanation),
+
+              // ---- 지금 가격 (요약 설명 아래) ----
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Row(children: [
+                    Text(q?.price != null ? '지금 가격' : '분석 기준가', style: Theme.of(context).textTheme.bodyMedium),
+                    const Spacer(),
+                    Text(won(q?.price ?? (p['price'] as num?)?.toDouble()),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    if (q != null) ...[
+                      const SizedBox(width: 8),
+                      Text(pct(q.ratio),
+                          style: TextStyle(color: q.ratio >= 0 ? upColor : downColor, fontWeight: FontWeight.bold)),
+                    ],
+                  ]),
+                ),
+              ),
 
               // ---- 매매 계획 ----
               Card(
@@ -162,17 +195,11 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                       _row('손절가', won(pv('stop')), sub: pct(pv('loss_pct')), color: downColor),
                       _note(context, asMap(p['notes'])['stop'] as String?),
                     ],
-                    // 차트 기반 근거: 어떤 지지·저항을 썼는지
-                    if (p['basis'] is List && (p['basis'] as List).isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text('계산 근거 (스윙 고저점·매물대·이평선·볼린저·되돌림·ATR)',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
-                      for (final b in p['basis'] as List) Text('· $b', style: Theme.of(context).textTheme.bodySmall),
-                      if (p['rr1'] != null)
-                        Text('· 손익비(1차 목표/손절) ${p['rr1']}', style: Theme.of(context).textTheme.bodySmall),
-                      for (final w in (p['level_warn'] is List ? p['level_warn'] as List : const []))
-                        Text('⚠ $w', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orange)),
-                    ] else
+                    // 손익비 (계산 근거는 각 목표·손절 설명에 있으므로 따로 안 보임)
+                    if (p['rr1'] != null) _row('손익비 (1차 목표 / 손절)', '1 : ${p['rr1']}'),
+                    for (final w in (p['level_warn'] is List ? p['level_warn'] as List : const []))
+                      Text('⚠ $w', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orange)),
+                    if (!(p['basis'] is List && (p['basis'] as List).isNotEmpty))
                       Text('※ 예전 방식 (목표 +8%·+15%, 손절 20일 저점/2ATR) — 다음 배치부터 차트 기준으로 바뀝니다',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey)),
                   ]),
@@ -187,13 +214,14 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(
                           hasToday
-                              ? '최근 ${chart.length}일 · 맨 오른쪽 봉 = 오늘 ${_hm(q!.tradedAt!)} 시세 (장중엔 계속 바뀜)'
-                              : '최근 ${chart.length}일 (일봉)',
+                              ? '일봉 · 맨 오른쪽 봉 = 오늘 ${_hm(q!.tradedAt!)} 시세 (장중엔 계속 바뀜)'
+                              : '일봉 (최근 ${chart.length}일)',
                           style: Theme.of(context).textTheme.bodySmall),
                       const SizedBox(height: 6),
-                      SizedBox(
+                      ZoomableChart(
                         height: 300,
-                        child: PriceChart(bars: chart, levels: [
+                        bars: chart,
+                        levels: [
                           if (pv('target1') != null) PriceLevel('1차 목표', pv('target1')!.toDouble(), upColor),
                           if (q?.price != null || p['price'] != null)
                             PriceLevel('현재', q?.price ?? (p['price'] as num).toDouble(), Colors.grey),
@@ -203,7 +231,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                           // 3차 목표가 너무 멀면(현재가 +30% 초과) 캔들이 납작해지므로 선은 생략 (표에는 표시)
                           if (pv('target3') != null && pv('price') != null && pv('target3')! <= pv('price')! * 1.3)
                             PriceLevel('3차 목표', pv('target3')!.toDouble(), upColor.withValues(alpha: 0.35)),
-                        ]),
+                        ],
                       ),
                     ]),
                   ),
@@ -232,55 +260,28 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 ),
               ]),
 
-              // ---- 근거 / 주의 (V3B) ----
-              if (reasons.isNotEmpty) ...[
+              // ---- 근거 / 주의: 연 탭(익일유망주·상승초기·추세전환·상파) 기준, 아니면 V3 ----
+              // (문장 끝의 '→ 변동성 9/15' 같은 점수 표시는 빼고 보여줌)
+              if (selR.isNotEmpty) ...[
                 const SectionTitle('매수 근거'),
-                ...reasons.map((r) => _bullet('✓', r, Colors.green)),
+                ...selR.map((r) => _bullet('✓', _clean(r), Colors.green)),
               ],
-              if (warnings.isNotEmpty) ...[
+              if (selW.isNotEmpty) ...[
                 const SectionTitle('주의사항'),
-                ...warnings.map((w) => _bullet('⚠', w, Colors.orange)),
+                ...selW.map((w) => _bullet('⚠', _clean(w), Colors.orange)),
+              ],
+              // 다음 거래일 확인 (익일유망주·상파만)
+              if (watchLines.isNotEmpty) ...[
+                const SectionTitle('다음 거래일 확인'),
+                ...watchLines.map((l) => _bullet('→', l, Colors.teal)),
               ],
 
-              // ---- 점수 구성 ----
-              if (v3.isNotEmpty) ...[
-                const SectionTitle('점수 구성'),
+              // ---- 항목별 점수 (연 탭 하나만) ----
+              const SizedBox(height: 8),
+              if (selKind != null)
+                ReversalScore(v: sel, kind: selKind, detail: true)
+              else if (v3.isNotEmpty)
                 _V3Score(v: v3),
-              ],
-
-              // ---- 익일 유망주 (실험 탭 · 관찰용) ----
-              if (nextd.isNotEmpty) ...[
-                const SectionTitle('익일 유망주'),
-                NextdayCard(v: nextd),
-                ...((nextd['reasons'] is List) ? nextd['reasons'] as List : const []).map((r) => _bullet('✓', '$r', Colors.indigo)),
-                ...((nextd['warnings'] is List) ? nextd['warnings'] as List : const []).map((w) => _bullet('⚠', '$w', Colors.orange)),
-              ],
-
-              // ---- 상파 (실험 탭 · 관찰용) ----
-              if (upl.isNotEmpty) ...[
-                const SectionTitle('상파 (상한가 파동)'),
-                ReversalScore(v: upl, kind: uplimitKind),
-                ...((upl['reasons'] is List) ? upl['reasons'] as List : const []).map((r) => _bullet('✓', '$r', Colors.indigo)),
-                ...((upl['warnings'] is List) ? upl['warnings'] as List : const []).map((w) => _bullet('⚠', '$w', Colors.orange)),
-                for (final l in (asMap(upl['watch'])['lines'] is List ? asMap(upl['watch'])['lines'] as List : const []))
-                  _bullet('→', '$l', Colors.teal),
-              ],
-
-              // ---- 추세전환 점수 (실험 탭 · 관찰용) ----
-              if (rev.isNotEmpty) ...[
-                const SectionTitle('추세전환 점수'),
-                ReversalScore(v: rev),
-                ...((rev['reasons'] is List) ? rev['reasons'] as List : const []).map((r) => _bullet('✓', '$r', Colors.indigo)),
-                ...((rev['warnings'] is List) ? rev['warnings'] as List : const []).map((w) => _bullet('⚠', '$w', Colors.orange)),
-              ],
-
-              // ---- 상승초기 점수 (실험 탭 · 관찰용) ----
-              if (early.isNotEmpty) ...[
-                const SectionTitle('상승초기 점수'),
-                ReversalScore(v: early, kind: earlyKind),
-                ...((early['reasons'] is List) ? early['reasons'] as List : const []).map((r) => _bullet('✓', '$r', Colors.indigo)),
-                ...((early['warnings'] is List) ? early['warnings'] as List : const []).map((w) => _bullet('⚠', '$w', Colors.orange)),
-              ],
 
               if (disc.isNotEmpty) ...[
                 const SectionTitle('최근 공시 (30일)'),
@@ -306,6 +307,9 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
         decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(8)),
         child: Text(t, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
       );
+
+  /// '근거 → 변동성 9/15' 처럼 끝에 붙은 점수 표시를 뗌
+  String _clean(String s) => s.split(' → ').first;
 
   /// 목표·손절·매수구간 아래 작은 설명 줄
   Widget _note(BuildContext context, String? s) => (s == null || s.isEmpty)
@@ -535,11 +539,14 @@ class _V3Score extends StatelessWidget {
     final parts = asMap(v['parts']), labels = asMap(v['labels']), maxes = asMap(v['maxes']);
     final rp = asMap(v['ref_parts']), rl = asMap(v['ref_labels']), rm = asMap(v['ref_maxes']);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('V3B ${v['score'] == null ? '-' : (v['score'] as num).toStringAsFixed(0)}점 = (변동성 + 재무 + 가격위치) ÷ 60 × 100'
-          '${v['raw'] == null ? '' : '  · 원점수 ${v['raw']}/60'}',
-          style: t.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
-      for (final k in ['vola15', 'fin25', 'pos20'])
+      for (final k in ['vola15', 'fin25', 'pos20']) ...[
         _bar('${labels[k] ?? k}', parts[k] as num?, (maxes[k] as num?) ?? 1, counted: true),
+        if (partDescs[k] != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 2, bottom: 4),
+            child: Text(partDescs[k]!, style: t.bodySmall?.copyWith(color: Colors.grey)),
+          ),
+      ],
       if (rp.isNotEmpty) ...[
         const SizedBox(height: 6),
         Text('참고 (점수 미반영) — 검증에서 예측력이 없거나 반대였던 항목', style: t.bodySmall?.copyWith(color: Colors.grey)),
@@ -557,53 +564,39 @@ class _V3Score extends StatelessWidget {
 
 /// 상단 카드: V3 상태 (상위 10 n위 / 자격 있음 / 자격 없음+사유) · V3B 점수 · 지금 가격 · 매수/매도 예정
 class _V3Head extends StatelessWidget {
-  const _V3Head({required this.v, this.price, this.ratio, this.basePrice});
+  const _V3Head({required this.v});
   final Json v;
-  final double? price, ratio, basePrice;
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final top = v['rank'] != null;
-    final color = top ? Colors.teal : (v['eligible'] == true ? Colors.blueGrey : Colors.orange);
     final why = (v['why_not'] is List) ? (v['why_not'] as List).map((e) => '$e').toList() : <String>[];
     final score = v['score'] as num?;
     return Card(
-      color: color.withValues(alpha: 0.10),
+      color: (top ? Colors.teal : Colors.blueGrey).withValues(alpha: 0.10),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${v['status'] ?? 'V3 점수 없음'}',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
+        child: Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (top) ...[
+                Text('${v['status'] ?? ''}',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.teal)),
                 const SizedBox(height: 4),
-                if (top && v['entry_day'] == true)
+                if (v['entry_day'] == true)
                   Text('${v['buy_date']} 시가 매수 → ${v['sell_date']} 종가 매도 예정 (20거래일)', style: t.bodyMedium)
-                else if (top)
+                else
                   Text('다음 선정일 ${v['next_entry'] ?? '-'}', style: t.bodyMedium),
-                ...why.map((w) => Text('· $w', style: t.bodySmall?.copyWith(color: Colors.orange))),
-              ]),
-            ),
-            Column(children: [
-              Text(score == null ? '-' : 'V3 ${score.toStringAsFixed(0)}점', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-              if (v['raw'] != null) Text('원점수 ${v['raw']}/60', style: t.bodySmall),
+              ],
+              ...why.map((w) => Text('· $w', style: t.bodySmall?.copyWith(color: Colors.orange))),
             ]),
+          ),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(score == null ? 'V3 -' : 'V3 ${score.toStringAsFixed(0)}점',
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            if (v['raw'] != null) Text('원점수 ${v['raw']}/60', style: t.bodySmall),
           ]),
-          const Divider(),
-          Row(children: [
-            Text(price != null ? '지금 가격' : '분석 기준가', style: t.bodySmall),
-            const Spacer(),
-            Text(won(price ?? basePrice), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            if (ratio != null) ...[
-              const SizedBox(width: 8),
-              Text(pct(ratio), style: TextStyle(color: ratio! >= 0 ? upColor : downColor, fontWeight: FontWeight.bold)),
-            ],
-          ]),
-          const SizedBox(height: 4),
-          Text('V3 기준: 손절·목표가 없이 20거래일 보유, 보유 중 다시 상위 10 이면 연장 (규칙 고정 ${v['version'] ?? ''})',
-              style: t.bodySmall),
         ]),
       ),
     );
@@ -613,9 +606,10 @@ class _V3Head extends StatelessWidget {
 
 /// 후보 탭(익일유망주·상승초기·추세전환)에서 열었을 때: 그 탭 점수·등급 (목록에 보이던 점수와 같음)
 class _TabHead extends StatelessWidget {
-  const _TabHead({required this.source, required this.v});
+  const _TabHead({required this.source, required this.v, this.v3score});
   final String source;
   final Json v;
+  final num? v3score;
 
   static const _titles = {'nextday': '익일유망주', 'early': '상승초기', 'reversal': '추세전환', 'uplimit': '상파'};
 
@@ -625,7 +619,6 @@ class _TabHead extends StatelessWidget {
     final score = v['score'] as num?;
     final label = '${v['label'] ?? ''}';
     final type = v['type'] as String?;
-    final rank = v['rank'];
     return Card(
       color: Colors.indigo.withValues(alpha: 0.10),
       child: Padding(
@@ -635,13 +628,16 @@ class _TabHead extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${_titles[source] ?? source} ${label.isEmpty ? '' : label}',
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo)),
-              const SizedBox(height: 4),
-              Text([if (type != null) type, if (rank != null) '전체 $rank위'].join(' · '), style: t.bodySmall),
-              Text('후보 목록 점수입니다. 아래 V3 점수는 V3 기준으로 따로 매긴 점수예요.', style: t.bodySmall),
+              if (type != null) ...[const SizedBox(height: 4), Text(type, style: t.bodySmall)],
             ]),
           ),
-          Text(score == null ? '-' : '${score.toStringAsFixed(1)}점',
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.indigo)),
+          Text.rich(TextSpan(children: [
+            TextSpan(
+                text: score == null ? '-' : '${score.toStringAsFixed(1)}점',
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.indigo)),
+            if (v3score != null)
+              TextSpan(text: '  (V3 ${v3score!.toStringAsFixed(0)}점)', style: t.bodyMedium?.copyWith(color: Colors.grey)),
+          ])),
         ]),
       ),
     );

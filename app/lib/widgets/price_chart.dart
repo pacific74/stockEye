@@ -275,3 +275,96 @@ class _ChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _ChartPainter old) =>
       old.bars != bars || old.levels != levels || old.slots != slots || old.markIndex != markIndex || old.fg != fg;
 }
+
+/// 확대·축소되는 캔들 차트 (종목 상세)
+///  - 두 손가락 벌리기/오므리기: 보이는 기간을 줄이고/늘림 (최소 15일 ~ 받은 전체)
+///  - 한 손가락 좌우 밀기: 과거 ↔ 최근 이동
+///  - 두 번 탭 또는 [전체]: 처음 상태로
+class ZoomableChart extends StatefulWidget {
+  const ZoomableChart({super.key, required this.bars, this.levels = const [], this.height = 300});
+  final List<Map<String, dynamic>> bars;
+  final List<PriceLevel> levels;
+  final double height;
+
+  @override
+  State<ZoomableChart> createState() => _ZoomableChartState();
+}
+
+class _ZoomableChartState extends State<ZoomableChart> {
+  static const _minBars = 15;
+  late int _n = widget.bars.length; // 보이는 봉 수
+  int _end = 0; // 오른쪽 끝에서 몇 봉 과거로 옮겼는지 (0 = 최신)
+  int _baseN = 0;
+  double _drag = 0;
+
+  int get _len => widget.bars.length;
+
+  void _set(int n, int end) {
+    final lo = math.min(_minBars, _len);
+    final nn = n.clamp(lo, _len);
+    setState(() {
+      _n = nn;
+      _end = end.clamp(0, _len - nn);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant ZoomableChart old) {
+    super.didUpdateWidget(old);
+    if (old.bars.length != widget.bars.length) _set(widget.bars.length, 0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    if (_len == 0) return SizedBox(height: widget.height);
+    final to = _len - _end;
+    final view = widget.bars.sublist(math.max(0, to - _n), to);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        Text(_end == 0 ? '최근 ${view.length}일' : '${view.length}일 · 최신에서 $_end일 전까지', style: t.bodySmall),
+        const Spacer(),
+        IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: '확대',
+            icon: const Icon(Icons.zoom_in, size: 20),
+            onPressed: _n > _minBars ? () => _set((_n * 0.7).round(), _end) : null),
+        IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: '축소',
+            icon: const Icon(Icons.zoom_out, size: 20),
+            onPressed: _n < _len ? () => _set((_n / 0.7).round(), _end) : null),
+        TextButton(onPressed: (_n < _len || _end > 0) ? () => _set(_len, 0) : null, child: const Text('전체')),
+      ]),
+      SizedBox(
+        height: widget.height,
+        child: LayoutBuilder(builder: (context, box) {
+          final per = (box.maxWidth - 72) / math.max(_n, 1); // 봉 하나의 폭 (오른쪽 가격축 제외)
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onDoubleTap: () => _set(_len, 0),
+            onScaleStart: (_) {
+              _baseN = _n;
+              _drag = 0;
+            },
+            onScaleUpdate: (d) {
+              if (d.pointerCount >= 2) {
+                final s = d.horizontalScale.clamp(0.2, 5.0);
+                _set((_baseN / s).round(), _end);
+              } else {
+                _drag += d.focalPointDelta.dx;
+                final shift = (_drag / per).truncate(); // 오른쪽으로 밀면 과거로
+                if (shift != 0) {
+                  _drag -= shift * per;
+                  _set(_n, _end + shift);
+                }
+              }
+            },
+            child: PriceChart(bars: view, levels: widget.levels),
+          );
+        }),
+      ),
+      Text('두 손가락으로 확대·축소 · 좌우로 밀어 기간 이동 · 두 번 탭하면 전체', style: t.bodySmall?.copyWith(color: Colors.grey)),
+    ]);
+  }
+}

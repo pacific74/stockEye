@@ -11,6 +11,40 @@ import 'widgets/common.dart';
 ///   70점 이상 후보 · 80점 이상 우선 관찰 · 매매 규칙 없음 (V3 기준 전략과 별개)
 
 /// 실험 탭 설정: 후보 dict 의 필드 · 항목 순서 · 이름 · 기준 설명
+/// 점수 항목 설명 (종목 상세의 점수표 아래에 작게)
+const partDescs = {
+  // V3
+  'vola15': '하루 평균 변동폭이 작을수록 높음',
+  'fin25': '수익성·성장성·부채 등 재무가 좋을수록 높음',
+  'pos20': '20·60일선이나 지지선 근처로 조정받았을수록 높음',
+  // 익일유망주
+  'trendA': '종가와 20일선 위치 · 20/60일선 방향 · 20일 고점 대비 위치',
+  'volB': '오늘·5일 거래량과 거래대금이 평소보다 늘었는지 (대량 거래에 약한 종가면 감점)',
+  'priceC': '종가가 하루 범위 위쪽인지 · 20일 고점/박스 상단에 가까운지 · 윗꼬리·장대음봉 없는지',
+  'movD': '하루 변동폭(ATR)이 적당한지 · 좁은 범위 뒤 확장 조짐',
+  'rsE': '오늘·5일 수익률이 코스피/코스닥 지수보다 강한지',
+  'newsF': '최근 공시의 호재·악재 (뉴스 기사는 미반영)',
+  // 상승초기
+  'trend25': '종가가 20일선 위로 회복 · 20일선 상승 전환 · 5일선 > 20일선',
+  'mom20': '5·20일 수익률과 20일 저점 대비 반등 폭 (너무 크면 감점)',
+  'mid20': '60일선 기울기 · 20일선이 60일선보다 강해지는 중인지',
+  'vol20': '거래량 증가 · 상승일 거래량 우위 · 거래대금 규모',
+  'risk15': 'ATR·RSI·20일선 이격으로 본 과열 여부 (과열이면 감점)',
+  // 추세전환
+  'bottom15': '60일 고점 대비 하락 폭 (30~40% 하락이 만점, 너무 크면 감점)',
+  'base25': '최근 20일 횡보 폭 · 저점 유지 · 바닥권에 머문 기간',
+  'ma35': '20일선 하락이 멈추고 상승으로 도는지 · 60일선 하락 멈춤',
+  'rebound15': '20일선 근처 회복 · 5일 소폭 상승 · 양봉 마감',
+  'volume10': '변동폭·거래량이 줄었다가 상승일 거래량이 많아지는지',
+  // 상파
+  'limit20': '상한가 종가 유지 여부 · 종가 위치 · 그날 거래대금',
+  'vol25': 'B: 거래량 감소율과 거래대금 유지 / A: 평소 대비 거래량',
+  'pull20': 'B: 음봉 크기·종가 위치·상한가일 저가 지지 / A: 종가 강도',
+  'liq15': '20일 평균 거래대금 (클수록 높음)',
+  'trend10': '20·60일선 추세 · 20일 수익률',
+  'risk10': '공시 위험 (위험할수록 감점)',
+};
+
 class ExpKind {
   const ExpKind(this.field, this.title, this.parts, this.note);
   final String field, title, note;
@@ -92,9 +126,10 @@ class ReversalTile extends StatelessWidget {
 
 /// 종목 상세: 추세전환 점수 5개 항목 막대 + 세부 14개 (펼쳐 보기)
 class ReversalScore extends StatelessWidget {
-  const ReversalScore({super.key, required this.v, this.kind = reversalKind});
+  const ReversalScore({super.key, required this.v, this.kind = reversalKind, this.detail = false});
   final Json v;
   final ExpKind kind;
+  final bool detail; // 종목 상세: 제목 줄 없이 항목별 점수 + 항목 설명
 
   Widget _bar(String label, num? got, num max, {bool small = false}) => Padding(
         padding: EdgeInsets.symmetric(vertical: small ? 1 : 3),
@@ -129,10 +164,18 @@ class ReversalScore extends StatelessWidget {
     final score = v['score'] as num?;
     final col = reversalColor(score);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('${kind.title} ${score == null ? '-' : score.toStringAsFixed(1)}점 · ${v['label'] ?? ''}'
-          '${v['eligible'] == true ? '' : excl(v)}',
-          style: t.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: col)),
-      for (final k in kind.parts) _bar('${labels[k] ?? k}', parts[k] as num?, (maxes[k] as num?) ?? 1),
+      if (!detail)
+        Text('${kind.title} ${score == null ? '-' : score.toStringAsFixed(1)}점 · ${v['label'] ?? ''}'
+            '${v['eligible'] == true ? '' : excl(v)}',
+            style: t.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: col)),
+      for (final k in kind.parts) ...[
+        _bar('${labels[k] ?? k}', parts[k] as num?, (maxes[k] as num?) ?? 1),
+        if (detail && partDescs[k] != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 2, bottom: 4),
+            child: Text(partDescs[k]!, style: t.bodySmall?.copyWith(color: Colors.grey)),
+          ),
+      ],
       if (subs.isNotEmpty)
         Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),

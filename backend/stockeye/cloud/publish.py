@@ -52,7 +52,7 @@ def publish_report(sb: Supabase, report: dict, keep_days: int = 60) -> None:
     sb.delete("daily_reports", {"date": f"lt.{old}"})
     if report.get("v3"):
         meta = [{"key": "V3B", "name": "V3 기준 전략", "short": "V3",
-                 "description": "V3B(변동성·재무·가격위치) 상위 10 → 다음 거래일 시가 매수 → 20거래일 보유 (다시 선정되면 연장)",
+                 "description": "V3B(변동성·재무·가격위치·추세·거래량·거래대금·수급·공시 100점) 상위 10 → 다음 거래일 시가 매수 → 20거래일 보유 (다시 선정되면 연장)",
                  "limitation": "규칙 고정 " + str(report["v3"].get("version"))}]
     elif report.get("engine") == "v2":
         meta = [{"key": "V2", "name": "매수후보 V2 엔진", "short": "V2",

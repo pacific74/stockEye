@@ -506,7 +506,8 @@ class _ExplainCardState extends State<_ExplainCard> {
 }
 
 
-/// 점수 구성: V3B 반영 3항목(변동성·재무·가격위치) + 참고 5항목(추세·거래량·거래대금·수급·공시, 점수 미반영)
+/// 점수 구성: V3B-2.0 8항목 (변동성·재무·가격위치·추세·거래량·거래대금·수급·공시 = 100점)
+///   예전 리포트(V3B-1.0)는 3항목 + 참고 5항목(ref_parts)이라 그 경우 참고 항목을 회색으로 같이 보여줌
 class _V3Score extends StatelessWidget {
   const _V3Score({required this.v});
   final Json v;
@@ -538,8 +539,9 @@ class _V3Score extends StatelessWidget {
     final t = Theme.of(context).textTheme;
     final parts = asMap(v['parts']), labels = asMap(v['labels']), maxes = asMap(v['maxes']);
     final rp = asMap(v['ref_parts']), rl = asMap(v['ref_labels']), rm = asMap(v['ref_maxes']);
+    const order = ['vola15', 'fin25', 'pos20', 'trend5', 'vol5', 'value5', 'flow10', 'news15'];
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      for (final k in ['vola15', 'fin25', 'pos20']) ...[
+      for (final k in order.where(parts.containsKey)) ...[
         _bar('${labels[k] ?? k}', parts[k] as num?, (maxes[k] as num?) ?? 1, counted: true),
         if (partDescs[k] != null)
           Padding(
@@ -549,14 +551,13 @@ class _V3Score extends StatelessWidget {
       ],
       if (rp.isNotEmpty) ...[
         const SizedBox(height: 6),
-        Text('참고 (점수 미반영) — 검증에서 예측력이 없거나 반대였던 항목', style: t.bodySmall?.copyWith(color: Colors.grey)),
+        Text('참고 (점수 미반영)', style: t.bodySmall?.copyWith(color: Colors.grey)),
         for (final k in ['trend5', 'vol5', 'value5', 'flow10', 'news15'])
           _bar('${rl[k] ?? k}', rp[k] as num?, (rm[k] as num?) ?? 1, counted: false),
       ],
       Padding(
         padding: const EdgeInsets.only(top: 4),
-        child: Text('변동성 낮을수록 · 재무 좋을수록 · 20·60일선/지지선 근처 조정일수록 높음. 규칙 고정 ${v['version'] ?? ''}',
-            style: t.bodySmall),
+        child: Text('규칙 ${v['version'] ?? ''}', style: t.bodySmall),
       ),
     ]);
   }
@@ -595,7 +596,6 @@ class _V3Head extends StatelessWidget {
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
             Text(score == null ? 'V3 -' : 'V3 ${score.toStringAsFixed(0)}점',
                 style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-            if (v['raw'] != null) Text('원점수 ${v['raw']}/60', style: t.bodySmall),
           ]),
         ]),
       ),

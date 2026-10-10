@@ -6,10 +6,11 @@ from stockeye.engine import v3
 
 
 def test_rules_locked():
-    assert v3.VERSION == "V3B-1.0" and v3.LOCKED_AT == "2026-10-08"
+    assert v3.VERSION == "V3B-2.0" and v3.LOCKED_AT == "2026-10-10"
     assert v3.RULES == {"top_n": 10, "every": 5, "hold": 20, "max_positions": 20, "weight": 0.05, "market_weight": 1.0,
                         "on_reselect": "extend", "add_buy": False, "buy_cost": 0.0015, "sell_cost": 0.0025}
-    assert {k: m for k, (_, m) in v3.PARTS.items()} == {"vola15": 15, "fin25": 25, "pos20": 20}
+    assert {k: m for k, (_, m) in v3.PARTS.items()} == {"vola15": 15, "fin25": 25, "pos20": 20, "trend5": 5, "vol5": 5,
+                                                         "value5": 5, "flow10": 10, "news15": 15}
 
 
 def _x(n=6):
@@ -34,9 +35,21 @@ def test_score_and_filters():
     assert o.loc["000000", "fin25"] == 24                      # 수익성 8 + 성장 7 + 건전 6 + 밸류 3 (업종 중앙값과 같아 +1 없음)
     assert not o.loc["000001", "eligible"] and not o.loc["000003", "eligible"] and not o.loc["000004", "eligible"]
     assert o.loc["000000", "eligible"] and o.loc["000005", "eligible"]
-    assert o.loc["000000", "v3b"] == o.loc["000000", ["vola15", "fin25", "pos20"]].sum()
-    o2 = v3.score(x, blocked, pd.DataFrame(), {})               # 재무 없음 = 10점
-    assert (o2["fin25"] == 10).all()
+    assert o.loc["000000", "v3b"] == o.loc["000000", list(v3.PARTS)].sum()
+    assert v3.MAX_SCORE == 100
+    o2 = v3.score(x, blocked, pd.DataFrame(), {})               # 재무 없음 = 10점, ev 없음 = 중간값
+    assert (o2["fin25"] == 10).all() and (o2["news15"] == 7.5).all() and (o2["flow10"] == 5).all()
+
+
+def test_trend_and_ev_parts():
+    x = _x(2)
+    x["vol5_ratio"] = [1.0, 2.5]
+    x.loc["000001", ["close", "sma60_slope", "sma20"]] = [9500.0, -0.01, 9700.0]   # 60일선 아래·하락·20<60
+    ev = pd.DataFrame({"value": [5, 1], "flow": [15, 3], "news": [12, 4]}, index=x.index)
+    o = v3.score(x, pd.Series(False, index=x.index), pd.DataFrame(), {}, ev)
+    assert list(o["trend5"]) == [5, 0] and list(o["vol5"]) == [5, 0]
+    assert list(o["value5"]) == [5, 1] and list(o["flow10"]) == [10, 2] and list(o["news15"]) == [12, 4]
+    assert o.loc["000000", "v3b"] - o.loc["000001", "v3b"] >= 25          # 추세 꺾인 종목은 크게 밀림
 
 
 def test_tie_break_fixed():

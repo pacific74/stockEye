@@ -1,6 +1,9 @@
-"""StockEye V3 기준 전략 (Base Strategy) — 🔒 고정 (2026-10-08)
+"""StockEye V3 기준 전략 (Base Strategy) — 🔒 고정 (V3B-2.0, 2026-10-10)
 
-  무엇을 살 것인가   V3B 점수 = 변동성 15 + 재무 25 + 가격위치 20  (60점 만점)
+  무엇을 살 것인가   V3B 점수 100 = 변동성 15 + 재무 25 + 가격위치 20
+                                 + 추세 5 + 거래량 5 + 거래대금 5 + 수급 10 + 공시 15
+                     (V3B-1.0 은 앞 3항목 60점만 썼음. 2026-10-10 사용자 요청으로 뒤 5항목을 다시 점수에 넣음 —
+                      추세가 꺾인 종목이 재무·변동성만으로 1위가 되는 것을 막기 위함)
                      자격: V2 매수 차단 없음 · 과열 아님 · 추세 필터(60일선 위 또는 60일선 10일 -2% 이내) · 1차 필터 통과
   언제 살 것인가     5거래일마다 상위 10개 → 다음 거래일 시가
   얼마나 살 것인가   최대 20종목 · 종목당 5% · 시장 비중 고정 100%
@@ -18,15 +21,18 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-VERSION = "V3B-1.0"
-LOCKED_AT = "2026-10-08"
+VERSION = "V3B-2.0"
+LOCKED_AT = "2026-10-10"          # V3B-1.0: 2026-10-08 ~ 2026-10-10 (60점, 3항목)
 RULES = {"top_n": 10, "every": 5, "hold": 20, "max_positions": 20, "weight": 0.05, "market_weight": 1.0,
          "on_reselect": "extend", "add_buy": False, "buy_cost": 0.0015, "sell_cost": 0.0025}
 RULES_TEXT = ["5거래일마다 V3B 상위 10개 선정 → 다음 거래일 시가 매수",
               "최대 20종목 · 종목당 5% · 시장 비중 고정",
               "매수일 포함 20거래일째 종가에 매도 (손절·익절 없음)",
               "보유 중 다시 상위 10에 들면 20거래일 연장, 추가매수 없음"]
-PARTS = {"vola15": ("변동성", 15), "fin25": ("재무", 25), "pos20": ("가격위치", 20)}
+PARTS = {"vola15": ("변동성", 15), "fin25": ("재무", 25), "pos20": ("가격위치", 20),
+         "trend5": ("추세", 5), "vol5": ("거래량", 5), "value5": ("거래대금", 5), "flow10": ("수급", 10),
+         "news15": ("공시", 15)}
+MAX_SCORE = sum(m for _, m in PARTS.values())          # 100
 
 # 앞으로의 휴장일 (주말 외) — 매도 예정일 계산용. 실제 휴장일과 다를 수 있어 앱에는 '예정'으로 표시
 KRX_HOLIDAYS = {
@@ -45,8 +51,11 @@ def _num(s) -> pd.Series:
 
 
 # ------------------------------------------------------------------ 점수 (고정)
-def score(x: pd.DataFrame, blocked: pd.Series, fin: pd.DataFrame, sector_of: dict) -> pd.DataFrame:
-    """그날 단면 x (1차 필터 통과 종목, 피처) + V2 매수 차단 여부 + 그날 알 수 있던 재무 지표 → V3B 점수·항목·자격"""
+def score(x: pd.DataFrame, blocked: pd.Series, fin: pd.DataFrame, sector_of: dict,
+          ev: pd.DataFrame | None = None) -> pd.DataFrame:
+    """그날 단면 x (1차 필터 통과 종목, 피처) + V2 매수 차단 여부 + 그날 알 수 있던 재무 지표
+    + V2 평가 ev(거래대금 value 0~5 · 수급 flow 0~15 · 공시 news 0~15) → V3B 점수·항목·자격.
+    ev 가 없거나 값이 비면 그 항목은 중간값(만점의 절반)"""
     idx = x.index
     f = fin.reindex(idx) if fin is not None and len(fin) else pd.DataFrame(index=idx)
     g = lambda c: f[c] if c in f else pd.Series(np.nan, index=idx)  # noqa: E731
@@ -79,7 +88,16 @@ def score(x: pd.DataFrame, blocked: pd.Series, fin: pd.DataFrame, sector_of: dic
     val = (1.5 * _b((per > 0) & (per < 40)) + 1.5 * _b((pbr >= 0.3) & (pbr <= 3))
            + _b((per > 0) & (per < med) & (_num(g("op_yoy")) > 0)))
     o["fin25"] = np.where(g("op_pos").notna(), prof + grow + health + val, 10.0)
-    o["v3b"] = o["vola15"] + o["fin25"] + o["pos20"]
+    # 추세 5 = 60일선 위 2 + 60일선 상승 2 + 20일선 > 60일선 1
+    o["trend5"] = (2 * _b(c > x["sma60"]) + 2 * _b(x["sma60_slope"] > 0) + _b(x["sma20"] > x["sma60"]))
+    # 거래량 5 = 최근 5일 거래량 / 그 전 20일: 조정 중 적당히 줄거나 늘면 5, 급증(2배↑) 0, 1.3~2배·0.6배 미만 3
+    v5 = x["vol5_ratio"] if "vol5_ratio" in x else pd.Series(np.nan, index=idx)
+    o["vol5"] = np.select([v5.isna(), v5 > 2, v5 > 1.3, v5 < 0.6], [2.5, 0, 3, 3], default=5)
+    e = ev.reindex(idx) if ev is not None else pd.DataFrame(index=idx)
+    for k, src, mul, mx in (("value5", "value", 1.0, 5), ("flow10", "flow", 10 / 15, 10), ("news15", "news", 1.0, 15)):
+        v = _num(e[src]) * mul if src in e else pd.Series(np.nan, index=idx)
+        o[k] = v.fillna(mx / 2).clip(0, mx)
+    o["v3b"] = o[list(PARTS)].sum(axis=1)
     # 자격
     o["hot"] = ((x["ret5"] >= 0.20) | (x["ret20"] >= 0.30) | (x["rsi14"] > 75)
                 | ((x["vol_ratio"] >= 3) & (x["ret5"] >= 0.10))).fillna(False)

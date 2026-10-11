@@ -1,4 +1,4 @@
-"""StockEye V3 기준 전략 (Base Strategy) — 🔒 고정 (V3B-2.0, 2026-10-10)
+"""StockEye V3 기준 전략 (Base Strategy) — 🔒 고정 (V3B-2.1, 2026-10-11 — 2.0 + 5일선 아래 제외)
 
   무엇을 살 것인가   V3B 점수 100 = 변동성 15 + 재무 25 + 가격위치 20
                                  + 추세 5 + 거래량 5 + 거래대금 5 + 수급 10 + 공시 15
@@ -21,8 +21,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-VERSION = "V3B-2.0"
-LOCKED_AT = "2026-10-10"          # V3B-1.0: 2026-10-08 ~ 2026-10-10 (60점, 3항목)
+VERSION = "V3B-2.1"
+LOCKED_AT = "2026-10-11"          # V3B-1.0: 10-08 ~ 10-10 (60점, 3항목) · V3B-2.0: 10-10 ~ 10-11 · 2.1 = 5일선 아래 제외
 RULES = {"top_n": 10, "every": 5, "hold": 20, "max_positions": 20, "weight": 0.05, "market_weight": 1.0,
          "on_reselect": "extend", "add_buy": False, "buy_cost": 0.0015, "sell_cost": 0.0025}
 RULES_TEXT = ["5거래일마다 V3B 상위 10개 선정 → 다음 거래일 시가 매수",
@@ -108,8 +108,11 @@ def score(x: pd.DataFrame, blocked: pd.Series, fin: pd.DataFrame, sector_of: dic
 
 
 def top(o: pd.DataFrame, n: int = RULES["top_n"], x: pd.DataFrame | None = None) -> pd.DataFrame:
-    """동점 정렬 고정: V3B ↓ → 재무 ↓ → 변동성(ATR%) ↑ → 거래대금 ↓ → 종목코드"""
+    """동점 정렬 고정: V3B ↓ → 재무 ↓ → 변동성(ATR%) ↑ → 거래대금 ↓ → 종목코드. 종가 < 5일선 은 제외"""
     e = o[o["eligible"]].copy()
+    if x is not None and "close" in x and "sma5" in x:   # 종가가 5일선 아래면 제외 (2026-10-11 사용자 요청)
+        c, m = x["close"].reindex(e.index).astype(float), x["sma5"].reindex(e.index).astype(float)
+        e = e[~((c < m) & m.notna())]
     e["_atr"] = x["atr_pct"].reindex(e.index) if x is not None else 0.0
     e["_val"] = x["value_ma20"].reindex(e.index) if x is not None else 0.0
     e["_code"] = e.index

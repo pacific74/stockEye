@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from . import reversal as rv
-from .v2_report import candidate_dict
+from .v2_report import candidate_dict, below_ma5
 
 log = logging.getLogger(__name__)
 TOP = 30          # 앱에 보낼 최대 개수
@@ -29,7 +29,7 @@ def build_section(view, x: pd.DataFrame, ev: pd.DataFrame, name_of: dict, theme_
     f = rv.raw_features(O, H, L, C, V, dates=[d])
     sc = rv.score_today(f, d)
     elig = ev["stage1"] & ~ev["blocked"].astype(bool)
-    sc["eligible"] = elig.astype(bool).reindex(sc.index, fill_value=False)
+    sc["eligible"] = elig.astype(bool).reindex(sc.index, fill_value=False) & ~sc.index.isin(below_ma5(x))   # 5일선 아래 제외
     value = x["value_ma20"] if "value_ma20" in x else pd.Series(dtype=float)
     ranked = rv.rank(sc, sc["eligible"], value, rv.CANDIDATE)
     n70, n80 = len(ranked), int((ranked["total"] >= rv.PRIORITY).sum())

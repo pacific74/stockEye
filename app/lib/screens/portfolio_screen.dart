@@ -63,6 +63,13 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
 
   void _reload() => setState(() => _f = _load());
 
+  /// 저녁 점검(position_reviews) 또는 저장된 계획(positions.plan.origin)의 관심 출처
+  static Json? _originOf(Json h) {
+    final o = h['origin'] ?? asMap(h['plan'])['origin'];
+    final m = asMap(o);
+    return m.isEmpty || (m['names'] as List? ?? const []).isEmpty ? null : m;
+  }
+
   static Widget _lbl(TextTheme t, String s) =>
       Padding(padding: const EdgeInsets.only(right: 6, top: 3, bottom: 3), child: Text(s, style: t.bodySmall));
 
@@ -173,6 +180,8 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                                   color: (pnl ?? 0) >= 0 ? upColor : downColor)),
                         ]),
                       ]),
+                      // 관심 탭에서 산 종목: 어느 탭 · 그때 1·2·3차 매수구간 · 손절가
+                      if (_originOf(h) != null) _OriginBox(o: _originOf(h)!, price: (h['now_price'] as num?)?.toDouble()),
                       ...alerts.map((a) => Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text('⚠ $a', style: const TextStyle(color: Colors.orange)),
@@ -442,5 +451,60 @@ Future<bool> _closeDialog(BuildContext context, Json h) async {
   } catch (e) {
     if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('실패: $e')));
     return false;
+  }
+}
+
+
+/// 보유종목 카드 안: [익일유망주] 10/07 관심 → 1·2·3차 매수구간 · 손절가 (지금 가격이 어느 구간인지 표시)
+class _OriginBox extends StatelessWidget {
+  const _OriginBox({required this.o, this.price});
+  final Json o;
+  final double? price;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final d = '${o['date'] ?? ''}';
+    final md = d.length >= 10 ? '${int.parse(d.substring(5, 7))}/${int.parse(d.substring(8, 10))}' : d;
+    final zones = asList(o['zones']).map(asMap).toList();
+    final stop = (o['stop'] as num?)?.toDouble();
+    Widget row(String label, String value, {Color? color, bool here = false}) => Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Row(children: [
+            SizedBox(width: 44, child: Text(label, style: t.bodySmall?.copyWith(color: color))),
+            Expanded(child: Text(value, style: t.bodySmall?.copyWith(color: color, fontWeight: here ? FontWeight.bold : null))),
+            if (here) InfoBox('지금', color: color ?? Theme.of(context).colorScheme.primary, fill: true),
+          ]),
+        );
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Flexible(
+            child: infoBoxes([
+              for (final n in (o['names'] as List? ?? const []))
+                InfoBox('$n', bold: true, color: Theme.of(context).colorScheme.primary),
+            ]),
+          ),
+          const SizedBox(width: 6),
+          Text('$md 관심종목에서 매수', style: t.bodySmall?.copyWith(color: Colors.grey)),
+        ]),
+        const SizedBox(height: 4),
+        for (final z in zones)
+          row('${z['name'] ?? ''}${z['weight'] != null ? ' ${z['weight']}%' : ''}'.trim(),
+              '${num0(z['low'] as num?)} ~ ${num0(z['high'] as num?)}',
+              here: price != null && z['low'] != null && z['high'] != null &&
+                  price! >= (z['low'] as num) && price! <= (z['high'] as num)),
+        if (stop != null)
+          row('손절', '${num0(stop)}${price != null && price! > 0 ? '  (지금보다 ${((stop / price! - 1) * 100).toStringAsFixed(1)}%)' : ''}',
+              color: downColor, here: price != null && price! <= stop),
+      ]),
+    );
   }
 }

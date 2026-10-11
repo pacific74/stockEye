@@ -38,13 +38,14 @@ def run_hitrate(sb, pit, cfg, tabs=None, years=None, v3_entries=None) -> dict:
     탭·연도 일부만 돌리면 이전 결과에 그 부분만 덮어씀"""
     from stockeye.analysis import hitrate
     tabs = tabs or list(hitrate.TABS)
+    start = max("2021-07-01", f"{min(years)}-01-01") if years else "2021-07-01"   # 연도 일부면 그해부터만 계산 (빠름)
     if "v3" in tabs and v3_entries is None:                   # V3 는 매일 상위 3 (과거 선정 다시 계산)
         from stockeye.indicators import compute_features
         from stockeye.engine.v3_report import history_entries
         feat = compute_features(pit.ohlcv, pit.flows, pit.fund)
-        v3_entries = history_entries(pit, cfg, feat, every=1)
+        v3_entries = history_entries(pit, cfg, feat, start=start, every=1)
         del feat
-    new = hitrate.run(pit, v3_entries=v3_entries, tabs=tabs, years=years)
+    new = hitrate.run(pit, v3_entries=v3_entries, tabs=tabs, years=years, start=start)
     old = None
     if years or len(tabs) < len(hitrate.TABS):
         try:
@@ -61,7 +62,7 @@ def run_hitrate(sb, pit, cfg, tabs=None, years=None, v3_entries=None) -> dict:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", help="비우면 적중률(HIT) 전체 · VALID = 상세 검증만 · ALL = 예전 전체(V3B·V2·VALID·HIT) · HIT = 적중률만 "
+    ap.add_argument("--only", help="비우면 적중률(HIT) 전체 · WEEKLY = 올해만 다시(주간 자동) · VALID = 상세 검증만 · ALL = 예전 전체(V3B·V2·VALID·HIT) · HIT = 적중률만 "
                                    "(HIT:nextday,early / HIT:2024,2025 / HIT:nextday:2024 처럼 탭·연도 일부)")
     ap.add_argument("--min-score", type=float, default=75)
     args = ap.parse_args()
@@ -77,6 +78,10 @@ def main():
     t0 = time.time()
     log.info("지표 계산 중 (전 종목 × 전 기간)...")
     only = (args.only or "HIT").strip()
+    if only.upper() == "WEEKLY":                  # 주간 자동: 올해만 다시 계산해 기존 결과에 합침 (1월엔 작년도 — 12월 신호의 20일 결과가 1월에 나옴)
+        today = datetime.now()
+        ys = [today.year - 1, today.year] if today.month == 1 else [today.year]
+        only = "HIT:" + ",".join(str(y) for y in ys)
     if only.upper().startswith("HIT"):           # 관심종목 적중률 (기본) — 전체 또는 탭·연도 일부
         toks = [t.strip() for t in only.replace(":", ",").split(",")[1:] if t.strip()]
         years = [int(t) for t in toks if t.isdigit()]

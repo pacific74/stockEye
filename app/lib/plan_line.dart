@@ -59,7 +59,7 @@ class PlanLine extends StatelessWidget {
   final double? price;
   final bool live; // true = 지금 시세 기준, false = 분석일 종가 기준
   final List<Widget> extraChips;
-  final bool showPrice; // 관심 탭 목록: '현재가 · 매수구간' 한 줄 추가
+  final bool showPrice; // (예전) 관심 탭 목록 — 현재가는 이제 카드 오른쪽 위(WatchTile), 매수구간은 상태 칩 옆
   final String? tab; // 어느 탭 종목인지 → 탭별 유형·태그 칩과 확인 가격 줄
 
   @override
@@ -68,7 +68,6 @@ class PlanLine extends StatelessWidget {
     if (s == null) return const SizedBox.shrink();
     final tags = (c['tags'] is List) ? (c['tags'] as List).map((e) => '$e').toList() : <String>[];
     final p = asMap(c['plan']);
-    final px = price ?? (p['price'] as num?)?.toDouble();
     final lo = p['entry_low'] as num?, hi = p['entry_high'] as num?;
     final zoneTxt = lo != null && hi != null ? '${num0(lo)}~${num0(hi)}' : null;
     final alert = c['market_alert'] as String?;
@@ -84,21 +83,13 @@ class PlanLine extends StatelessWidget {
       // 한 줄: 매수구간 상태 + 탭별 유형·태그 (같은 글자는 한 번만)
       infoBoxes([
         planChip(s.zone, s.color),
-        // 매수구간 칩 옆에 구간 가격 (목록은 아래 줄에 이미 있음)
-        if (!showPrice && zoneTxt != null) InfoBox(zoneTxt, color: s.color),
+        // 매수구간 칩 옆에 구간 가격
+        if (zoneTxt != null) InfoBox('매수구간 $zoneTxt', color: s.color),
         ...chips,
         ...extraChips,
         for (final tg in tags.where((x) => !seen.contains(x)).take(2)) planChip(strategyLabels[tg] ?? tg, Colors.blueGrey),
       ]),
       if (watch != null) Padding(padding: const EdgeInsets.only(top: 3), child: watch),
-      if (showPrice)
-        Padding(
-          padding: const EdgeInsets.only(top: 3),
-          child: infoBoxes([
-            InfoBox('${live ? '현재가' : '기준가'} ${won(px)}', bold: true),
-            if (zoneTxt != null) InfoBox('매수구간 $zoneTxt'),
-          ]),
-        ),
       if (s.up != null && s.down != null)
         Padding(
           padding: const EdgeInsets.only(top: 3),
@@ -109,6 +100,64 @@ class PlanLine extends StatelessWidget {
           ]),
         ),
     ]);
+  }
+}
+
+/// 관심 탭 목록 카드 (V3 · 익일유망주 · 상승초기 · 추세전환 · 상파 공통)
+///   [순위]  종목명 [시장]                 현재가 48,300원
+///                                          84.8점
+///          [업종 급락 주의] / [매수구간 안] [매수구간 47,400~48,800] / [목표] [손절] [손익비]
+///   아래 줄들은 카드 오른쪽 끝까지 써서 한 줄에 들어가게
+class WatchTile extends StatelessWidget {
+  const WatchTile(
+      {super.key, required this.c, required this.leading, required this.score, this.price, this.tab, this.onTap});
+  final Json c;
+  final Widget leading;
+  final Widget score;
+  final double? price; // 지금 시세 (없으면 분석일 종가)
+  final String? tab;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final px = price ?? (asMap(c['plan'])['price'] as num?)?.toDouble();
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            leading,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: StockName('${c['name']}', market: c['market'] as String?, style: t.titleMedium),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    if (px != null)
+                      Text.rich(TextSpan(children: [
+                        TextSpan(text: price != null ? '현재가 ' : '기준가 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
+                        TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      ])),
+                    score,
+                  ]),
+                ]),
+                PlanLine(c: c, price: price, live: price != null, tab: tab),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
   }
 }
 

@@ -1,20 +1,22 @@
-"""관심종목 적중률 (HIT-1.0) — '관심 탭이 고른 종목이 그 뒤 목표가에 닿았나, 손절가에 닿았나'
+"""관심종목 적중률 (HIT-1.3) — '관심 탭이 고른 종목을 앱 매매 계획대로 샀다면 목표가에 닿았나, 손절가에 닿았나'
 
 ⚠ 측정 전용: 미래 가격을 일부러 쓴다 (점수·선정 코드에서 쓰지 않음).
 
-  신호     탭마다 매일 점수 상위 3 종목 (V3 도 매일 — history_entries(every=1))
+  신호     탭마다 매일 점수 상위 3 종목 (V3 도 매일 — history_entries(every=1)). V3 외 4개 탭은 앱처럼 5일선 아래 제외
   계획     그날 종가까지의 차트로 계산한 1·2·3차 목표가와 손절가 (앱 종목 상세와 같은 levels)
-  매수     다음 거래일 시가 (시초가 상한가면 미체결 → 제외)
+  매수     앱 매매 계획의 분할 매수 (simulate): 1차 매수구간이면 다음 날 시가에 30%, 2차 매수구간 상단에서 30%,
+           3차 매수구간 상단에서 40% (levels 의 구간·비중 그대로). 20일 안에 1차 구간까지도 안 내려오면 미체결 → 제외
   결과     그 뒤 20거래일 동안 매일 고가·저가로 판정. 같은 날 손절가와 목표가가 모두 닿으면 손절 먼저(보수적)
            · 3차 / 2차 / 1차 목표: 손절가에 닿기 전에 닿은 가장 높은 목표
            · 손절: 1차 목표 전에 손절가에 닿음
            · 보합: 20일 동안 1차 목표도 손절도 안 닿음
            승률 = 목표 도달 ÷ (목표 도달 + 손절)  — 보합(20일 동안 아무것도 안 닿음)은 빼고
-  평균 손익 분할 매도: 1차 50% · 2차 30% · 3차 20%를 그 목표가에. 1차를 판 뒤 남은 몫은 매수가(본전)까지 밀리면 매도.
+  평균 손익 분할 매도: 1차 50% · 2차 30% · 3차 20%를 그 목표가에. 1차를 판 뒤 남은 몫은 평균 매수가(본전)까지 밀리면 매도.
            1차 전에는 손절가(시초가가 더 낮으면 시초가)에 전부, 20일 끝까지 남은 몫은 20일째 종가. 수수료·세금 0.25% 뺌.
+           산 금액 기준 %. 1차 목표에 닿은 뒤에는 아래 구간 추가 매수 안 함
   일별 분포 목표·손절에 처음 닿은 날(1~20일째) 개수
   묶음     탭 × 연도 × 분기, 분기마다 코스피 등락률과 그때 시장 이슈(market_issues.json, 직접 고칠 수 있음)
-  제외     다음 날 시가가 이미 1차 목표가 위(또는 손절가 아래)라 계획대로 살 수 없는 경우
+  제외     매수구간까지 안 내려와 하나도 못 산 경우(미체결 — 비율은 따로 표시)
            하루 ±31% 넘는 변화(액면분할·병합 등)가 낀 구간
 """
 from __future__ import annotations
@@ -28,7 +30,7 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-VERSION = "HIT-1.2"
+VERSION = "HIT-1.3"
 COST = 0.25                                             # 수수료+세금 (%, 왕복)
 H = 20
 TOP = 3
@@ -77,37 +79,71 @@ def judge(o: np.ndarray, h: np.ndarray, l: np.ndarray, t: tuple, stop: float) ->
 SELL = (0.5, 0.3, 0.2)                                   # 1차 50% · 2차 30% · 3차 20%
 
 
-def pnl(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray, entry: float, t: tuple, stop: float) -> float:
-    """분할 매도 손익(%) — 1차 50% · 2차 30% · 3차 20%. 1차를 판 뒤에는 남은 몫의 손절을 매수가(본전)로 올림.
-    손절(또는 본전)에 닿으면 남은 몫 전부, 20일 끝까지 남으면 20일째 종가. 비용 COST 뺌.
-    같은 날 손절과 목표가 모두 닿으면 손절 먼저 (judge 와 같은 규칙: 시초가가 1차 위로 뜬 날만 목표 먼저)"""
-    pos, val, st = 1.0, 0.0, stop
+def simulate(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray, zones: list, t: tuple, stop: float) -> dict:
+    """앱 매매 계획대로 분할 매수 → 분할 매도 (HIT-1.3)
+    매수  zones = [(구간 상단, 비중%), ...] (1·2·3차 매수구간, 보통 30/30/40)
+          1차: 시가가 1차 구간 상단 이하면 시가에, 위면 1차 상단까지 내려올 때 그 가격에
+          2·3차: 그 구간 상단까지 내려오면 그 가격에 (시가가 더 낮으면 시가). 1차 목표에 닿은 뒤엔 더 안 삼
+    매도  1차 목표 50% · 2차 30% · 3차 20% (산 수량 기준). 1차를 판 뒤 남은 몫은 평균 매수가(본전)까지 밀리면 전부.
+          1차 전에는 손절가(갭하락이면 시가)에 전부. 20일 끝까지 남은 몫은 20일째 종가. 비용 COST 뺌 (산 금액 기준 %)
+    하루 안 순서 (보수적): 시가 → 매수구간까지 내려감(매수) → 손절 → 목표. 시가가 1차 목표 위로 뜬 날은 목표 먼저
+    → {outcome, first(목표·손절 처음 닿은 날), pnl, filled(산 비중 %), fill_day}. 하나도 못 사면 outcome None"""
+    qty, cost, val = 0.0, 0.0, 0.0                       # 보유 수량(비중/가격), 들인 돈, 판 돈
+    bought = [False] * len(zones)
+    first, best, st, fill_day = {}, 0, stop, None
     sold = [False, False, False]
+    base = None                                          # 1차 목표 때 보유 수량 (매도 비율 기준)
     for k in range(len(h)):
+        day = k + 1
         if not (h[k] > 0):
             break
+        # 매수 (1차 목표 전까지만)
+        if not sold[0]:
+            for z, (top, w) in enumerate(zones):
+                if bought[z] or not top or l[k] > top:
+                    continue
+                px = min(o[k], top) if o[k] > 0 else top
+                if px <= stop:                            # 손절가 아래로 갭하락한 날엔 안 삼
+                    continue
+                qty += w / px
+                cost += w
+                bought[z] = True
+                fill_day = fill_day or day
+        if qty <= 0:
+            continue
         gap_up = not sold[0] and o[k] >= t[0]
-        if (l[k] <= st or o[k] <= st) and not gap_up:
-            val += pos * min(o[k], st) if o[k] > 0 else pos * st
-            pos = 0.0
+        if (l[k] <= st or o[k] <= st) and not gap_up:     # 손절(또는 1차 뒤 본전)
+            val += qty * min(o[k], st)
+            first.setdefault("stop" if not sold[0] else "even", day)
+            qty = 0.0
             break
         for i in range(3):
             if not sold[i] and t[i] > 0 and h[k] >= t[i]:
-                val += SELL[i] * t[i]
-                pos -= SELL[i]
+                if base is None:
+                    base = qty
+                    st = max(st, cost / qty)              # 1차 판 뒤: 평균 매수가(본전) 손절
+                n = min(qty, base * SELL[i])
+                val += n * t[i]
+                qty -= n
                 sold[i] = True
-                if i == 0:
-                    st = max(st, entry)                           # 1차 판 뒤: 본전 손절
-        if pos <= 1e-9:
+                first.setdefault(f"t{i + 1}", day)
+                best = max(best, i + 1)
+        if qty <= 1e-12:
             break
-        if l[k] <= st:                                            # 목표 판 그날 다시 매수가(또는 손절가)까지 밀림
-            val += pos * st
-            pos = 0.0
+        if sold[0] and l[k] <= st:                        # 목표 판 그날 다시 본전까지 밀림
+            val += qty * st
+            first.setdefault("even", day)
+            qty = 0.0
             break
-    if pos > 1e-9:
+    if cost <= 0:
+        return {"outcome": None, "first": {}, "pnl": None, "filled": 0, "fill_day": None}
+    if qty > 0:
         cc = c[np.isfinite(c) & (c > 0)]
-        val += pos * (float(cc[-1]) if len(cc) else entry)
-    return (val / entry - 1) * 100 - COST
+        val += qty * (float(cc[-1]) if len(cc) else cost / qty)
+    outcome = f"t{best}" if best else ("stop" if "stop" in first else "flat")
+    first.pop("even", None)
+    return {"outcome": outcome, "first": first, "pnl": (val / cost - 1) * 100 - COST,
+            "filled": int(round(sum(w for (_, w), b in zip(zones, bought) if b))), "fill_day": fill_day}
 
 
 # ------------------------------------------------------------------ 신호 → 결과
@@ -135,27 +171,26 @@ def evaluate(signals: pd.DataFrame, ohlcv: pd.DataFrame, W: dict) -> pd.DataFram
             rec["skip"] = "20일 안 지남"; out.append(rec); continue
         if jump[i + 1:i + H + 1, j].any():
             rec["skip"] = "수정주가 이상"; out.append(rec); continue
-        o1 = O[i + 1, j]
-        if not (o1 > 0) or o1 >= C[i, j] * (1 + LIMIT_OPEN):
-            rec["skip"] = "시초가 상한가"; out.append(rec); continue
         g, dts = by[code]
         e = int(np.searchsorted(dts, np.datetime64(pd.Timestamp(d)), side="right"))
         gg = g.iloc[max(0, e - 260):e]
         try:
-            o_, h_, l_, c_ = (levels.adjust(gg, col) for col in ("open", "high", "low", "close"))
-            lv = levels.compute(gg["date"].to_numpy(), o_, h_, l_, c_, gg["volume"].to_numpy())
+            lv = levels.compute(*levels.prepare(gg))
         except Exception:  # noqa: BLE001
             lv = None
         if not lv or not lv.get("target1") or not lv.get("stop"):
             rec["skip"] = "목표·손절 계산 불가"; out.append(rec); continue
         t = tuple(float(lv.get(f"target{n}") or 0) for n in (1, 2, 3))
-        if t[0] <= o1 or float(lv["stop"]) >= o1:      # 다음 날 시가가 이미 1차 목표 위(또는 손절 아래) → 계획대로 살 수 없음
-            rec["skip"] = "시가가 목표 위"; out.append(rec); continue
-        res, first = judge(O[i + 1:i + H + 1, j], Hh[i + 1:i + H + 1, j], L[i + 1:i + H + 1, j], t, float(lv["stop"]))
-        rec.update({"outcome": res, **{f"d_{k}": v for k, v in first.items()},
-                    "pnl": pnl(O[i + 1:i + H + 1, j], Hh[i + 1:i + H + 1, j], L[i + 1:i + H + 1, j], C[i + 1:i + H + 1, j],
-                               float(o1), t, float(lv["stop"])),
-                    "entry": float(o1), "t1": t[0], "t2": t[1], "t3": t[2], "stop": float(lv["stop"])})
+        zs = [(float(z["high"]), float(z["weight"])) for z in (lv.get("zones") or []) if z.get("high")]
+        if not zs:
+            zs = [(float(lv.get("entry_high") or C[i, j] * 1.01), 100.0)]
+        sl = slice(i + 1, i + H + 1)
+        r = simulate(O[sl, j], Hh[sl, j], L[sl, j], C[sl, j], zs, t, float(lv["stop"]))
+        if r["outcome"] is None:
+            rec["skip"] = "미체결 (매수구간까지 안 내려옴)"; out.append(rec); continue
+        rec.update({"outcome": r["outcome"], **{f"d_{k}": v for k, v in r["first"].items()},
+                    "pnl": r["pnl"], "filled": r["filled"], "fill_day": r["fill_day"],
+                    "t1": t[0], "t2": t[1], "t3": t[2], "stop": float(lv["stop"])})
         out.append(rec)
     return pd.concat([signals.reset_index(drop=True), pd.DataFrame(out)], axis=1)
 
@@ -174,8 +209,11 @@ def _summary(g: pd.DataFrame) -> dict:
         days[k] = [int((dd == x).sum()) for x in range(1, H + 1)]
     hit = pct["t1"] + pct["t2"] + pct["t3"]
     pn = v["pnl"].dropna() if "pnl" in v else pd.Series(dtype=float)
+    unf = int(g["skip"].astype(str).str.startswith("미체결").sum()) if "skip" in g else 0
+    fw = v["filled"].dropna() if "filled" in v else pd.Series(dtype=float)
     return {"n": n, **pct, "win": round(hit / (hit + pct["stop"]) * 100, 1) if hit + pct["stop"] else None,
             "pnl": round(float(pn.mean()), 2) if len(pn) else None, "days": days,
+            "unfilled": unf, "filled_w": round(float(fw.mean()), 1) if len(fw) else None,
             "signal_days": int(v["date"].nunique())}
 
 
@@ -247,6 +285,15 @@ def run(pit, v3_entries: list[dict] | None = None, tabs=tuple(TABS), years=None,
         W["chg_pct"] = oh.pivot(index="date", columns="code", values="chg_pct").astype("float32")
     tabs = [t for t in tabs if t in TABS]
     univ = universe_tabs(oh, W, pit.listing, pit.index, start) if any(t != "v3" for t in tabs) else {}
+    if univ:                                                  # 앱과 같이: 종가가 5일선 아래면 추천 제외 (V3 제외 4개 탭)
+        C = W["close"]
+        ok = (C >= C.rolling(5).mean()).stack()
+        ok.index.names = ["date", "code"]
+        ok = ok.rename("_ok5").reset_index()
+        for k, u in univ.items():
+            u = u.merge(ok, on=["date", "code"], how="left")
+            u["eligible"] = u["eligible"].astype(bool) & u["_ok5"].fillna(False).astype(bool)
+            univ[k] = u.drop(columns="_ok5")
     sig = signals_tabs(univ, tabs)
     if "v3" in tabs and v3_entries:
         sig = pd.concat([sig, signals_v3(v3_entries)], ignore_index=True)
@@ -292,6 +339,10 @@ def _combine(parts: list[dict]) -> dict:
     hit = pct["t1"] + pct["t2"] + pct["t3"]
     pp = [p for p in parts if p.get("pnl") is not None]
     pn = sum(p["n"] for p in pp)
+    fp = [p for p in parts if p.get("filled_w") is not None]
+    fn = sum(p["n"] for p in fp)
     return {"n": n, **pct, "win": round(hit / (hit + pct["stop"]) * 100, 1) if hit + pct["stop"] else None,
             "pnl": round(sum(p["n"] * p["pnl"] for p in pp) / pn, 2) if pn else None, "days": days,
+            "unfilled": sum(p.get("unfilled", 0) for p in parts),
+            "filled_w": round(sum(p["n"] * p["filled_w"] for p in fp) / fn, 1) if fn else None,
             "signal_days": sum(p.get("signal_days", 0) for p in parts)}

@@ -133,8 +133,7 @@ def target_stop(picks: pd.DataFrame, ohlcv: pd.DataFrame, W: dict, h: int) -> pd
         g = g[g["date"] <= d].tail(260)
         g = g[g["close"] > 0]
         try:
-            o_, h_, l_, c_ = (levels.adjust(g, col) for col in ("open", "high", "low", "close"))
-            lv = levels.compute(g["date"].to_numpy(), o_, h_, l_, c_, g["volume"].to_numpy())
+            lv = levels.compute(*levels.prepare(g))
         except Exception:  # noqa: BLE001
             lv = None
         i = idx.get_indexer([pd.Timestamp(d)])[0]

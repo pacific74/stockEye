@@ -18,6 +18,7 @@
     저항이 없으면(신고가 영역) ATR 투영: 1차 = 종가 + 3ATR, 2차 = 종가 + 5ATR
   손절   = 종가 - 0.8ATR 보다 아래에 있는 가장 가까운 지지 - 0.5ATR (지지 바로 밑)
     지지가 너무 멀면(3.5ATR 또는 15% 초과) 종가 - 2.5ATR, 지지가 없으면 종가 - 2ATR
+  가격은 수정주가로 바꾸지 않고 실제 가격 그대로 (분할·병합 등이 있으면 그 뒤 구간만) → 앱 차트와 같은 가격
   매수구간 = 손절 위 지지(또는 20일선) ~ 종가 +1%
 모든 가격은 호가 단위로 맞춤. 근거(basis)에 어떤 가격을 썼는지 날짜와 함께 남긴다.
 """
@@ -30,6 +31,15 @@ from .trade_plan import round_tick
 
 PIVOT_K = 3
 CLUSTER = 0.015
+# 손절 규칙 (실험으로 바꿔 볼 수 있게 상수로)
+#   2026-10-11 '손절을 지지 바로 밑으로 좁히고 2·3차는 실제 지지가 있을 때만' 안을 적중률(5년)로 비교 →
+#   손익이 탭마다 0.4~1.0%p 나빠져서(손절 더 잦음, 눌림 분할 매수 효과 사라짐) 아래 기존 값 유지
+STOP_MIN_ATR = 0.8      # 지지는 종가 - 이만큼 ATR 보다 아래
+STOP_BUF_ATR, STOP_BUF_PCT = 0.5, 0.0    # 지지 밑 여유 = max(ATR 배수, %)
+STOP_MAX_ATR, STOP_MAX_PCT = 3.5, 0.15   # 손절까지 최대 거리
+FALLBACK_ATR, FALLBACK_PCT = 2.5, 0.5    # 지지가 멀 때 종가 - ATR 배수 (최대 %)
+NONE_ATR = 2.0          # 아래 지지가 아예 없을 때 종가 - ATR 배수
+ZONE_FILL = True        # 2·3차 구간: 지지가 모자라면 1차 하단~손절 사이를 고르게 나눔 (눌림 분할 매수)
 
 
 def _pivots(h: np.ndarray, l: np.ndarray, k: int = PIVOT_K):
@@ -143,6 +153,10 @@ def _label(g) -> str:
     return t + (f" (후보 {g['n']}개 겹침)" if g["n"] > 1 else "")
 
 
+def _won(p: float) -> str:
+    return f"{int(round(p)):,}원"
+
+
 def compute(dates, o, h, l, c, v) -> dict | None:
     """한 종목의 일봉 배열(과거→오늘) → 매수구간·목표·손절·근거"""
     c = np.asarray(c, float)
@@ -180,19 +194,22 @@ def compute(dates, o, h, l, c, v) -> dict | None:
     else:
         t3 = t2 + 2 * atr
         basis.append("3차 목표: 위에 저항 없음 → 2차 + 2ATR")
-    # 손절
-    sg = next((g for g in S if g["price"] <= close - 0.8 * atr), None)
+    # 손절: 종가 - 0.8ATR 아래 가장 가까운 지지 - 0.5ATR. 너무 멀면(3.5ATR·15% 초과) 종가 - 2.5ATR, 없으면 - 2ATR
+    #   근거 문장에 그 지지의 실제 가격을 같이 씀 (차트에서 바로 확인)
+    maxd = min(STOP_MAX_ATR * atr, close * STOP_MAX_PCT)
+    sg = next((g for g in S if g["price"] <= close - STOP_MIN_ATR * atr), None)
     stop_lab = None
-    if sg and close - (sg["price"] - 0.5 * atr) <= min(3.5 * atr, close * 0.15):
-        stop = sg["price"] - 0.5 * atr
+    buf = (lambda p: max(STOP_BUF_ATR * atr, p * STOP_BUF_PCT))
+    if sg and close - (sg["price"] - buf(sg["price"])) <= maxd:
+        stop = sg["price"] - buf(sg["price"])
         stop_lab = _label(sg)
-        basis.append(f"손절: {_label(sg)} 지지 아래 (지지 - 0.5ATR)")
+        basis.append(f"손절: {_label(sg)} {_won(sg['price'])} 지지 아래 (지지 - 0.5ATR)")
     elif sg:
-        stop = close - 2.5 * atr
-        basis.append(f"손절: 가까운 지지가 멀어({_label(sg)}) 종가 - 2.5ATR")
+        stop = max(close - FALLBACK_ATR * atr, close * (1 - FALLBACK_PCT))
+        basis.append(f"손절: 가까운 지지({_label(sg)} {_won(sg['price'])})가 멀어 종가 - {FALLBACK_ATR:g}ATR")
     else:
-        stop = close - 2.0 * atr
-        basis.append("손절: 아래 지지 없음 → 종가 - 2ATR")
+        stop = close - NONE_ATR * atr
+        basis.append(f"손절: 아래 지지 없음 → 종가 - {NONE_ATR:g}ATR")
     # 매수구간: 손절 위에서 가장 가까운 지지(또는 20일선) ~ 종가 +1%
     near = next((g["price"] for g in S if g["price"] > stop and g["price"] >= close - 1.5 * atr), None)
     lo = max(stop * 1.02, near if near else min(close, ind["ma20"] if np.isfinite(ind["ma20"]) else close) * 0.99)
@@ -226,13 +243,41 @@ def compute_all(ohlcv: pd.DataFrame, codes, days: int = 260) -> dict[str, dict]:
     for code, g in oh.groupby("code", sort=False):
         g = g[g["close"] > 0]
         try:
-            o_, h_, l_, c_ = (adjust(g, col) for col in ("open", "high", "low", "close"))
-            r = compute(g["date"].to_numpy(), o_, h_, l_, c_, g["volume"].to_numpy())
+            r = compute(*prepare(g))
         except Exception:  # noqa: BLE001
             r = None
         if r:
             out[code] = r
     return out
+
+
+def window(g: pd.DataFrame, min_bars: int = 30) -> pd.DataFrame:
+    """계산에 쓸 일봉 구간 — 앱 차트(실제 가격)와 같은 가격으로 근거를 쓰기 위해 '수정'하지 않고 자른다 (2026-10-11).
+    액면분할·병합·무상증자처럼 하루 기준가가 15% 넘게 바뀐 날이 있으면 그날부터만 사용.
+    그 뒤가 min_bars 일 미만이면 (최근 분할) 예전처럼 수정주가로 맞춘 전체를 씀"""
+    if "chg_pct" not in g or len(g) < 2:
+        return g
+    c = g["close"].to_numpy(float)
+    chg = g["chg_pct"].to_numpy(float)
+    with np.errstate(all="ignore"):
+        ratio = (c[1:] / (1 + chg[1:] / 100)) / c[:-1]
+    ev = np.where(np.isfinite(ratio) & (np.abs(ratio - 1) > 0.15))[0]
+    if not len(ev):
+        return g
+    start = int(ev[-1]) + 1
+    if len(g) - start >= min_bars:
+        return g.iloc[start:]
+    g = g.copy()
+    for col in ("open", "high", "low", "close"):
+        g[col] = adjust(g, col)
+    return g
+
+
+def prepare(g: pd.DataFrame):
+    """window → compute 에 넣을 (dates, o, h, l, c, v)"""
+    w = window(g)
+    return (w["date"].to_numpy(), w["open"].to_numpy(float), w["high"].to_numpy(float), w["low"].to_numpy(float),
+            w["close"].to_numpy(float), w["volume"].to_numpy(float))
 
 
 def adjust(g: pd.DataFrame, col: str) -> np.ndarray:
@@ -280,38 +325,37 @@ def apply_to_ev(ev: pd.DataFrame, ohlcv: pd.DataFrame) -> int:
 
 
 def _zones(close, atr, stop, S, lo1) -> list[dict]:
-    """분할 매수 구간 1·2·3차 (30/30/40%), 모두 손절가 위.
-    1차 = 현재가 +1% ~ 가까운 지지 (폭은 최대 1ATR)
-    2·3차 = 1차 하단 ~ 손절가 사이에서 지지(스윙 저점·이평선·매물대)를 우선, 모자라면 그 사이를 고르게 나눔"""
+    """분할 매수 구간 (모두 손절가 위). 1차 = 현재가 +1% ~ 가까운 지지 (폭은 최대 1ATR)
+    2·3차 = 1차 하단~손절가 사이 지지(스윙 저점·이평선·매물대) 우선, 모자라면 고르게 나눔 (ZONE_FILL)
+    비중: 1개 100% · 2개 50/50 · 3개 30/30/40. 2·3차는 눌림이 올 때만 — 안 와도 1차만으로 계획대로"""
     rt = lambda x, m: int(round_tick(x, m))  # noqa: E731
     floor = stop + 0.3 * atr
     z1_low = min(close, max(lo1, close - 1.0 * atr, floor))
-    z = [{"name": "1차", "weight": 30, "low": rt(z1_low, "down"), "high": rt(close * 1.01, "up"),
+    z = [{"name": "1차", "weight": 100, "low": rt(z1_low, "down"), "high": rt(close * 1.01, "up"),
           "note": "현재가 ~ 가까운 지지 · 지금 가격대"}]
     w = z1_low - floor
     if w < 0.4 * atr:                                       # 손절가가 가까워 아래로 나눌 자리가 없음
-        z[0]["weight"] = 100
         return z
     half = min(0.3 * atr, w / 6)
     picks = []
-    for g in S:                                              # 지지 우선 (위에서 아래로, 0.5ATR 이상 간격)
+    for g in S:                                              # 지지만 (위에서 아래로, 0.5ATR 이상 간격)
         p = g["price"]
         if floor + half <= p <= z1_low - half and all(abs(p - q) >= 0.5 * atr for q, _ in picks):
-            picks.append((p, f"{_label(g)} 지지"))
+            picks.append((p, f"{_label(g)} {_won(p)} 지지"))
         if len(picks) == 2:
             break
-    for k in (1, 2):                                         # 모자라면 고르게
+    for k in ((1, 2) if ZONE_FILL else ()):                  # (예전) 모자라면 고르게
         if len(picks) == 2:
             break
         p = z1_low - w * k / 3
         if all(abs(p - q) >= w / 4 for q, _ in picks):
             picks.append((p, "1차 하단과 손절가 사이 (아래 지지 없음)"))
     picks.sort(key=lambda t: -t[0])
-    for (p, why), (name, wt) in zip(picks, (("2차", 30), ("3차", 40))):
-        z.append({"name": name, "weight": wt, "low": rt(max(p - half, floor), "down"),
-                  "high": rt(min(p + half, z1_low), "up"), "note": why + " · 눌림 때 추가"})
-    if len(z) == 2:
-        z[0]["weight"], z[1]["weight"] = 50, 50
+    for (p, why), name in zip(picks, ("2차", "3차")):
+        z.append({"name": name, "weight": 0, "low": rt(max(p - half, floor), "down"),
+                  "high": rt(min(p + half, z1_low), "up"), "note": why + " · 눌림 때 추가 (안 와도 됨)"})
+    for zz, wt in zip(z, {1: (100,), 2: (50, 50), 3: (30, 30, 40)}[len(z)]):
+        zz["weight"] = wt
     return z
 
 

@@ -14,7 +14,7 @@ cd "$ROOT/backend"
 . .venv/bin/activate
 case "$JOB" in
   daily)    LOCK=batch;    CMD="python -m scripts.cloud_daily" ;;
-  backtest) LOCK=batch;    CMD="python -m scripts.cloud_backtest" ;;
+  backtest) LOCK=batch;    CMD="python -m scripts.cloud_backtest --only WEEKLY" ;;   # 적중률: 올해만 다시
   monitor)  LOCK=monitor;  CMD="python -m scripts.monitor"
             if [ -z "${KIS_APP_KEY:-}" ]; then echo "KIS 키 없음 → 장중 감시 생략"; exit 0; fi ;;
   netcheck) LOCK=netcheck; CMD="python -m scripts.net_check" ;;

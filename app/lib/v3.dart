@@ -79,22 +79,15 @@ class V3PickTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = asMap(c['v3']);
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ListTile(
-        leading: CircleAvatar(child: Text('$rank')),
-        title: StockName('${c['name']}', market: c['market'] as String?),
-        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          PlanLine(c: c, price: price, live: price != null, showPrice: true, tab: 'v3'),
-        ]),
-        isThreeLine: true,
-        trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text(v['score'] == null ? '-' : '${(v['score'] as num).toStringAsFixed(0)}점',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        ]),
-        onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}', source: 'v3'))),
-      ),
+    return WatchTile(
+      c: c,
+      price: price,
+      tab: 'v3',
+      leading: CircleAvatar(child: Text('$rank')),
+      score: Text(v['score'] == null ? '-' : '${(v['score'] as num).toStringAsFixed(0)}점',
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+      onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}', source: 'v3'))),
     );
   }
 }

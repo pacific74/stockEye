@@ -58,10 +58,12 @@ class _HitRateSectionState extends State<HitRateSection> {
         final ys = years.keys.toList()..sort((a, b) => b.compareTo(a)); // 최근 연도 먼저
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           SectionTitle('관심종목 적중률', trailing: Text('${r['end'] ?? ''} 기준', style: t.bodySmall)),
-          Text('탭마다 매일 상위 3종목 → 다음 날 시가 매수 → 20거래일 안에 차트 목표가·손절가 중 어디에 닿았나. '
+          Text('탭마다 매일 상위 3종목을 앱 매매 계획대로 샀다면: 1차 매수구간이면 다음 날 시가에 30%, '
+              '2차·3차 매수구간 상단까지 내려오면 30%·40% 추가 → 20거래일 안에 목표가·손절가 중 어디에 닿았나. '
               '승률 = 목표 ÷ (목표 + 손절). '
-              '손익 = 1차 50% · 2차 30% · 3차 20% 나눠 팔고, 1차를 판 뒤 남은 몫은 매수가까지 밀리면 본전에, '
-              '1차 전에는 손절가에, 끝까지 남으면 20일째 종가에 판 평균 수익 (수수료·세금 0.25% 뺌). '
+              '손익 = 1차 50% · 2차 30% · 3차 20% 나눠 팔고, 1차를 판 뒤 남은 몫은 평균 매수가까지 밀리면 본전에, '
+              '1차 전에는 손절가에, 끝까지 남으면 20일째 종가에 판 평균 수익 (산 금액 기준, 수수료·세금 0.25% 뺌). '
+              '매수구간까지 안 내려와 못 산 건 미체결로 따로 셌어요. '
               '승률이 높아도 손익이 마이너스면 손절 한 번이 목표 여러 번을 까먹는다는 뜻이에요. '
               '연도를 누르면 분기, 숫자를 누르면 며칠째에 닿았는지 보여요.',
               style: t.bodySmall?.copyWith(color: Colors.grey)),
@@ -152,7 +154,7 @@ class _HitRateSectionState extends State<HitRateSection> {
               child: Text(s['win'] == null ? '-' : '${(s['win'] as num).toStringAsFixed(0)}%',
                   textAlign: TextAlign.right, style: base?.copyWith(fontWeight: FontWeight.bold)),
             ),
-            // 평균 손익 (50·30·20% 분할 매도 + 1차 뒤 본전 손절, 비용 뺀 뒤)
+            // 평균 손익 (30·30·40% 분할 매수 → 50·30·20% 분할 매도 + 1차 뒤 본전 손절, 비용 뺀 뒤)
             Expanded(
               flex: 6,
               child: Text(pnl == null ? '-' : '${pnl >= 0 ? '+' : ''}${pnl.toStringAsFixed(1)}%',
@@ -162,14 +164,15 @@ class _HitRateSectionState extends State<HitRateSection> {
                       color: pnl == null ? null : (pnl >= 0 ? const Color(0xFFD32F2F) : const Color(0xFF1565C0)))),
             ),
           ]),
-          if ((issue != null && issue.isNotEmpty) || kospi != null)
-            Padding(
+          Padding(
               padding: const EdgeInsets.only(left: 4, top: 1),
               child: Text(
                   [
                     if (kospi != null) '코스피 ${kospi >= 0 ? '+' : ''}${kospi.toStringAsFixed(1)}%',
                     if (issue != null && issue.isNotEmpty) issue,
                     '${s['n']}건',
+                    if ((s['unfilled'] as num? ?? 0) > 0) '미체결 ${s['unfilled']}',
+                    if (s['filled_w'] != null && !sub) '평균 매수 ${(s['filled_w'] as num).toStringAsFixed(0)}%',
                   ].join(' · '),
                   style: t.bodySmall?.copyWith(color: Colors.grey, fontSize: sub ? 10 : 11)),
             ),

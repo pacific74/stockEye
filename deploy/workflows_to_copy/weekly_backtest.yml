@@ -1,4 +1,5 @@
-# 관심종목 적중률 계산 (HIT) → 앱 '검증' 화면.  매주 자동 실행은 없앰 (2026-10-11) — 필요할 때만:
+# 관심종목 적중률 계산 (HIT) → 앱 '검증' 화면
+#   ⓪ 매주 토요일 10:00(한국시간) 자동: 올해만 다시 계산해서 기존 결과에 합침 (몇 분). 1월엔 작년도 같이.
 #   ① 앱 '검증' 화면 [계산 요청] → Supabase 가 바로 신호(repository_dispatch hitrate_request)
 #      (Supabase app_config 에 github_dispatch_token·github_repo 가 있어야 함 — 패턴 요청과 같은 설정)
 #   ② 여기 Actions → Run workflow, only 칸:
@@ -12,6 +13,8 @@
 name: weekly-backtest
 
 on:
+  schedule:
+    - cron: "0 1 * * 6"
   repository_dispatch:
     types: [hitrate_request]
   workflow_dispatch:
@@ -27,6 +30,8 @@ concurrency:
 
 jobs:
   backtest:
+    # 주간 자동은 VM 이 맡으면(vars.BACKTEST_RUNNER = vm) 여기선 건너뜀. 앱 요청·직접 실행은 항상 여기서
+    if: github.event_name != 'schedule' || vars.BACKTEST_RUNNER != 'vm'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
@@ -35,7 +40,7 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
-      ONLY: ${{ inputs.only || github.event.client_payload.only }}
+      ONLY: ${{ github.event_name == 'schedule' && 'WEEKLY' || inputs.only || github.event.client_payload.only }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

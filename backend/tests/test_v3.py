@@ -6,7 +6,7 @@ from stockeye.engine import v3
 
 
 def test_rules_locked():
-    assert v3.VERSION == "V3B-2.0" and v3.LOCKED_AT == "2026-10-10"
+    assert v3.VERSION == "V3B-2.1" and v3.LOCKED_AT == "2026-10-11"
     assert v3.RULES == {"top_n": 10, "every": 5, "hold": 20, "max_positions": 20, "weight": 0.05, "market_weight": 1.0,
                         "on_reselect": "extend", "add_buy": False, "buy_cost": 0.0015, "sell_cost": 0.0025}
     assert {k: m for k, (_, m) in v3.PARTS.items()} == {"vola15": 15, "fin25": 25, "pos20": 20, "trend5": 5, "vol5": 5,

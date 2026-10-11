@@ -49,25 +49,17 @@ class NextdayTile extends StatelessWidget {
     final v = asMap(c['nextday']);
     final score = v['score'] as num?;
     final col = gradeColor(v['grade'] as String?);
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ListTile(
-        leading: CircleAvatar(
-            backgroundColor: col.withValues(alpha: 0.15),
-            child: Text('${v['grade'] ?? rank}', style: TextStyle(color: col, fontWeight: FontWeight.bold))),
-        title: StockName('${c['name']}', market: c['market'] as String?),
-        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // 유형·태그·매수구간 한 줄 + 종가·돌파·지지·추격 금지 + 현재가·매수구간 + 목표·손절
-          PlanLine(c: c, price: price, live: price != null, showPrice: true, tab: 'nextday'),
-        ]),
-        isThreeLine: true,
-        trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text(score == null ? '-' : '${score.toStringAsFixed(1)}점',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: col)),
-        ]),
-        onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}', source: 'nextday'))),
-      ),
+    return WatchTile(
+      c: c,
+      price: price,
+      tab: 'nextday',
+      leading: CircleAvatar(
+          backgroundColor: col.withValues(alpha: 0.15),
+          child: Text('${v['grade'] ?? rank}', style: TextStyle(color: col, fontWeight: FontWeight.bold))),
+      score: Text(score == null ? '-' : '${score.toStringAsFixed(1)}점',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: col)),
+      onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}', source: 'nextday'))),
     );
   }
 }

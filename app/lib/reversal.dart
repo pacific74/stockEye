@@ -90,22 +90,15 @@ class ReversalTile extends StatelessWidget {
     final v = asMap(c[kind.field]);
     final score = v['score'] as num?;
     final col = reversalColor(score);
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ListTile(
-        leading: CircleAvatar(child: Text('$rank')),
-        title: StockName('${c['name']}', market: c['market'] as String?),
-        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          PlanLine(c: c, price: price, live: price != null, showPrice: true, tab: kind.field),
-        ]),
-        isThreeLine: true,
-        trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text(score == null ? '-' : '${score.toStringAsFixed(1)}점',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: col)),
-        ]),
-        onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}', source: kind.field))),
-      ),
+    return WatchTile(
+      c: c,
+      price: price,
+      tab: kind.field,
+      leading: CircleAvatar(child: Text('$rank')),
+      score: Text(score == null ? '-' : '${score.toStringAsFixed(1)}점',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: col)),
+      onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}', source: kind.field))),
     );
   }
 }

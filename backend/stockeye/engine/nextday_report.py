@@ -6,7 +6,7 @@ import pandas as pd
 
 from . import nextday as nd
 from .early import wide
-from .v2_report import candidate_dict
+from .v2_report import candidate_dict, below_ma5
 from .trade_plan import round_tick
 
 TOP = 30
@@ -63,6 +63,8 @@ def build_section(pit, view, x: pd.DataFrame, ev: pd.DataFrame, name_of: dict, t
             w.append("거래정지")
         w += [b for b in sc.at[code, "risk"] if b not in w]
         why.append(w)
+    b5 = below_ma5(x)                                     # 5일선 아래 → 추천 제외
+    why = [w + (["5일선 아래"] if c in b5 else []) for c, w in zip(sc.index, why)]
     sc["why_not"] = why
     sc["has_news"] = has_news
     sc["eligible"] = [len(w) == 0 for w in why]

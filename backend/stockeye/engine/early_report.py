@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from . import early as up
-from .v2_report import candidate_dict
+from .v2_report import candidate_dict, below_ma5
 
 TOP = 30
 DESC = ("종가가 20일선을 회복하고 단기 상승이 막 시작되는 종목 (100점: 단기 추세 회복 25 · 상승 모멘텀 20 · "
@@ -24,7 +24,7 @@ def build_section(view, x: pd.DataFrame, ev: pd.DataFrame, name_of: dict, theme_
     sc = up.score_today(f, d)
     risk_ok = (ev["stage1"] & ~ev["blocked"].astype(bool)).astype(bool).reindex(sc.index, fill_value=False)
     sc["risk_ok"] = risk_ok
-    sc["eligible"] = risk_ok & ~sc["excluded"]
+    sc["eligible"] = risk_ok & ~sc["excluded"] & ~sc.index.isin(below_ma5(x))   # 5일선 아래 제외
     value = x["value_ma20"] if "value_ma20" in x else pd.Series(dtype=float)
     ranked = up.rank(sc, sc["eligible"], value, up.HOLD)
     show = ranked.head(TOP)

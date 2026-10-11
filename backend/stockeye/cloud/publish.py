@@ -93,6 +93,70 @@ def trading_status(cfg: dict) -> dict:
             "updated": datetime.now().strftime("%Y-%m-%d %H:%M")}
 
 
+WATCH_TABS = {"v3": "V3", "nextday": "익일유망주", "early": "상승초기", "reversal": "추세전환", "uplimit": "상파"}
+
+
+def _origin_of(rows: list[dict], buy_date: str) -> dict | None:
+    """그 종목의 관심 탭 기록(rows: date·list·payload) 중 매수일 직전(없으면 그날) 것 → 출처 + 그때 매매 계획"""
+    before = [r for r in rows if r["date"] < buy_date]
+    same = [r for r in rows if r["date"] == buy_date]
+    pick = before or same
+    if not pick:
+        return None
+    d = max(r["date"] for r in pick)
+    day = sorted([r for r in pick if r["date"] == d], key=lambda r: list(WATCH_TABS).index(r["list"]))
+    plan = (day[0].get("payload") or {}).get("plan") or {}
+    zones = [{"name": z.get("name"), "low": z.get("low"), "high": z.get("high"), "weight": z.get("weight")}
+             for z in (plan.get("zones") or []) if isinstance(z, dict)]
+    if not zones and plan.get("entry_low"):
+        zones = [{"name": "1차", "low": plan.get("entry_low"), "high": plan.get("entry_high"), "weight": 100}]
+    return {"date": d, "tabs": [r["list"] for r in day], "names": [WATCH_TABS[r["list"]] for r in day],
+            "zones": zones, "stop": plan.get("stop"), "target1": plan.get("target1"), "target2": plan.get("target2"),
+            "target3": plan.get("target3"), "price": plan.get("price")}
+
+
+def watch_origins(sb: Supabase, opens: list[dict], days: int = 14) -> dict:
+    """보유종목이 관심 탭(V3·익일·상승초기·추세전환·상파)에서 산 것인지 → {position_id: 출처}.
+    한 번 찾으면 positions.plan.origin 에 저장 (후보 기록은 60일만 남으므로). 못 찾으면 없음"""
+    out, todo = {}, []
+    for p in opens:
+        o = (p.get("plan") or {}).get("origin") if isinstance(p.get("plan"), dict) else None
+        if o:
+            out[p["id"]] = o
+        elif p.get("entry_time"):
+            todo.append(p)
+    if not todo:
+        return out
+    codes = sorted({p["code"] for p in todo})
+    lo = (pd.Timestamp(min(p["entry_time"][:10] for p in todo)) - pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+    try:
+        rows = sb.select("candidates", {"select": "date,list,code,payload", "code": f"in.({','.join(codes)})",
+                                        "list": f"in.({','.join(WATCH_TABS)})", "date": f"gte.{lo}"})
+    except Exception as e:  # noqa: BLE001
+        log.warning("관심 출처 조회 실패: %s", e)
+        return out
+    by = {}
+    for r in rows:
+        r["date"] = str(r["date"])[:10]
+        by.setdefault(r["code"], []).append(r)
+    for p in todo:
+        buy = p["entry_time"][:10]
+        lo_p = (pd.Timestamp(buy) - pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+        o = _origin_of([r for r in by.get(p["code"], []) if r["date"] >= lo_p], buy)
+        if not o:
+            continue
+        out[p["id"]] = o
+        try:
+            plan = p.get("plan") if isinstance(p.get("plan"), dict) else {}
+            patch = {"plan": {**plan, "origin": o}}
+            if not p.get("list_key"):
+                patch["list_key"] = o["tabs"][0]
+            sb.update("positions", {"id": f"eq.{p['id']}"}, patch)
+        except Exception as e:  # noqa: BLE001
+            log.warning("관심 출처 저장 실패 %s: %s", p.get("code"), e)
+    return out
+
+
 def publish_journal(sb: Supabase, cfg: dict, journal, pit=None, report: dict | None = None) -> None:
     """매매 분석(전체·모드별) + 보유종목 점검을 미리 계산해서 올림."""
     from ..trading.analysis import analyze, ai_summary
@@ -127,8 +191,11 @@ def publish_journal(sb: Supabase, cfg: dict, journal, pit=None, report: dict | N
         from ..engine import v3 as _v3
         cal = _v3.calendar(pit.trading_dates())
     reviews = pf.review(holds, x, report["date"], idx, cfg["backtest"]["max_hold_days"], calendar=cal)
+    origins = watch_origins(sb, opens)                    # 관심 탭에서 산 종목: 어느 탭 · 그때 매수구간 · 손절가
+    for r in reviews:
+        r["origin"] = origins.get(r["id"])
     keep = ("price", "pnl_pct", "pnl", "ret1_pct", "alerts", "status", "hold_days", "today_score", "today_tags",
-            "sell_date", "days_left")
+            "sell_date", "days_left", "origin")
     sb.upsert("position_reviews", [{"position_id": r["id"], "user_id": uid, "payload": {k: r.get(k) for k in keep},
                                     "updated_at": datetime.utcnow().isoformat() + "Z"} for r in reviews],
               "position_id")

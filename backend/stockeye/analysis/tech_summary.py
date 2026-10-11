@@ -6,7 +6,7 @@
   거래: 오늘 거래량(20일 평균 대비), 5일 거래량 추세, 상승일/하락일 거래량
   수급: 외국인·기관 5일 순매수
   위치: 52주 고점 대비, 차트 지지·저항(levels) → 매수구간·목표·손절 요약
-값이 없으면 그 문장은 건너뛴다. 숫자를 나열하지 않고 사람이 말하듯 문단으로 풀어 쓴다.
+값이 없으면 그 문장은 건너뛴다. 숫자를 나열하지 않고 사람이 말하듯 문단으로 풀어 쓴다. 투자에 중요한 부분은 **굵게** (앱이 강조 표시).
 첫 문장은 종합(지표 점수 → 강세/중립/약세), 마지막에 주의할 점.
 """
 from __future__ import annotations
@@ -47,10 +47,10 @@ def summarize(x, plan: dict | None = None) -> dict:
     if all(_ok(m[n]) for n in (5, 20, 60)):
         s20, s60 = g("sma20_slope"), g("sma60_slope")
         if m[5] > m[20] > m[60] and (not _ok(m[120]) or m[60] > m[120]):
-            flow.append("이평선들이 짧은 것부터 차례로 위에 놓인 정배열이라 상승 추세에 있고")
+            flow.append("이평선들이 짧은 것부터 차례로 위에 놓인 **정배열이라 상승 추세**에 있고")
             sc += 2
         elif m[5] < m[20] < m[60]:
-            flow.append("이평선들이 역배열로 놓여 하락 추세가 이어지고 있고")
+            flow.append("이평선들이 **역배열로 놓여 하락 추세**가 이어지고 있고")
             sc -= 2
         else:
             flow.append("이평선들이 서로 엉켜 있어 아직 방향을 정하지 못한 모습이고")
@@ -68,11 +68,11 @@ def summarize(x, plan: dict | None = None) -> dict:
                    else (" 다만" if sc > 0 else "") + " 60일선도 내리고 있어 중기 흐름은 부담입니다.")
         d20 = c / m[20] - 1
         if d20 > 0.10:
-            tail = f"주가가 20일선보다 {d20 * 100:.0f}%나 위에 있어 단기로는 많이 오른 상태입니다"
+            tail = f"주가가 20일선보다 {d20 * 100:.0f}%나 위에 있어 **단기로는 많이 오른 상태**입니다"
         elif d20 >= 0:
             tail = f"주가는 20일선보다 {d20 * 100:.1f}% 위에 있어 크게 벌어지지 않았습니다"
         elif d20 > -0.05:
-            tail = f"주가는 20일선 바로 아래({d20 * 100:.1f}%)에 있어 20일선 회복 여부가 관건입니다"
+            tail = f"주가는 20일선 바로 아래({d20 * 100:.1f}%)에 있어 **20일선 회복 여부가 관건**입니다"
         else:
             tail = f"주가가 20일선보다 {abs(d20) * 100:.0f}% 아래로 처져 있습니다"
         paras.append(", ".join(flow) + "." + mid + " " + tail + ".")
@@ -82,10 +82,10 @@ def summarize(x, plan: dict | None = None) -> dict:
     rsi = g("rsi14")
     if _ok(rsi):
         if rsi >= 70:
-            mom.append(f"RSI가 {rsi:.0f}로 과열권이라 잠시 쉬어 갈 수 있고")
+            mom.append(f"RSI가 {rsi:.0f}로 **과열권**이라 잠시 쉬어 갈 수 있고")
             sc -= 0.5
         elif rsi <= 30:
-            mom.append(f"RSI가 {rsi:.0f}로 많이 눌려 있어 기술적 반등 여지가 있고")
+            mom.append(f"RSI가 {rsi:.0f}로 많이 눌려 있어 **기술적 반등 여지**가 있고")
             sc += 0.3
         elif rsi >= 55:
             mom.append(f"RSI가 {rsi:.0f}로 사려는 힘이 조금 앞서고")
@@ -98,10 +98,10 @@ def summarize(x, plan: dict | None = None) -> dict:
     mh, mhp, mc = g("macd_hist"), g("macd_hist_prev"), g("macd")
     if _ok(mh) and _ok(mc):
         if _ok(mhp) and mhp <= 0 < mh:
-            mom.append("MACD가 막 시그널선을 위로 뚫는 골든크로스가 나와 상승 신호가 켜졌습니다")
+            mom.append("MACD가 막 시그널선을 위로 뚫는 **골든크로스**가 나와 상승 신호가 켜졌습니다")
             sc += 1
         elif _ok(mhp) and mhp >= 0 > mh:
-            mom.append("MACD가 막 시그널선 아래로 내려오는 데드크로스가 나와 상승 힘이 꺾이는 신호입니다")
+            mom.append("MACD가 막 시그널선 아래로 내려오는 **데드크로스**가 나와 상승 힘이 꺾이는 신호입니다")
             sc -= 1
         elif mh > 0:
             mom.append("MACD는 시그널선 위에서 " + ("힘이 더 붙는 중입니다" if _ok(mhp) and abs(mh) > abs(mhp)
@@ -140,7 +140,7 @@ def summarize(x, plan: dict | None = None) -> dict:
     if _ok(vr):
         r1 = g("ret1")
         if vr >= 2:
-            a = f"오늘 거래량이 평소의 {vr:.1f}배로 크게 늘며 " + ("올라 매수세가 몰렸" if _ok(r1) and r1 > 0 else "내려 매도 물량이 나왔")
+            a = f"오늘 **거래량이 평소의 {vr:.1f}배**로 크게 늘며 " + ("올라 **매수세가 몰렸**" if _ok(r1) and r1 > 0 else "내려 **매도 물량이 나왔**")
             sc += 0.5 if _ok(r1) and r1 > 0 else -0.5
         elif vr <= 0.6:
             a = "오늘 거래는 평소보다 한산했"
@@ -177,7 +177,7 @@ def summarize(x, plan: dict | None = None) -> dict:
         sc += 0.5 * ((_ok(f5) and f5 > 0) + (_ok(i5) and i5 > 0)) - 0.25
         sent += " " + "고, ".join(fl) + "습니다."
         if len(fl) == 2 and (f5 > 0) == (i5 > 0):
-            sent += f" 외국인과 기관이 함께 {'사고' if f5 > 0 else '팔고'} 있습니다."
+            sent += f" **외국인과 기관이 함께 {'사고' if f5 > 0 else '팔고'} 있습니다.**"
     if sent.strip():
         paras.append(sent.strip())
 
@@ -185,7 +185,7 @@ def summarize(x, plan: dict | None = None) -> dict:
     pos = []
     nh = g("near_high250")
     if _ok(nh):
-        pos.append("52주 최고가 근처까지 올라와 있습니다" if nh >= 0.97 else f"52주 최고가보다 {(1 - nh) * 100:.0f}% 아래에 있습니다")
+        pos.append("**52주 최고가 근처**까지 올라와 있습니다" if nh >= 0.97 else f"52주 최고가보다 {(1 - nh) * 100:.0f}% 아래에 있습니다")
     p = plan or {}
     sups = [s["label"] for s in (p.get("supports") or [])[:1]]
     ress = [r["label"] for r in (p.get("resistances") or [])[:1]]
@@ -193,18 +193,18 @@ def summarize(x, plan: dict | None = None) -> dict:
         pos.append("가까운 지지는 " + (sups[0] if sups else "뚜렷하지 않고") + (", 저항은 " + ress[0] if ress else "") + "입니다")
     if p.get("entry_low") and p.get("stop") and p.get("target1"):
         rr = p.get("rr1") or p.get("rr")
-        pos.append(f"매수구간은 {_won(p['entry_low'])}~{_won(p['entry_high'])}, 1차 목표 {_won(p['target1'])}, "
-                   f"손절 {_won(p['stop'])}" + (f"(손익비 1:{rr})" if rr else "") + "입니다")
+        pos.append(f"매수구간은 **{_won(p['entry_low'])}~{_won(p['entry_high'])}**, 1차 목표 **{_won(p['target1'])}**, "
+                   f"손절 **{_won(p['stop'])}**" + (f"(손익비 1:{rr})" if rr else "") + "입니다")
     if pos:
         paras.append(" ".join(x + "." for x in pos))
 
     tone = "강세" if sc >= 2.5 else "약세" if sc <= -2 else "중립"
-    head = {"강세": "기술적으로 강세 흐름입니다.", "중립": "기술적으로 방향을 탐색하는 중립 구간입니다.",
-            "약세": "기술적으로 약세 흐름입니다."}[tone]
+    head = {"강세": "**기술적으로 강세 흐름입니다.**", "중립": "**기술적으로 방향을 탐색하는 중립 구간입니다.**",
+            "약세": "**기술적으로 약세 흐름입니다.**"}[tone]
     warn = []
     if _ok(rsi) and rsi >= 70:
         warn.append("단기 과열")
     if _ok(g("atr_pct")) and g("atr_pct") >= 0.06:
         warn.append(f"하루 평균 {g('atr_pct') * 100:.1f}%씩 움직일 만큼 변동성이 큼")
-    text = head + " " + "\n".join(paras) + (f"\n주의할 점: {', '.join(warn)}." if warn else "")
+    text = head + " " + "\n".join(paras) + (f"\n**주의할 점: {', '.join(warn)}.**" if warn else "")
     return {"text": text, "points": paras, "tone": tone, "score": round(sc, 1)}

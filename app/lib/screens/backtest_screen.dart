@@ -8,6 +8,7 @@ import '../v3.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
+import 'hitrate_screen.dart';
 import 'validation_screen.dart';
 
 class BacktestScreen extends StatefulWidget {
@@ -27,6 +28,7 @@ class _BacktestScreenState extends State<BacktestScreen> {
   String? info;
   late Future<List<Json>> _reqs = backtestRequests();
   late Future<Json> _val = loadValidation();
+  late Future<Json> _hit = loadHitRate();
 
   @override
   void initState() {
@@ -73,6 +75,7 @@ class _BacktestScreenState extends State<BacktestScreen> {
               _strategies = Api.strategies();
               _reqs = backtestRequests();
               _val = loadValidation();
+              _hit = loadHitRate();
             });
             Api.latestBacktest().then((r) {
               if (mounted) setState(() => result = r);
@@ -81,7 +84,9 @@ class _BacktestScreenState extends State<BacktestScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
-          // ---- 관심종목 검증 (5개 탭 공통 기준) ----
+          // ---- 관심종목 적중률 (탭별 매일 상위 3 → 목표/손절, 연도·분기) ----
+          HitRateSection(future: _hit),
+          // ---- 상세 검증 (비교군·5분위·IC 등) ----
           ValidationList(future: _val),
           const SectionTitle('직접 백테스트'),
           Card(

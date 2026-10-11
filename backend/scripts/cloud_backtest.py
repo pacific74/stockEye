@@ -24,9 +24,36 @@ from stockeye.cloud import publish as pub
 log = logging.getLogger("stockeye.cloud_backtest")
 
 
+def run_hitrate(sb, pit, cfg, tabs=None, years=None, v3_entries=None) -> dict:
+    """관심종목 적중률 (탭별 매일 상위 3 → 1·2·3차 목표/손절, 연도·분기별) → backtests 'HIT'.
+    탭·연도 일부만 돌리면 이전 결과에 그 부분만 덮어씀"""
+    from stockeye.analysis import hitrate
+    tabs = tabs or list(hitrate.TABS)
+    if "v3" in tabs and v3_entries is None:                   # V3 는 매일 상위 3 (과거 선정 다시 계산)
+        from stockeye.indicators import compute_features
+        from stockeye.engine.v3_report import history_entries
+        feat = compute_features(pit.ohlcv, pit.flows, pit.fund)
+        v3_entries = history_entries(pit, cfg, feat, every=1)
+        del feat
+    new = hitrate.run(pit, v3_entries=v3_entries, tabs=tabs, years=years)
+    old = None
+    if years or len(tabs) < len(hitrate.TABS):
+        try:
+            rows = sb.select("backtests", {"select": "payload", "key": "eq.HIT"})
+            old = rows[0]["payload"] if rows else None
+        except Exception as e:  # noqa: BLE001
+            log.warning("이전 적중률 읽기 실패: %s", e)
+    out = hitrate.merge(old, new)
+    pub.publish_backtest(sb, "HIT", "관심종목 적중률", out)
+    for t, v in out["tabs"].items():
+        log.info("[적중률] %s: %s건 승률 %s%%", v["name"], v["total"].get("n"), v["total"].get("win"))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", help="예: A,D  (engine = 종합 엔진) · VALID = 관심종목 검증만")
+    ap.add_argument("--only", help="예: A,D (engine) · VALID = 상세 검증만 · HIT = 적중률만 "
+                                   "(HIT:nextday,early / HIT:2024,2025 / HIT:nextday:2024 처럼 탭·연도 일부)")
     ap.add_argument("--min-score", type=float, default=75)
     args = ap.parse_args()
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
@@ -40,6 +67,13 @@ def main():
     pit = PointInTimeData.from_store(store)
     t0 = time.time()
     log.info("지표 계산 중 (전 종목 × 전 기간)...")
+    if args.only and args.only.upper().startswith("HIT"):   # 관심종목 적중률만 (탭·연도 일부 가능)
+        toks = [t.strip() for t in args.only.replace(":", ",").split(",")[1:] if t.strip()]
+        years = [int(t) for t in toks if t.isdigit()]
+        tabs = [t for t in toks if not t.isdigit()] or None
+        run_hitrate(sb, pit, cfg, tabs=tabs, years=years or None)
+        log.info("적중률 %.0f분", (time.time() - t0) / 60)
+        return
     if args.only == "VALID":                      # 관심종목 검증만 (V3 과거 선정 + 4개 탭)
         from stockeye.indicators import compute_features
         from stockeye.engine.v3_report import history_entries
@@ -85,6 +119,11 @@ def main():
                  m.get("expectancy_pct"), m.get("profit_factor"), m.get("total_return_pct"), m.get("mdd_pct"),
                  (time.time() - t0) / 60)
         pub.process_backtest_requests(sb, pit, cfg, limit=5, features=feat)
+        try:                                                   # 목표 도달 검증용: V3 매일 상위 (feat 지우기 전에)
+            ent1 = history_entries(pit, cfg, feat, every=1)
+        except Exception as e:  # noqa: BLE001
+            log.error("V3 매일 선정 실패: %s", e)
+            ent1 = None
         del feat, res
         # ---- 관심종목 검증 (VAL): 5개 탭 공통 기준 — 앱 '검증' 화면 ----
         try:
@@ -97,7 +136,11 @@ def main():
             log.info("관심종목 검증 %.0f분", (time.time() - tv) / 60)
         except Exception as e:  # noqa: BLE001
             log.error("관심종목 검증 실패: %s", e)
-        pub.publish_status(sb, "backtest", {"done": ["V2", "VALID"], "minutes": round((time.time() - t0) / 60, 1)})
+        try:                                                   # 관심종목 적중률 (HIT) — 앱 '검증' 탭 첫 화면
+            run_hitrate(sb, pit, cfg, v3_entries=ent1)
+        except Exception as e:  # noqa: BLE001
+            log.error("적중률 실패: %s", e)
+        pub.publish_status(sb, "backtest", {"done": ["V2", "VALID", "HIT"], "minutes": round((time.time() - t0) / 60, 1)})
         return
     bt = Backtester(pit, cfg)
     keys = args.only.split(",")

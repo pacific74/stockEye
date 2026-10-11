@@ -482,9 +482,9 @@ class _ExplainCardState extends State<_ExplainCard> {
           ]),
           const SizedBox(height: 8),
           if (_e != null) ...[
-            Text('${_e!['text']}', style: const TextStyle(height: 1.5)),
-            const SizedBox(height: 6),
-            Text('${_e!['disclaimer'] ?? ''}', style: t.bodySmall),
+            // **굵게** 표시된 부분 = 투자에 참고할 중요한 내용 (강조색)
+            Text.rich(boldSpans('${_e!['text']}', Theme.of(context).colorScheme.primary),
+                style: const TextStyle(height: 1.6)),
           ] else if (_loading)
             const LinearProgressIndicator()
           else ...[
@@ -624,4 +624,17 @@ class _TabHead extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// '**강조**' 표시를 굵은 글씨 + 강조색으로 (별표는 화면에 안 보임)
+TextSpan boldSpans(String text, Color accent) {
+  final parts = text.split('**');
+  return TextSpan(children: [
+    for (var i = 0; i < parts.length; i++)
+      if (parts[i].isNotEmpty)
+        TextSpan(
+            text: parts[i],
+            style: i.isOdd ? TextStyle(fontWeight: FontWeight.bold, color: accent) : null),
+  ]);
 }

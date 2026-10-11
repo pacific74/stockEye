@@ -92,17 +92,35 @@ class _SimilarScreenState extends State<SimilarScreen> {
                       title: widget.name,
                       child: PriceChart(bars: curBars, slots: slots, markIndex: win),
                     ),
-                    // ② 고른 과거 패턴
+                    // ② 고른 과거 패턴 — 차트 위에 패턴 정보(기간·유사도·세부 유사도, 20일 후·최고·최저)까지 한 카드로
                     if (m != null)
-                      _ChartCard(
-                        title: '패턴 ${_sel + 1} · ${m['name']}  (유사도 ${m['similarity']})',
-                        subtitle: '${m['start']} ~ ${m['end']}',
-                        trailing: '20일 후 ${pct(m['ret20'] as num?)}',
-                        trailingColor: ((m['ret20'] as num?) ?? 0) >= 0 ? upColor : downColor,
-                        child: mBars.isEmpty
-                            ? const Center(child: Text('차트 데이터 없음 (다음 배치 때 생김)'))
-                            : PriceChart(bars: mBars, slots: slots, markIndex: win),
-                      ),
+                      Builder(builder: (context) {
+                        final r20 = ((m['ret20'] as num?) ?? 0).toDouble();
+                        return _ChartCard(
+                          title: '패턴 ${_sel + 1} · ${m['name']}',
+                          subtitle: '${m['start']} ~ ${m['end']} · 유사도 ${m['similarity']}',
+                          info: m['sim_price'] == null
+                              ? null
+                              : '가격 ${m['sim_price']} · 이평선 ${m['sim_ma']} · 거래량 ${m['sim_volume']}',
+                          border: orange,
+                          right: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                            Text('20일 후', style: t.bodySmall),
+                            Text(pct(r20),
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold, color: r20 >= 0 ? upColor : downColor)),
+                            // 20일 동안 장중 최고·최저와 그날
+                            if (m['max20'] != null)
+                              Text('최고 ${pct(m['max20'] as num?)} (${m['max_day']}일째)',
+                                  style: t.bodySmall?.copyWith(color: upColor)),
+                            if (m['min20'] != null)
+                              Text('최저 ${pct(m['min20'] as num?)} (${m['min_day']}일째)',
+                                  style: t.bodySmall?.copyWith(color: downColor)),
+                          ]),
+                          child: mBars.isEmpty
+                              ? const Center(child: Text('차트 데이터 없음 (다음 배치 때 생김)'))
+                              : PriceChart(bars: mBars, slots: slots, markIndex: win),
+                        );
+                      }),
                     // ③ 수익률 겹쳐 보기
                     if (m != null)
                       Card(
@@ -128,55 +146,6 @@ class _SimilarScreenState extends State<SimilarScreen> {
                           ]),
                         ),
                       ),
-                    if (m != null)
-                      Builder(builder: (context) {
-                        final e = MapEntry(_sel, m!);
-                        final mm = e.value;
-                      final r20 = ((mm['ret20'] as num?) ?? 0).toDouble();
-                      final selected = e.key == _sel;
-                      return Card(
-                        shape: selected
-                            ? RoundedRectangleBorder(
-                                side: const BorderSide(color: orange, width: 2), borderRadius: BorderRadius.circular(12))
-                            : null,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () => _select(e.key),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(children: [
-                              Expanded(
-                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  Text('패턴 ${e.key + 1} · ${mm['name']}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                                  Text('${mm['start']} ~ ${mm['end']} · 유사도 ${mm['similarity']}', style: t.bodySmall),
-                                  if (mm['sim_price'] != null)
-                                    Text('가격 ${mm['sim_price']} · 이평선 ${mm['sim_ma']} · 거래량 ${mm['sim_volume']}',
-                                        style: t.bodySmall?.copyWith(color: Colors.grey)),
-                                  const SizedBox(height: 4),
-                                  // 작은 차트: 비슷했던 20일(진한 선) | 점선 | 그 뒤 20일(연한 선)
-                                  Sparkline(values: [..._path(mm['path']), ..._path(mm['future'])], height: 36,
-                                      split: _path(mm['path']).length, color: selected ? orange : null),
-                                ]),
-                              ),
-                              const SizedBox(width: 12),
-                              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                                Text('20일 후', style: t.bodySmall),
-                                Text(pct(r20),
-                                    style: TextStyle(
-                                        fontSize: 18, fontWeight: FontWeight.bold, color: r20 >= 0 ? upColor : downColor)),
-                                // 20일 동안 장중 최고·최저와 그날 (2일째 상한가 후 음봉 같은 경우도 보이게)
-                                if (mm['max20'] != null)
-                                  Text('최고 ${pct(mm['max20'] as num?)} (${mm['max_day']}일째)',
-                                      style: t.bodySmall?.copyWith(color: upColor)),
-                                if (mm['min20'] != null)
-                                  Text('최저 ${pct(mm['min20'] as num?)} (${mm['min_day']}일째)',
-                                      style: t.bodySmall?.copyWith(color: downColor)),
-                              ]),
-                            ]),
-                          ),
-                        ),
-                      );
-                      }),
                   ]),
                 ),
                 const SizedBox(width: 6),
@@ -255,26 +224,39 @@ class _SimilarScreenState extends State<SimilarScreen> {
 }
 
 class _ChartCard extends StatelessWidget {
-  const _ChartCard({required this.title, this.subtitle, required this.child, this.trailing, this.trailingColor});
+  const _ChartCard(
+      {required this.title, this.subtitle, required this.child, this.trailing, this.trailingColor, this.info, this.right, this.border});
   final String title;
   final String? subtitle;
+  final String? info; // 회색 한 줄 (세부 유사도)
   final Widget child;
   final String? trailing;
   final Color? trailingColor;
+  final Widget? right; // 오른쪽 위 (20일 후 · 최고 · 최저)
+  final Color? border;
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     return Card(
+      shape: border == null
+          ? null
+          : RoundedRectangleBorder(side: BorderSide(color: border!, width: 2), borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(child: Text(title, style: t.titleSmall)),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: t.titleSmall),
+                if (subtitle != null) Text(subtitle!, style: t.bodySmall),
+                if (info != null) Text(info!, style: t.bodySmall?.copyWith(color: Colors.grey)),
+              ]),
+            ),
             if (trailing != null)
               Text(trailing!, style: TextStyle(fontWeight: FontWeight.bold, color: trailingColor)),
+            if (right != null) right!,
           ]),
-          if (subtitle != null) Text(subtitle!, style: t.bodySmall),
           const SizedBox(height: 8),
           SizedBox(height: 230, child: child),
         ]),

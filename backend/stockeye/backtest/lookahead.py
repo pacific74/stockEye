@@ -31,7 +31,7 @@ from ..indicators import compute_features
 
 FEATURE_COLS_SKIP = {"code"}
 # 미래 가격을 일부러 쓰는 '성과 측정 전용' 파일 (점수·선정·매매 결정에는 쓰지 않음) — 늘릴 때는 신중히
-OUTCOME_ONLY = {"lookahead.py", "v3_outcome.py", "score_power.py", "validation.py"}
+OUTCOME_ONLY = {"lookahead.py", "v3_outcome.py", "score_power.py", "validation.py", "hitrate.py"}
 BAD_PATTERNS = [
     (re.compile(r"\.shift\(\s*-\s*\d"), "shift(음수) → 미래 값을 당겨옴"),
     (re.compile(r"center\s*=\s*True"), "rolling(center=True) → 미래 구간 포함"),

@@ -8,7 +8,7 @@ from . import uplimit as ul
 from .early import wide
 from .nextday import common_stock
 from .trade_plan import round_tick
-from .v2_report import candidate_dict, below_ma5
+from .v2_report import candidate_dict, below_ma5, rr_outside
 
 TOP = 30
 MIN_VALUE = 5.0          # 억원: 20일 평균 거래대금이 이보다 작으면 제외 (10억 미만은 경고)
@@ -40,9 +40,10 @@ def build_section(pit, view, x: pd.DataFrame, ev: pd.DataFrame, name_of: dict, t
     weak = (market or {}).get("mood") == "약세"
     rows = []
     b5 = below_ma5(x)                                     # 5일선 아래 → 추천 제외
+    ro = rr_outside(ev, cand.index, "uplimit")            # 손익비 구간 밖 → 추천 제외
     for code, r in cand.iterrows():
         rr = r.to_dict()
-        why = ["5일선 아래"] if code in b5 else []
+        why = (["5일선 아래"] if code in b5 else []) + ([ro[code]] if code in ro else [])
         if not common_stock(code, name_of.get(code, "")):
             why.append("우선주·스팩 등")
         if code in admin:

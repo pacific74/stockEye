@@ -156,6 +156,36 @@ def verdict_of(r: pd.Series) -> tuple[str, str]:
     return st, "점수 부족"
 
 
+# 탭별 손익비(1차 목표 ÷ 손절, 분석일 종가 기준) 허용 구간 — 2026-10-11, 적중률 5년으로 정함
+#   설계(2021~2024)에서 고르고 확인(2025~)에서 점검. 하한 이상 · 상한 미만 (None = 제한 없음). V3 는 개선이 확인되지 않아 없음
+RR_BAND = {"nextday": (1.0, 1.3), "early": (0.8, 2.0), "reversal": (1.2, None), "uplimit": (1.0, 1.3)}
+
+
+def rr_in_band(rr, tab: str) -> bool:
+    lo, hi = RR_BAND.get(tab, (None, None))
+    if lo is None and hi is None:
+        return True
+    if rr is None or rr != rr:
+        return False
+    return (lo is None or rr >= lo) and (hi is None or rr < hi)
+
+
+def rr_outside(ev: pd.DataFrame, codes, tab: str) -> dict:
+    """손익비가 탭 구간 밖인 종목 → {code: '손익비 0.8 (기준 1.0~1.3)'}"""
+    lo, hi = RR_BAND.get(tab, (None, None))
+    if lo is None and hi is None:
+        return {}
+    rr = ev["rr"] if "rr" in ev else pd.Series(dtype=float)
+    band = f"{lo if lo is not None else ''}~{hi if hi is not None else ''}"
+    out = {}
+    for c in codes:
+        v = rr.get(c) if c in rr.index else None
+        v = None if v is None or v != v else float(v)
+        if not rr_in_band(v, tab):
+            out[c] = f"손익비 {'-' if v is None else f'{v:.1f}'} (기준 {band})"
+    return out
+
+
 def below_ma5(x: pd.DataFrame) -> set:
     """종가가 5일선 아래인 종목 — 관심 탭(익일유망주·상승초기·추세전환·상파) 추천에서 제외 (2026-10-11 사용자 요청)"""
     if "close" not in x or "sma5" not in x:

@@ -2,7 +2,8 @@
 
 ⚠ 측정 전용: 미래 가격을 일부러 쓴다 (점수·선정 코드에서 쓰지 않음).
 
-  신호     탭마다 매일 점수 상위 3 종목 (V3 도 매일 — history_entries(every=1)). V3 외 4개 탭은 앱처럼 5일선 아래 제외
+  신호     탭마다 매일 점수 상위 3 종목 (V3 도 매일 — history_entries(every=1)). V3 외 4개 탭은 앱처럼 5일선 아래 제외,
+           손익비가 탭 구간(v2_report.RR_BAND) 밖이면 제외 → 점수 상위 20 중 구간 안 상위 3
   계획     그날 종가까지의 차트로 계산한 1·2·3차 목표가와 손절가 (앱 종목 상세와 같은 levels)
   매수     앱 매매 계획의 분할 매수 (simulate): 1차 매수구간이면 다음 날 시가에 30%, 2차 매수구간 상단에서 30%,
            3차 매수구간 상단에서 40% (levels 의 구간·비중 그대로). 20일 안에 1차 구간까지도 안 내려오면 미체결 → 제외
@@ -30,7 +31,7 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-VERSION = "HIT-1.3"
+VERSION = "HIT-1.4"
 COST = 0.25                                             # 수수료+세금 (%, 왕복)
 H = 20
 TOP = 3
@@ -167,10 +168,6 @@ def evaluate(signals: pd.DataFrame, ohlcv: pd.DataFrame, W: dict) -> pd.DataFram
         j = col_of.get(code)
         if i < 0 or j is None or code not in by:
             rec["skip"] = "데이터 없음"; out.append(rec); continue
-        if i + H >= len(idx):
-            rec["skip"] = "20일 안 지남"; out.append(rec); continue
-        if jump[i + 1:i + H + 1, j].any():
-            rec["skip"] = "수정주가 이상"; out.append(rec); continue
         g, dts = by[code]
         e = int(np.searchsorted(dts, np.datetime64(pd.Timestamp(d)), side="right"))
         gg = g.iloc[max(0, e - 260):e]
@@ -180,6 +177,12 @@ def evaluate(signals: pd.DataFrame, ohlcv: pd.DataFrame, W: dict) -> pd.DataFram
             lv = None
         if not lv or not lv.get("target1") or not lv.get("stop"):
             rec["skip"] = "목표·손절 계산 불가"; out.append(rec); continue
+        c0 = float(C[i, j])                                  # 손익비 = (1차 목표 - 종가) ÷ (종가 - 손절) — 앱과 같음
+        rec["rr"] = (float(lv["target1"]) - c0) / (c0 - float(lv["stop"])) if c0 > float(lv["stop"]) else None
+        if i + H >= len(idx):
+            rec["skip"] = "20일 안 지남"; out.append(rec); continue
+        if jump[i + 1:i + H + 1, j].any():
+            rec["skip"] = "수정주가 이상"; out.append(rec); continue
         t = tuple(float(lv.get(f"target{n}") or 0) for n in (1, 2, 3))
         zs = [(float(z["high"]), float(z["weight"])) for z in (lv.get("zones") or []) if z.get("high")]
         if not zs:
@@ -254,24 +257,39 @@ def aggregate(res: pd.DataFrame, index: pd.DataFrame | None = None) -> dict:
 
 
 # ------------------------------------------------------------------ 신호 만들기
-def signals_tabs(univ: dict, keys) -> pd.DataFrame:
+POOL = 20                                                # 손익비 구간이 있는 탭: 점수 상위 20 중에서 구간 안 상위 3
+
+
+def signals_tabs(univ: dict, keys, topn: int = TOP) -> pd.DataFrame:
     from .validation import select
     rows = []
     for k in keys:
         if k == "v3" or k not in univ:
             continue
-        p = select(univ[k], MIN_SCORE.get(k), topn=TOP)
-        rows.append(pd.DataFrame({"date": p["date"], "code": p["code"], "score": p["score"], "tab": k}))
-    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(columns=["date", "code", "score", "tab"])
+        p = select(univ[k], MIN_SCORE.get(k), topn=topn)
+        rows.append(pd.DataFrame({"date": p["date"].values, "code": p["code"].values, "score": p["score"].values, "tab": k,
+                                  "rk": p.groupby("date").cumcount().values + 1}))
+    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(columns=["date", "code", "score", "tab", "rk"])
+
+
+def pick_band(res: pd.DataFrame) -> pd.DataFrame:
+    """탭별 손익비 구간(RR_BAND) 안에서 날짜마다 점수 순 상위 TOP (구간 없는 탭은 그냥 상위 TOP)"""
+    from ..engine.v2_report import RR_BAND, rr_in_band
+    keep = []
+    for tab, g in res.groupby("tab", sort=False):
+        if tab in RR_BAND:
+            g = g[[rr_in_band(None if v is None or v != v else float(v), tab) for v in g.get("rr", pd.Series(index=g.index))]]
+        keep.append(g.sort_values(["date", "rk"]).groupby("date").head(TOP))
+    return pd.concat(keep, ignore_index=True) if keep else res
 
 
 def signals_v3(entries: list[dict]) -> pd.DataFrame:
     rows = []
     for e in entries or []:
         sc = e.get("scores") or {}
-        for c in (e.get("picks") or [])[:TOP]:
-            rows.append((pd.Timestamp(e["date"]), c, sc.get(c), "v3"))
-    return pd.DataFrame(rows, columns=["date", "code", "score", "tab"])
+        for k, c in enumerate((e.get("picks") or [])[:TOP], 1):
+            rows.append((pd.Timestamp(e["date"]), c, sc.get(c), "v3", k))
+    return pd.DataFrame(rows, columns=["date", "code", "score", "tab", "rk"])
 
 
 def run(pit, v3_entries: list[dict] | None = None, tabs=tuple(TABS), years=None, start: str = "2021-07-01") -> dict:
@@ -294,14 +312,15 @@ def run(pit, v3_entries: list[dict] | None = None, tabs=tuple(TABS), years=None,
             u = u.merge(ok, on=["date", "code"], how="left")
             u["eligible"] = u["eligible"].astype(bool) & u["_ok5"].fillna(False).astype(bool)
             univ[k] = u.drop(columns="_ok5")
-    sig = signals_tabs(univ, tabs)
+    from ..engine.v2_report import RR_BAND
+    sig = signals_tabs(univ, tabs, topn=POOL if any(t in RR_BAND for t in tabs) else TOP)   # 손익비 구간 탭은 상위 20 후보
     if "v3" in tabs and v3_entries:
         sig = pd.concat([sig, signals_v3(v3_entries)], ignore_index=True)
     if years:
         ys = {int(y) for y in years}
         sig = sig[sig["date"].dt.year.isin(ys)]
     log.info("[적중률] 신호 %d건 (%s)", len(sig), ", ".join(tabs))
-    res = evaluate(sig, oh, W)
+    res = pick_band(evaluate(sig, oh, W))                     # 손익비 구간 안 상위 3 (앱과 같은 선정)
     agg = aggregate(res, pit.index)
     log.info("[적중률] %.1f분", (time.time() - t0) / 60)
     return {"version": VERSION, "tabs": agg, "top": TOP, "horizon": H,

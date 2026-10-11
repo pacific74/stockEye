@@ -39,3 +39,14 @@ def test_merge_partial_years():
     m = hr.merge(old, new)
     assert set(m["tabs"]["early"]["years"]) == {"2024", "2025"} and m["tabs"]["early"]["years"]["2025"]["n"] == 30
     assert m["tabs"]["early"]["total"]["n"] == 40 and m["tabs"]["early"]["total"]["t1"] == 65.0
+
+
+def test_pnl_split_sell():
+    o = np.array([100, 101, 115], float); c = np.array([101, 115, 96], float)
+    # 1·2차 닿고(1/3씩 110·120) 3일째 손절(시초가 115 > 손절 95 → 95) → (110+120+95)/3 = 108.33
+    v = hr.pnl(o, c, 100.0, T, 95.0, {"t1": 2, "t2": 2, "stop": 3})
+    assert abs(v - (325 / 3 - 100 - hr.COST)) < 1e-6
+    # 아무것도 안 닿음 → 20일째(마지막) 종가
+    assert abs(hr.pnl(o, c, 100.0, T, 95.0, {}) - (96 - 100 - hr.COST)) < 1e-6
+    # 시초가가 손절보다 아래로 갭하락 → 시초가에 손절
+    assert abs(hr.pnl(np.array([90.0]), np.array([92.0]), 100.0, T, 95.0, {"stop": 1}) - (-10 - hr.COST)) < 1e-6

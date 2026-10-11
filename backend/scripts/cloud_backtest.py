@@ -52,7 +52,7 @@ def run_hitrate(sb, pit, cfg, tabs=None, years=None, v3_entries=None) -> dict:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", help="예: A,D (engine) · VALID = 상세 검증만 · HIT = 적중률만 "
+    ap.add_argument("--only", help="비우면 적중률(HIT) 전체 · VALID = 상세 검증만 · ALL = 예전 전체(V3B·V2·VALID·HIT) · HIT = 적중률만 "
                                    "(HIT:nextday,early / HIT:2024,2025 / HIT:nextday:2024 처럼 탭·연도 일부)")
     ap.add_argument("--min-score", type=float, default=75)
     args = ap.parse_args()
@@ -87,7 +87,20 @@ def main():
             log.info("[검증] %s: %s", st_["name"], st_["verdict"]["label"])
         log.info("관심종목 검증 %.0f분", (time.time() - t0) / 60)
         return
-    if not args.only:
+    if not args.only:                             # 기본(주간 배치): 관심종목 적중률만 — 앱 '검증' 화면 (2026-10-11~)
+        try:
+            from stockeye.indicators import compute_features
+            from stockeye.engine.v3_report import history_entries
+            feat = compute_features(pit.ohlcv, pit.flows, pit.fund)
+            ent1 = history_entries(pit, cfg, feat, every=1)       # V3 매일 상위
+            del feat
+        except Exception as e:  # noqa: BLE001
+            log.error("V3 매일 선정 실패: %s", e)
+            ent1 = None
+        run_hitrate(sb, pit, cfg, v3_entries=ent1)
+        pub.publish_status(sb, "backtest", {"done": ["HIT"], "minutes": round((time.time() - t0) / 60, 1)})
+        return
+    if args.only == "ALL":                        # 예전 전체 (V3B · V2 · 앱 요청 · VALID · HIT) — 직접 실행만
         from stockeye.backtest.engine_v2 import BacktesterV2
         from stockeye.indicators import compute_features
         feat = compute_features(pit.ohlcv, pit.flows, pit.fund)

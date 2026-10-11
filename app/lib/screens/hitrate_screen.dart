@@ -5,7 +5,7 @@ import '../widgets/common.dart';
 
 /// 관심종목 적중률 (HIT-1.0) — 검증 탭 맨 위
 ///   탭마다 매일 점수 상위 3 → 다음 날 시가 매수 → 20거래일 안에 1·2·3차 목표 / 손절 / 보합
-///   연도별 표 → 연도를 누르면 분기, 칸(1·2·3차·손절)을 누르면 며칠째에 닿았는지 1~20일 분포
+///   연도별 표(승률 · 평균 손익) → 연도를 누르면 분기, 칸(1·2·3차·손절)을 누르면 며칠째에 닿았는지 1~20일 분포
 Future<Json> loadHitRate() => Api.latestBacktest(strategy: 'HIT');
 
 const _cols = [('t1', '1차'), ('t2', '2차'), ('t3', '3차'), ('stop', '손절'), ('flat', '보합')];
@@ -57,7 +57,10 @@ class _HitRateSectionState extends State<HitRateSection> {
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           SectionTitle('관심종목 적중률', trailing: Text('${r['end'] ?? ''} 기준', style: t.bodySmall)),
           Text('탭마다 매일 상위 3종목 → 다음 날 시가 매수 → 20거래일 안에 차트 목표가·손절가 중 어디에 닿았나. '
-              '승률 = 목표 ÷ (목표 + 손절). 연도를 누르면 분기, 숫자를 누르면 며칠째에 닿았는지 보여요.',
+              '승률 = 목표 ÷ (목표 + 손절). '
+              '손익 = 목표마다 1/3씩 팔고, 남은 몫은 손절가나 20일째 종가에 판 평균 수익 (수수료·세금 0.25% 뺌). '
+              '승률이 높아도 손익이 마이너스면 손절 한 번이 목표 여러 번을 까먹는다는 뜻이에요. '
+              '연도를 누르면 분기, 숫자를 누르면 며칠째에 닿았는지 보여요.',
               style: t.bodySmall?.copyWith(color: Colors.grey)),
           const SizedBox(height: 8),
           Wrap(spacing: 6, runSpacing: 4, children: [
@@ -98,9 +101,10 @@ class _HitRateSectionState extends State<HitRateSection> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(children: [
-        SizedBox(width: 58, child: Text('년도', style: s)),
-        for (final c in _cols) Expanded(child: Text(c.$2, textAlign: TextAlign.right, style: s)),
-        Expanded(child: Text('승률', textAlign: TextAlign.right, style: s)),
+        SizedBox(width: 52, child: Text('년도', style: s)),
+        for (final c in _cols) Expanded(flex: 5, child: Text(c.$2, textAlign: TextAlign.right, style: s)),
+        Expanded(flex: 5, child: Text('승률', textAlign: TextAlign.right, style: s)),
+        Expanded(flex: 6, child: Text('손익', textAlign: TextAlign.right, style: s)),
       ]),
     );
   }
@@ -110,7 +114,8 @@ class _HitRateSectionState extends State<HitRateSection> {
       {bool bold = false, bool sub = false, String title = '', VoidCallback? expand, bool expanded = false}) {
     final t = Theme.of(context).textTheme;
     if ((s['n'] ?? 0) == 0) return const SizedBox.shrink();
-    final base = (sub ? t.bodySmall : t.bodyMedium)?.copyWith(fontWeight: bold ? FontWeight.bold : null);
+    final base = t.bodySmall?.copyWith(fontSize: sub ? 11 : 12.5, fontWeight: bold ? FontWeight.bold : null);
+    final pnl = s['pnl'] as num?;
     final issue = s['issue'] as String?;
     final kospi = s['kospi'] as num?;
     return InkWell(
@@ -120,7 +125,7 @@ class _HitRateSectionState extends State<HitRateSection> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             SizedBox(
-              width: 58,
+              width: 52,
               child: Row(children: [
                 Flexible(child: Text(label, style: base, overflow: TextOverflow.ellipsis)),
                 if (expand != null) Icon(expanded ? Icons.expand_less : Icons.expand_more, size: 14, color: Colors.grey),
@@ -128,6 +133,7 @@ class _HitRateSectionState extends State<HitRateSection> {
             ),
             for (final c in _cols)
               Expanded(
+                flex: 5,
                 child: InkWell(
                   onTap: c.$1 == 'flat' ? null : () => _showDays(context, title, c.$1, c.$2, s),
                   child: Text('${(s[c.$1] as num?)?.toStringAsFixed(0) ?? '-'}%',
@@ -139,8 +145,18 @@ class _HitRateSectionState extends State<HitRateSection> {
                 ),
               ),
             Expanded(
+              flex: 5,
               child: Text(s['win'] == null ? '-' : '${(s['win'] as num).toStringAsFixed(0)}%',
                   textAlign: TextAlign.right, style: base?.copyWith(fontWeight: FontWeight.bold)),
+            ),
+            // 평균 손익 (1/3씩 분할 매도, 비용 뺀 뒤)
+            Expanded(
+              flex: 6,
+              child: Text(pnl == null ? '-' : '${pnl >= 0 ? '+' : ''}${pnl.toStringAsFixed(1)}%',
+                  textAlign: TextAlign.right,
+                  style: base?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: pnl == null ? null : (pnl >= 0 ? const Color(0xFFD32F2F) : const Color(0xFF1565C0)))),
             ),
           ]),
           if ((issue != null && issue.isNotEmpty) || kospi != null)

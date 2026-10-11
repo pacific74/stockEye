@@ -1,4 +1,12 @@
-# 매주 토요일 10:00(한국시간): 전략 A~E + 종합 엔진 5년 백테스트 → 앱의 백테스트 화면
+# 매주 토요일 10:00(한국시간): 관심종목 적중률(HIT) → 앱 '검증' 화면
+# 수동 실행(Run workflow) only 칸:
+#   비움 또는 HIT     = 적중률 전체 (5개 탭 × 5년, 1·2·3차 목표/손절, 평균 손익)
+#   HIT:nextday       = 적중률, 탭 하나 (여러 개: HIT:nextday,early)
+#   HIT:2025          = 적중률, 연도 하나 (여러 개: HIT:2024,2025)
+#   HIT:early:2024,2025 = 적중률, 탭 + 연도
+#   탭 이름: v3 · nextday(익일유망주) · early(상승초기) · reversal(추세전환) · uplimit(상파)
+#   일부만 돌리면 나머지 탭·연도는 이전 결과를 그대로 두고 합친다.
+#   (예전 검증, 앱에는 안 보임) VALID = 상세 검증 · ALL = V3 기준 전략·V2 엔진·상세 검증·적중률 전부 (몇 시간)
 name: weekly-backtest
 
 on:
@@ -7,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       only:
-        description: "일부만 (예: VALID = 관심종목 검증만 · A,D / engine). 비우면 전부"
+        description: "비우면 적중률 전체 | HIT:nextday=탭 하나(v3·nextday·early·reversal·uplimit, 여러개는 쉼표) | HIT:2025=연도 | HIT:early:2024,2025=탭+연도"
         required: false
         default: ""
 

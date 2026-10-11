@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'format.dart';
+import 'nextday.dart' show gradeColor, liveColor;
 import 'widgets/common.dart';
 
 /// 후보 카드 아래 한 줄: 매수구간 여부 칩 + "지금 사면 목표 +x% · 손절 -y% · 손익비 1:z"
@@ -53,45 +54,113 @@ Widget planChip(String s, Color color) => Container(
 
 class PlanLine extends StatelessWidget {
   const PlanLine(
-      {super.key, required this.c, this.price, this.live = false, this.extraChips = const [], this.showPrice = false});
+      {super.key, required this.c, this.price, this.live = false, this.extraChips = const [], this.showPrice = false, this.tab});
   final Json c;
   final double? price;
   final bool live; // true = 지금 시세 기준, false = 분석일 종가 기준
   final List<Widget> extraChips;
   final bool showPrice; // 관심 탭 목록: '현재가 · 매수구간' 한 줄 추가
+  final String? tab; // 어느 탭 종목인지 → 탭별 유형·태그 칩과 확인 가격 줄
 
   @override
   Widget build(BuildContext context) {
     final s = PlanStatus.of(c, price);
     if (s == null) return const SizedBox.shrink();
-    final t = Theme.of(context).textTheme;
     final tags = (c['tags'] is List) ? (c['tags'] as List).map((e) => '$e').toList() : <String>[];
     final p = asMap(c['plan']);
     final px = price ?? (p['price'] as num?)?.toDouble();
     final lo = p['entry_low'] as num?, hi = p['entry_high'] as num?;
+    final zoneTxt = lo != null && hi != null ? '${num0(lo)}~${num0(hi)}' : null;
+    final alert = c['market_alert'] as String?;
+    final tc = tabChipTexts(c, tab);
+    final seen = tc.map((e) => e.$1).toSet();
+    final chips = [for (final x in tc) planChip(x.$1, x.$2)];
+    final watch = tabWatch(context, c, tab);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      // 지수·업종 급락 → 매수 주의
+      if (alert != null)
+        Padding(padding: const EdgeInsets.only(top: 3), child: InfoBox('⚠ $alert', color: Colors.orange, bold: true, fill: true)),
+      const SizedBox(height: 3),
+      // 한 줄: 매수구간 상태 + 탭별 유형·태그 (같은 글자는 한 번만)
+      infoBoxes([
+        planChip(s.zone, s.color),
+        // 매수구간 칩 옆에 구간 가격 (목록은 아래 줄에 이미 있음)
+        if (!showPrice && zoneTxt != null) InfoBox(zoneTxt, color: s.color),
+        ...chips,
+        ...extraChips,
+        for (final tg in tags.where((x) => !seen.contains(x)).take(2)) planChip(strategyLabels[tg] ?? tg, Colors.blueGrey),
+      ]),
+      if (watch != null) Padding(padding: const EdgeInsets.only(top: 3), child: watch),
       if (showPrice)
         Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Text(
-              '${live ? '현재가' : '기준가'} ${won(px)}'
-              '${lo != null && hi != null ? ' · 매수구간 ${num0(lo)}~${num0(hi)}' : ''}',
-              style: t.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+          padding: const EdgeInsets.only(top: 3),
+          child: infoBoxes([
+            InfoBox('${live ? '현재가' : '기준가'} ${won(px)}', bold: true),
+            if (zoneTxt != null) InfoBox('매수구간 $zoneTxt'),
+          ]),
         ),
-      const SizedBox(height: 3),
-      Wrap(spacing: 4, runSpacing: 2, children: [
-        planChip(s.zone, s.color),
-        ...extraChips,
-        for (final tg in tags.take(2)) planChip(strategyLabels[tg] ?? tg, Colors.blueGrey),
-      ]),
       if (s.up != null && s.down != null)
         Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Text(
-              '목표 ${pct(s.up)} · 손절 ${pct(s.down)}'
-              '${s.rr == null ? '' : ' · 손익비 1:${s.rr!.toStringAsFixed(1)}'}',
-              style: t.bodySmall),
+          padding: const EdgeInsets.only(top: 3),
+          child: infoBoxes([
+            InfoBox('목표 ${pct(s.up)}', color: upColor),
+            InfoBox('손절 ${pct(s.down)}', color: downColor),
+            if (s.rr != null) InfoBox('손익비 1:${s.rr!.toStringAsFixed(1)}'),
+          ]),
         ),
     ]);
   }
+}
+
+
+/// 탭별 유형·태그·경고 칩 글자와 색 (관심 목록 · 메인 금일 관심주 · 종목 상세 공통)
+List<(String, Color)> tabChipTexts(Json c, String? tab) {
+  final out = <(String, Color)>[];
+  if (tab == 'nextday') {
+    final v = asMap(c['nextday']);
+    if (v.isEmpty) return out;
+    if (v['type'] != null) out.add(('${v['type']}', gradeColor(v['grade'] as String?)));
+    for (final tg in (v['tags'] as List? ?? const [])) {
+      out.add(('$tg', Colors.orange));
+    }
+  } else if (tab == 'uplimit') {
+    final v = asMap(c['uplimit']);
+    if (v.isEmpty) return out;
+    if (v['label'] != null) out.add(('${v['label']}', Colors.red));
+    for (final w in (v['warnings'] as List? ?? const []).take(2)) {
+      out.add(('$w'.split(' — ').first, Colors.orange));
+    }
+    final live = asMap(v['live']);
+    if (live.isNotEmpty) out.add(('${live['status']}', Colors.teal));
+  }
+  // 같은 글자 한 번만
+  final seen = <String>{};
+  return [for (final x in out) if (seen.add(x.$1)) x];
+}
+
+/// 탭별 확인 가격 줄: 익일유망주 = 종가·돌파·지지·추격 금지 (장중이면 지금 상태), 상파 = 지지 가격
+Widget? tabWatch(BuildContext context, Json c, String? tab) {
+  final t = Theme.of(context).textTheme;
+  if (tab == 'nextday') {
+    final v = asMap(c['nextday']);
+    final w = asMap(v['watch']), live = asMap(v['live']);
+    String p(num? x) => x == null ? '-' : '${x >= 0 ? '+' : ''}${x.toStringAsFixed(1)}%';
+    if (live.isNotEmpty) {
+      return Text('${live['time']} 지금 ${num0(live['price'] as num?)} (${p(live['chg'] as num?)}) · 시초 갭 ${p(live['gap'] as num?)} · ${live['status']}',
+          style: t.bodySmall?.copyWith(color: liveColor(live['status'] as String?), fontWeight: FontWeight.w600));
+    }
+    if (w.isEmpty) return null;
+    return infoBoxes([
+      InfoBox('종가 ${num0(w['close'] as num?)}'),
+      InfoBox('돌파 ${num0(w['breakout'] as num?)}', color: upColor),
+      InfoBox('지지 ${num0(w['support'] as num?)}', color: downColor),
+      InfoBox('추격 금지 ${num0(w['no_chase'] as num?)}↑', color: Colors.orange),
+    ]);
+  }
+  if (tab == 'uplimit') {
+    final w = asMap(asMap(c['uplimit'])['watch']);
+    if (w['support'] == null) return null;
+    return infoBoxes([InfoBox('지지 ${num0(w['support'] as num?)} (${w['support_label'] ?? '상한가 당일 저가'})', color: downColor)]);
+  }
+  return null;
 }

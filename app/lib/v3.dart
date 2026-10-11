@@ -85,7 +85,7 @@ class V3PickTile extends StatelessWidget {
         leading: CircleAvatar(child: Text('$rank')),
         title: StockName('${c['name']}', market: c['market'] as String?),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          PlanLine(c: c, price: price, live: price != null, showPrice: true),
+          PlanLine(c: c, price: price, live: price != null, showPrice: true, tab: 'v3'),
         ]),
         isThreeLine: true,
         trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [

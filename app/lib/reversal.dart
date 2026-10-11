@@ -77,12 +77,6 @@ Color reversalColor(num? s) => s == null
             ? Colors.indigo
             : Colors.blueGrey;
 
-Widget _chip(String s, Color color) => Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.13), borderRadius: BorderRadius.circular(6)),
-      child: Text(s, style: TextStyle(fontSize: 11, color: color)),
-    );
-
 /// 목록 한 줄: 총점(소수점) · 판정 · 5개 항목
 class ReversalTile extends StatelessWidget {
   const ReversalTile({super.key, required this.c, required this.rank, this.kind = reversalKind, this.price});
@@ -102,17 +96,7 @@ class ReversalTile extends StatelessWidget {
         leading: CircleAvatar(child: Text('$rank')),
         title: StockName('${c['name']}', market: c['market'] as String?),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const SizedBox(height: 2),
-          Wrap(spacing: 4, runSpacing: 2, children: [
-            if (kind.field == 'uplimit') ...[
-              _chip('${v['label'] ?? ''}', Colors.red),
-              for (final w in (v['warnings'] is List ? (v['warnings'] as List).take(2) : const []))
-                _chip('${w}'.split(' — ').first, Colors.orange),
-              if (asMap(v['live']).isNotEmpty) _chip('${asMap(v['live'])['status']}', Colors.teal),
-            ],
-          ]),
-          const SizedBox(height: 2),
-          PlanLine(c: c, price: price, live: price != null, showPrice: true),
+          PlanLine(c: c, price: price, live: price != null, showPrice: true, tab: kind.field),
         ]),
         isThreeLine: true,
         trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [

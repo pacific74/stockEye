@@ -48,3 +48,20 @@ def test_byte_limit_trims_per_tab():
     t, b = digest.build(r)
     assert len(b.encode("utf-8")) <= digest.MAX_BYTES
     assert "**[새탭0]**" in b                                       # 새 탭도 자동 포함
+
+
+def test_drop_alert_in_digest():
+    from stockeye.analysis.market_alert import annotate
+    r = _report()
+    r["market"]["indices"] = [{"code": "KOSDAQ", "change_pct": -3.4}, {"code": "KOSPI", "change_pct": -1.0}]
+    r["sectors"] = [{"group": "반도체", "ret1_pct": -4.2}, {"group": "은행", "ret1_pct": 0.5}]
+    c = r["strategies"]["v3"]["candidates"][0]
+    c.update({"market": "KOSPI", "sector": "반도체"})
+    r["strategies"]["v3"]["candidates"][1]["market"] = "KOSDAQ"
+    annotate(r)
+    assert c["market_alert"] == "업종 급락 (반도체 -4.2%) · 매수 주의"
+    assert r["strategies"]["v3"]["candidates"][1]["market_alert"].startswith("종합지수 급락 (코스닥 -3.4%)")
+    assert "market_alert" not in r["strategies"]["v3"]["candidates"][2]
+    t, b = digest.build(r)
+    assert "⚠ **종합지수 급락 · 매수 주의**" in b and "코스닥 -3.4% · 반도체 -4.2%" in b
+    assert "⚠ 업종 급락 (반도체 -4.2%) · 매수 주의" in b

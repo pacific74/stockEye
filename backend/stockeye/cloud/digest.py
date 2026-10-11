@@ -97,6 +97,13 @@ def today_brief(report: dict) -> list[str]:
             + f"{m.get('mood_icon', '')} **{m.get('mood', '')}**"
         lines.append(f"- {first}{BR}")
         lines.append(f"{IND}{second}")
+    da = m.get("drop_alert") or {}
+    if da.get("index") or da.get("groups"):                 # 종합지수·업종 −3% 이하 급락
+        bits = [f"{i['name']} {i['change_pct']:+.1f}%" for i in da.get("index", [])]
+        gs = [f"{g['group']} {g['ret1_pct']:+.1f}%" for g in da.get("groups", [])[:3]]
+        head = "종합지수 급락" if bits else "업종 급락"
+        lines.append(f"- ⚠ **{head} · 매수 주의**{BR}")
+        lines.append(f"{NB}" + " · ".join(bits + gs))
     sec = [s for s in (report.get("sectors") or [])][:3]
     if sec:
         lines.append("- 강한 업종: " + ", ".join(f"{s['group']}({_pct(s.get('ret1_pct'))})" for s in sec))
@@ -170,7 +177,9 @@ def picks(report: dict, per_tab: int = 3) -> list[str]:
             sc = c.get("score")
             lines.append(f"{n}\\. **{c['name']}** ({c['code']})" + (f" · {sc:.0f}점" if sc is not None else "") + BR)
             lines.append(f"{NB}현 {_won(p.get('price'))} · 목 {_won(p.get('target1'))} · 손 {_won(p.get('stop'))}"
-                         + (BR if n < len(cs) else ""))
+                         + (BR if n < len(cs) or c.get("market_alert") else ""))
+            if c.get("market_alert"):                       # 지수·업종 급락 → 매수 주의
+                lines.append(f"{NB}⚠ {c['market_alert']}" + (BR if n < len(cs) else ""))
     return lines
 
 

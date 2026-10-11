@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../format.dart';
 import '../widgets/common.dart';
+import '../widgets/nav.dart';
+import '../widgets/top_actions.dart';
 
 /// 관심종목 검증 (VAL-1.0) — 주간 배치가 backtests 'VALID' 에 올린 결과
 ///   전략별 판정 → 상세: 비교군 · 기간별 가격 경로 · 5분위 · Rank IC · 부트스트랩 · 목표/손절 · 실현 매매
@@ -121,7 +123,8 @@ class _ValidationDetailState extends State<ValidationDetail> {
     final settings = asMap(widget.all['settings']);
     final cost = asMap(settings['cost']);
     return Scaffold(
-      appBar: AppBar(title: Text('${s['name']} 검증')),
+      bottomNavigationBar: const MainNavBar(),
+      appBar: AppBar(title: LogoTitle('${s['name']} 검증'), actions: topActions(context)),
       body: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 32), children: [
         // 판정
         Card(

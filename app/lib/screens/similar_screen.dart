@@ -186,8 +186,11 @@ class _SimilarScreenState extends State<SimilarScreen> {
                             Sparkline(values: [..._path(mm['path']), ..._path(mm['future'])], height: 36,
                                 split: _path(mm['path']).length, color: selected ? orange : null),
                             const SizedBox(height: 2),
-                            Text('종가  5일 ${pct(mm['ret5'] as num?)} · 10일 ${pct(mm['ret10'] as num?)} · 20일 ${pct(mm['ret20'] as num?)}',
-                                style: t.bodySmall),
+                            infoBoxes([
+                              for (final h in const [5, 10, 20])
+                                InfoBox('종가 $h일 ${pct(mm['ret$h'] as num?)}',
+                                    color: ((mm['ret$h'] as num?) ?? 0) >= 0 ? upColor : downColor),
+                            ]),
                           ]),
                         ),
                         const SizedBox(width: 12),

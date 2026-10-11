@@ -159,6 +159,12 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
             targets += v["candidates"][:2]
 
     # ---- AI 설명 (상위 후보) ----
+    # ---- 지수·업종 급락 경고 (−3% 이하 → 매수 주의) ----
+    try:
+        from .analysis.market_alert import annotate
+        annotate(report)
+    except Exception as e:  # noqa: BLE001
+        log.warning("급락 경고 실패: %s", e)
     if with_ai:
         ex = Explainer(cfg, data_dir(cfg) / "ai_cache")
         seen = set()

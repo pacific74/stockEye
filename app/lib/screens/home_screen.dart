@@ -182,6 +182,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     todayLabel: _liveAt == null ? '오늘' : '오늘 ${_hm(_liveAt!)}',
                     yesterdayLabel: repBasis),
                 SectionTitle('금일 관심주', trailing: Text('$repLabel 분석', style: t.bodySmall)),
+                // 종합지수·업종 −3% 이하 급락 → 매수 주의
+                if (m['drop_alert'] != null) _DropAlert(a: asMap(m['drop_alert'])),
                 if (_stk?.error != null && quotes.isEmpty)
                   _Notice('지금 시세를 가져오지 못해 $repBasis 가격으로 보여줍니다. (${_stk!.error})'),
                 // 후보 탭별 3개 (탭 데이터를 못 받으면 V3 상위 3)
@@ -445,7 +447,7 @@ class _LiveCandidateTile extends StatelessWidget {
         leading: CircleAvatar(child: Text('${c['rank']}')),
         title: StockName('${c['name']}', market: c['market'] as String?, score: score),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          PlanLine(c: c, price: q?.price, live: q != null),
+          PlanLine(c: c, price: q?.price, live: q != null, tab: c['_tab'] as String?),
           if (nxt) Text('넥스트레이드 ${num0(q!.overPrice)} (${pct(q!.overRatio)})', style: t.bodySmall),
         ]),
         isThreeLine: true,
@@ -579,5 +581,38 @@ class _SectorCompare extends StatelessWidget {
           _row(context, i + 1, g, Text('${g['score']}', style: const TextStyle(fontWeight: FontWeight.bold))),
       ]),
     ]);
+  }
+}
+
+
+/// 금일 관심주 위: 종합지수·업종 급락 경고 (리포트의 지수·업종 등락률 −3% 이하)
+class _DropAlert extends StatelessWidget {
+  const _DropAlert({required this.a});
+  final Json a;
+
+  @override
+  Widget build(BuildContext context) {
+    final idx = asList(a['index']);
+    final grp = asList(a['groups']);
+    if (idx.isEmpty && grp.isEmpty) return const SizedBox.shrink();
+    final t = Theme.of(context).textTheme;
+    return Card(
+      color: Colors.orange.withValues(alpha: 0.12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(idx.isNotEmpty ? '⚠ 종합지수 급락 · 매수 주의' : '⚠ 업종 급락 · 매수 주의',
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+          const SizedBox(height: 6),
+          infoBoxes([
+            for (final i in idx) InfoBox('${i['name']} ${pct(i['change_pct'] as num?)}', color: downColor, bold: true),
+            for (final g in grp.take(6)) InfoBox('${g['group']} ${pct(g['ret1_pct'] as num?)}', color: downColor),
+          ]),
+          const SizedBox(height: 4),
+          Text('해당 시장·업종 종목에는 아래 목록에 ⚠ 표시. 급락 다음 날은 변동이 커서 분할·관망을 권합니다.',
+              style: t.bodySmall),
+        ]),
+      ),
+    );
   }
 }

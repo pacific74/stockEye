@@ -4,6 +4,7 @@ import '../api.dart';
 import '../format.dart';
 import '../live.dart';
 import '../nextday.dart';
+import '../plan_line.dart';
 import '../reversal.dart';
 import '../widgets/common.dart';
 import '../widgets/price_chart.dart';
@@ -132,7 +133,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
               // ---- V3 기준 전략: 오늘 상태 · 점수 · 매수/매도 예정 ----
               // 후보 탭에서 열면: '탭 점수 (V3 점수)' 한 장, 아니면 V3 카드
               if (widget.source != null && widget.source != 'v3' && asMap(c[widget.source]).isNotEmpty)
-                _TabHead(source: widget.source!, v: asMap(c[widget.source]), v3score: v3['score'] as num?)
+                _TabHead(source: widget.source!, v: asMap(c[widget.source]), v3score: v3['score'] as num?, c: c)
               else
                 _V3Head(v: v3),
 
@@ -580,9 +581,10 @@ class _V3Head extends StatelessWidget {
 
 /// 후보 탭(익일유망주·상승초기·추세전환)에서 열었을 때: 그 탭 점수·등급 (목록에 보이던 점수와 같음)
 class _TabHead extends StatelessWidget {
-  const _TabHead({required this.source, required this.v, this.v3score});
+  const _TabHead({required this.source, required this.v, this.v3score, this.c = const {}});
   final String source;
   final Json v;
+  final Json c; // 후보 전체 (유형·태그 칩, 확인 가격 줄)
   final num? v3score;
 
   static const _titles = {'nextday': '익일유망주', 'early': '상승초기', 'reversal': '추세전환', 'uplimit': '상파'};
@@ -602,7 +604,13 @@ class _TabHead extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${_titles[source] ?? source} ${label.isEmpty ? '' : label}',
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo)),
-              if (type != null) ...[const SizedBox(height: 4), Text(type, style: t.bodySmall)],
+              if (type != null && tabChipTexts(c, source).isEmpty) ...[const SizedBox(height: 4), Text(type, style: t.bodySmall)],
+              // 관심 목록과 같은 유형·태그 칩 + 확인 가격 (익일유망주·상파)
+              if (tabChipTexts(c, source).isNotEmpty) ...[
+                const SizedBox(height: 6),
+                infoBoxes([for (final x in tabChipTexts(c, source)) planChip(x.$1, x.$2)]),
+              ],
+              if (tabWatch(context, c, source) != null) ...[const SizedBox(height: 4), tabWatch(context, c, source)!],
             ]),
           ),
           Text.rich(TextSpan(children: [

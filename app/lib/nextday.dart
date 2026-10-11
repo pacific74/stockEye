@@ -47,12 +47,8 @@ class NextdayTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = asMap(c['nextday']);
-    final w = asMap(v['watch']);
-    final live = asMap(v['live']);
-    final tags = (v['tags'] is List) ? (v['tags'] as List).map((e) => '$e').toList() : <String>[];
     final score = v['score'] as num?;
     final col = gradeColor(v['grade'] as String?);
-    final t = Theme.of(context).textTheme;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
@@ -61,19 +57,8 @@ class NextdayTile extends StatelessWidget {
             child: Text('${v['grade'] ?? rank}', style: TextStyle(color: col, fontWeight: FontWeight.bold))),
         title: StockName('${c['name']}', market: c['market'] as String?),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const SizedBox(height: 2),
-          Wrap(spacing: 4, runSpacing: 2, children: [
-            _chip('${v['type'] ?? ''}', col),
-            for (final tg in tags) _chip(tg, Colors.orange),
-          ]),
-          const SizedBox(height: 2),
-          if (live.isNotEmpty)
-            Text('${live['time']} 지금 ${num0(live['price'] as num?)} (${_pct(live['chg'] as num?)}) · 시초 갭 ${_pct(live['gap'] as num?)} · ${live['status']}',
-                style: t.bodySmall?.copyWith(color: liveColor(live['status'] as String?), fontWeight: FontWeight.w600))
-          else if (w.isNotEmpty)
-            Text('종가 ${num0(w['close'] as num?)} · 돌파 ${num0(w['breakout'] as num?)} · 지지 ${num0(w['support'] as num?)} · '
-                '추격 금지 ${num0(w['no_chase'] as num?)}↑', style: t.bodySmall),
-          PlanLine(c: c, price: price, live: price != null, showPrice: true),
+          // 유형·태그·매수구간 한 줄 + 종가·돌파·지지·추격 금지 + 현재가·매수구간 + 목표·손절
+          PlanLine(c: c, price: price, live: price != null, showPrice: true, tab: 'nextday'),
         ]),
         isThreeLine: true,
         trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [

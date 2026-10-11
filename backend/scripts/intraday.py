@@ -110,6 +110,11 @@ def main():
         log.warning("익일 유망주 장중 상태 실패: %s", e)
         report.get("strategies", {}).pop("nextday", None)
     report["intraday"] = {"time": hm, "coverage": round(cov, 3)}
+    try:                                      # 장중 지수·업종 급락 경고 (이어받은 후보에도 다시 붙임)
+        from stockeye.analysis.market_alert import annotate
+        annotate(report)
+    except Exception as e:  # noqa: BLE001
+        print("급락 경고 실패:", e)
     v2 = report.get("v2", {})
     print(f"장중 재분석 {report['date']} {hm}: 시장 {v2.get('market')} / {v2.get('counts')}")
     if args.dry_run:

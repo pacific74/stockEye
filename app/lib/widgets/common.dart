@@ -76,6 +76,32 @@ class MarketBadge extends StatelessWidget {
   }
 }
 
+/// 항목 하나를 네모 테두리로 (점 '·' 대신 구분) — 예: [목표 +7.0%] [손절 -7.7%] [손익비 1:0.9]
+class InfoBox extends StatelessWidget {
+  const InfoBox(this.text, {super.key, this.color, this.bold = false, this.fill = false});
+  final String text;
+  final Color? color;
+  final bool bold;
+  final bool fill; // 옅은 배경색까지 (경고 등)
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? Theme.of(context).colorScheme.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: fill ? c.withValues(alpha: 0.12) : null,
+        border: Border.all(color: c.withValues(alpha: 0.55)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(text, style: TextStyle(fontSize: 11, color: c, fontWeight: bold ? FontWeight.w600 : null)),
+    );
+  }
+}
+
+/// 네모 박스 여러 개 한 줄 (넘치면 다음 줄)
+Widget infoBoxes(List<Widget> boxes) => Wrap(spacing: 4, runSpacing: 3, children: boxes);
+
 /// 종목명 + 코스피/코스닥 + (점수)
 class StockName extends StatelessWidget {
   const StockName(this.name, {super.key, this.market, this.score, this.style});

@@ -16,12 +16,16 @@ import pandas as pd
 
 from .reversal import ramp
 
-VERSION = "ND-1.0"
+VERSION = "ND-1.1"
 GRADE_A, GRADE_B, GRADE_C = 80.0, 70.0, 60.0
 MIN_VALUE = 10.0      # 억원 (20일 평균 거래대금)
 MIN_DAYS = 120
-PARTS = {"trendA": ("추세 개선", 25), "volB": ("거래량·거래대금", 20), "priceC": ("가격 구조·종가", 20),
-         "movD": ("변동성·움직임", 15), "rsE": ("시장 대비 강도", 10), "newsF": ("재료·위험", 10)}
+PARTS = {"trendA": ("추세 개선", 20), "volB": ("거래량·거래대금", 20), "priceC": ("가격 구조·종가", 20),
+         "movD": ("변동성·움직임", 15), "rsE": ("시장 대비 강도", 10), "newsF": ("재료·위험 (공시+뉴스)", 15)}
+# 뉴스 (2026-10-12): 네이버 뉴스 최근 3일 제목 → 호재 5 · 중립/기사 없음 2.5 · 악재 0 (analysis.news_flags 가 저녁 배치에서 조정).
+#   과거 뉴스는 없으므로 점수 계산·백테스트에서는 모두 중립 2.5
+NEWS_NEUTRAL = 2.5
+
 SUBS = {
     "a_g20": ("trendA", "종가와 20일선", 6), "a_s20": ("trendA", "20일선 5일 변화", 7),
     "a_s60": ("trendA", "60일선 10일 변화", 5), "a_ma": ("trendA", "20·60일선 관계", 5),
@@ -46,7 +50,8 @@ RULES_TEXT = [
     "C 가격: 종가가 하루 범위 위쪽(70%↑) · 20일 고점 2% 이내/돌파 · 좁은 박스 상단 접근/돌파 · 긴 윗꼬리·장대 음봉 없음",
     "D 변동성: ATR 2~4% · 5일/20일 변동성 0.9~1.2배 · 좁은 범위 후 상단 접근",
     "E 강도: 오늘·5일 수익률이 코스피/코스닥 지수보다 높을수록",
-    "F 재료: 공시 없음 5점 기준 · 호재 공시 가산 · 악재 감산 (뉴스 기사는 미반영 → '정보 미확인')",
+    "A 추세 개선은 25점 기준으로 계산해 20점으로 줄여 씀 (2026-10-12)",
+    "F 재료·위험 15 = 공시 10 (없음 5점 기준 · 호재 가산 · 악재 감산) + 뉴스 5 (최근 3일 제목: 호재 5 · 중립 2.5 · 악재 0)",
     "제외: 우선주·스팩 · 120거래일 미만 · 거래대금 10억 미만 · 거래정지·관리종목 · 위험 공시·자본잠식",
     "80↑ A 우선 관찰 · 70~79 B 관심 · 60~69 C 보조 · 관찰용 (다음 날 갭·거래량·지지 확인 후 판단)",
 ]
@@ -178,7 +183,12 @@ def totals(s: dict) -> dict:
         for k, (pp, _, _) in SUBS.items():
             if pp == p:
                 tot = s[k].fillna(0) if tot is None else tot + s[k].fillna(0)
-        out[p] = tot.clip(upper=mx)
+        if p == "trendA":
+            out[p] = tot.clip(upper=25) * (20 / 25)                # 추세 개선 25 → 20 (세부 점수는 그대로, 비율로)
+        elif p == "newsF":
+            out[p] = tot.clip(upper=10) + NEWS_NEUTRAL             # 공시 10 + 뉴스 5 (중립 2.5)
+        else:
+            out[p] = tot.clip(upper=mx)
     out["total"] = sum(out[p] for p in PARTS)
     return out
 

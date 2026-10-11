@@ -15,10 +15,14 @@ import pandas as pd
 
 from .reversal import ramp
 
-VERSION = "UP-1.0"
+VERSION = "UP-1.1"
 PRIORITY, WATCH, HOLD = 80.0, 70.0, 60.0
 PARTS = {"trend25": ("단기 추세 회복", 25), "mom20": ("상승 모멘텀", 20), "mid20": ("중기 추세 개선", 20),
-         "vol20": ("거래량 확인", 20), "risk15": ("과열·변동성", 15)}
+         "vol20": ("거래량 확인", 20), "risk15": ("과열·변동성·뉴스", 15)}
+# 뉴스 (2026-10-12): 네이버 뉴스 최근 3일 제목 → 호재 5 · 중립/기사 없음 2.5 · 악재 0 (analysis.news_flags 가 저녁 배치에서 조정).
+#   과거 뉴스는 없으므로 점수 계산·백테스트에서는 모두 중립 2.5
+NEWS_NEUTRAL = 2.5
+
 SUBS = {  # 세부 항목: (상위 항목, 이름, 배점)
     "g20": ("trend25", "종가와 20일선", 5), "s20": ("trend25", "20일선 기울기", 10), "ma5": ("trend25", "5일선 > 20일선", 10),
     "r5": ("mom20", "5일 수익률", 8), "r20": ("mom20", "20일 수익률", 7), "b20": ("mom20", "20일 저점 대비 반등", 5),
@@ -136,6 +140,7 @@ def totals(s: dict) -> dict:
             if pp == p:
                 tot = s[k].fillna(0) if tot is None else tot + s[k].fillna(0)
         out[p] = tot.clip(upper=mx)
+    out["risk15"] = out["risk15"] * (10 / 15) + NEWS_NEUTRAL      # 과열·변동성 15 → 10 + 뉴스 5
     out["total"] = sum(out[p] for p in PARTS)
     return out
 

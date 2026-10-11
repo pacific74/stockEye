@@ -1,12 +1,13 @@
-"""관심 탭 상위 · 보유종목의 최근 뉴스 → 종목 상세 '최근 뉴스' + 악재 경고 + (4개 탭) 점수 반영
+"""관심 탭 상위 · 보유종목의 최근 뉴스 → 종목 상세 '최근 뉴스' + 악재 경고 + 탭 점수의 뉴스 5점 반영
 
   가져오기  탭마다 상위 TOP_PER_TAB 종목 + 보유종목, 최근 3일, 비슷한 제목 하나로 (data.naver_news)
   분류      제목 키워드 (engine.news 의 호재·악재 규칙 + 아래 '심각')
-  점수      ⚠ 과거 뉴스로 검증할 수 없어(검색 API 는 최근 기사만) 작게, 나중에 실적으로 다시 정함
-            · 심각 악재(횡령·배임·거래정지·상장폐지·감사의견·회생·부도·상장적격성) → 4개 탭 추천에서 제외
-            · 일반 악재(유상증자·CB·소송 등) → 4개 탭 점수 -NEG_PENALTY
-            · 호재 → 점수 변화 없음 (표시만)
-            · V3 는 고정 규칙이라 점수·선정은 그대로, 경고 칩만
+  점수      탭마다 뉴스 5점 (2026-10-12): 호재 5 · 중립/기사 없음 2.5 · 악재 0
+              V3 = 뉴스 5 (공시 10 과 별도) · 익일 = 재료·위험 15 안 · 상승초기 = 과열·변동성·뉴스 15 안
+              추세전환 = 뉴스 5 · 상파 = 공시·뉴스 10 안
+            점수 계산 때는 모두 중립 2.5 → 여기서 뉴스를 가져온 종목만 (점수 - 2.5) 만큼 조정하고 순위를 다시 매김
+            심각 악재(횡령·배임·거래정지·상장폐지·감사의견·회생·부도·상장적격성) → 4개 탭 추천에서 제외 (V3 는 0점만)
+            ⚠ 과거 뉴스는 없어 백테스트·적중률에서는 모두 중립 — 실제 효과는 쌓이는 기록으로 다시 확인
 """
 from __future__ import annotations
 
@@ -18,7 +19,9 @@ log = logging.getLogger(__name__)
 
 TOP_PER_TAB = 15
 SHOW = 5
-NEG_PENALTY = 3.0
+NEWS_MAX, NEWS_NEUTRAL = 5.0, 2.5
+NEWS_PTS = {"pos": 5.0, None: 2.5, "neg": 0.0, "severe": 0.0}
+NEWS_PART = {"v3": "news5", "nextday": "newsF", "early": "risk15", "reversal": "news5", "uplimit": "risk10"}
 SEVERE = ["횡령", "배임", "거래정지", "상장폐지", "상장적격성", "감사의견", "회생", "부도"]
 SCORED_TABS = ("nextday", "early", "reversal", "uplimit")
 
@@ -68,28 +71,36 @@ def annotate(report: dict, holdings: dict[str, str] | None = None, fetch=None) -
     report["news_by_code"] = news
     for k, v in strategies.items():
         cands = (v or {}).get("candidates", [])
-        for c in cands:
-            if c["code"] in news:
-                c["news"] = news[c["code"]]
-        if k not in SCORED_TABS:
-            continue
+        part = NEWS_PART.get(k)
         keep, dropped = [], []
         for c in cands:
-            n = c.get("news") or {}
-            if n.get("level") == "severe":
+            n = news.get(c["code"])
+            if n is None:
+                keep.append(c)
+                continue
+            c["news"] = n
+            if k in SCORED_TABS and n.get("level") == "severe":
                 dropped.append({"code": c["code"], "name": c.get("name"), "word": n.get("word")})
                 continue
-            if n.get("level") == "neg":
-                c["news_penalty"] = NEG_PENALTY
+            delta = NEWS_PTS.get(n.get("level"), NEWS_NEUTRAL) - NEWS_NEUTRAL
+            if part and delta:
+                c["news_delta"] = delta
                 if isinstance(c.get("score"), (int, float)):
-                    c["score"] = round(c["score"] - NEG_PENALTY, 2)
-                if isinstance(c.get(k), dict) and isinstance(c[k].get("score"), (int, float)):
-                    c[k] = {**c[k], "score": round(c[k]["score"] - NEG_PENALTY, 2)}
+                    c["score"] = round(c["score"] + delta, 2)
+                sub = c.get(k)
+                if isinstance(sub, dict):
+                    sub = {**sub}
+                    if isinstance(sub.get("score"), (int, float)):
+                        sub["score"] = round(sub["score"] + delta, 2)
+                    if isinstance(sub.get("parts"), dict) and isinstance(sub["parts"].get(part), (int, float)):
+                        sub["parts"] = {**sub["parts"], part: round(sub["parts"][part] + delta, 2)}
+                    c[k] = sub
             keep.append(c)
-        keep.sort(key=lambda c: -(c.get("score") if isinstance(c.get("score"), (int, float)) else -1e9))
-        for i, c in enumerate(keep, 1):
-            c["rank"] = i
-        v["candidates"] = keep
+        if part:
+            keep.sort(key=lambda c: -(c.get("score") if isinstance(c.get("score"), (int, float)) else -1e9))
+            for i, c in enumerate(keep, 1):
+                c["rank"] = i
+        cands[:] = keep                                       # 같은 목록 객체 유지 (report top10 등이 같이 바뀜)
         if dropped:
             v["news_excluded"] = dropped
     return news

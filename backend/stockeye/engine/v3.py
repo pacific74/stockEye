@@ -21,8 +21,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-VERSION = "V3B-2.1"
-LOCKED_AT = "2026-10-11"          # V3B-1.0: 10-08 ~ 10-10 (60점, 3항목) · V3B-2.0: 10-10 ~ 10-11 · 2.1 = 5일선 아래 제외
+VERSION = "V3B-2.2"
+LOCKED_AT = "2026-10-12"          # V3B-1.0: 10-08 ~ 10-10 · 2.0: 10-10 ~ · 2.1 = 5일선 아래 제외 · 2.2 = 공시 15 → 공시 10 + 뉴스 5
 RULES = {"top_n": 10, "every": 5, "hold": 20, "max_positions": 20, "weight": 0.05, "market_weight": 1.0,
          "on_reselect": "extend", "add_buy": False, "buy_cost": 0.0015, "sell_cost": 0.0025}
 RULES_TEXT = ["5거래일마다 V3B 상위 10개 선정 → 다음 거래일 시가 매수",
@@ -31,8 +31,12 @@ RULES_TEXT = ["5거래일마다 V3B 상위 10개 선정 → 다음 거래일 시
               "보유 중 다시 상위 10에 들면 20거래일 연장, 추가매수 없음"]
 PARTS = {"vola15": ("변동성", 15), "fin25": ("재무", 25), "pos20": ("가격위치", 20),
          "trend5": ("추세", 5), "vol5": ("거래량", 5), "value5": ("거래대금", 5), "flow10": ("수급", 10),
-         "news15": ("공시", 15)}
+         "news15": ("공시", 10), "news5": ("뉴스", 5)}      # news15 키는 그대로 (앱·기록 호환), 배점만 10
 MAX_SCORE = sum(m for _, m in PARTS.values())          # 100
+# 뉴스 (2026-10-12): 네이버 뉴스 최근 3일 제목 → 호재 5 · 중립/기사 없음 2.5 · 악재 0 (analysis.news_flags 가 저녁 배치에서 조정).
+#   과거 뉴스는 없으므로 점수 계산·백테스트에서는 모두 중립 2.5
+NEWS_NEUTRAL = 2.5
+
 
 # 앞으로의 휴장일 (주말 외) — 매도 예정일 계산용. 실제 휴장일과 다를 수 있어 앱에는 '예정'으로 표시
 KRX_HOLIDAYS = {
@@ -94,9 +98,10 @@ def score(x: pd.DataFrame, blocked: pd.Series, fin: pd.DataFrame, sector_of: dic
     v5 = x["vol5_ratio"] if "vol5_ratio" in x else pd.Series(np.nan, index=idx)
     o["vol5"] = np.select([v5.isna(), v5 > 2, v5 > 1.3, v5 < 0.6], [2.5, 0, 3, 3], default=5)
     e = ev.reindex(idx) if ev is not None else pd.DataFrame(index=idx)
-    for k, src, mul, mx in (("value5", "value", 1.0, 5), ("flow10", "flow", 10 / 15, 10), ("news15", "news", 1.0, 15)):
+    for k, src, mul, mx in (("value5", "value", 1.0, 5), ("flow10", "flow", 10 / 15, 10), ("news15", "news", 10 / 15, 10)):
         v = _num(e[src]) * mul if src in e else pd.Series(np.nan, index=idx)
         o[k] = v.fillna(mx / 2).clip(0, mx)
+    o["news5"] = NEWS_NEUTRAL                                  # 뉴스: 저녁 배치에서 상위 종목만 조정
     o["v3b"] = o[list(PARTS)].sum(axis=1)
     # 자격
     o["hot"] = ((x["ret5"] >= 0.20) | (x["ret20"] >= 0.30) | (x["rsi14"] > 75)

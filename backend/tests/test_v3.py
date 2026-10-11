@@ -6,11 +6,11 @@ from stockeye.engine import v3
 
 
 def test_rules_locked():
-    assert v3.VERSION == "V3B-2.1" and v3.LOCKED_AT == "2026-10-11"
+    assert v3.VERSION == "V3B-2.2" and v3.LOCKED_AT == "2026-10-12"
     assert v3.RULES == {"top_n": 10, "every": 5, "hold": 20, "max_positions": 20, "weight": 0.05, "market_weight": 1.0,
                         "on_reselect": "extend", "add_buy": False, "buy_cost": 0.0015, "sell_cost": 0.0025}
     assert {k: m for k, (_, m) in v3.PARTS.items()} == {"vola15": 15, "fin25": 25, "pos20": 20, "trend5": 5, "vol5": 5,
-                                                         "value5": 5, "flow10": 10, "news15": 15}
+                                                         "value5": 5, "flow10": 10, "news15": 10, "news5": 5}
 
 
 def _x(n=6):
@@ -38,7 +38,7 @@ def test_score_and_filters():
     assert o.loc["000000", "v3b"] == o.loc["000000", list(v3.PARTS)].sum()
     assert v3.MAX_SCORE == 100
     o2 = v3.score(x, blocked, pd.DataFrame(), {})               # 재무 없음 = 10점, ev 없음 = 중간값
-    assert (o2["fin25"] == 10).all() and (o2["news15"] == 7.5).all() and (o2["flow10"] == 5).all()
+    assert (o2["fin25"] == 10).all() and (o2["news15"] == 5).all() and (o2["news5"] == 2.5).all() and (o2["flow10"] == 5).all()
 
 
 def test_trend_and_ev_parts():
@@ -48,7 +48,8 @@ def test_trend_and_ev_parts():
     ev = pd.DataFrame({"value": [5, 1], "flow": [15, 3], "news": [12, 4]}, index=x.index)
     o = v3.score(x, pd.Series(False, index=x.index), pd.DataFrame(), {}, ev)
     assert list(o["trend5"]) == [5, 0] and list(o["vol5"]) == [5, 0]
-    assert list(o["value5"]) == [5, 1] and list(o["flow10"]) == [10, 2] and list(o["news15"]) == [12, 4]
+    assert list(o["value5"]) == [5, 1] and list(o["flow10"]) == [10, 2]
+    assert abs(o["news15"].iloc[0] - 8) < 1e-9 and abs(o["news15"].iloc[1] - 4 * 10 / 15) < 1e-9   # 공시 15 → 10 비율
     assert o.loc["000000", "v3b"] - o.loc["000001", "v3b"] >= 25          # 추세 꺾인 종목은 크게 밀림
 
 

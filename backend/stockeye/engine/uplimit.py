@@ -28,9 +28,13 @@ import pandas as pd
 from .reversal import ramp
 from .trade_plan import tick_size
 
-VERSION = "UL-1.0"
+VERSION = "UL-1.1"
 PARTS = {"limit20": ("상한가 특성", 20), "vol25": ("거래량 질", 25), "pull20": ("조정 품질", 20),
-         "liq15": ("유동성", 15), "trend10": ("추세·강도", 10), "risk10": ("공시·위험", 10)}
+         "liq15": ("유동성", 15), "trend10": ("추세·강도", 10), "risk10": ("공시·뉴스", 10)}
+# 뉴스 (2026-10-12): 네이버 뉴스 최근 3일 제목 → 호재 5 · 중립/기사 없음 2.5 · 악재 0 (analysis.news_flags 가 저녁 배치에서 조정).
+#   과거 뉴스는 없으므로 점수 계산·백테스트에서는 모두 중립 2.5
+NEWS_NEUTRAL = 2.5
+
 RULES_TEXT = [
     "A: 오늘 고가가 상한가 이상(장중 도달) · A-종가: 종가까지 상한가 유지",
     "B: 어제 종가 상한가 + 오늘 거래량 < 어제 + 오늘 음봉(종가 < 시가)",
@@ -158,9 +162,10 @@ def score_row(r, news: float | None = None, has_news: bool = True) -> dict:
     s["trend10"] = 3 * bool(g("ABOVE20")) + 3 * bool(g("MA20_UP")) + 2 * bool(g("MA60_UP")) + (
         2 if ok(g("RET20")) and 0 < g("RET20") <= 80 else 0)
     if not has_news or news is None or news != news:
-        s["risk10"] = 7.0                                   # 공시 정보 미확인 → 중립
+        disc = 7.0                                          # 공시 정보 미확인 → 중립
     else:
-        s["risk10"] = 10.0 if news >= 7 else max(0.0, 10 * news / 7)
+        disc = 10.0 if news >= 7 else max(0.0, 10 * news / 7)
+    s["risk10"] = disc * 0.5 + NEWS_NEUTRAL                 # 공시 5 + 뉴스 5 (중립 2.5)
     out = {k: round(min(float(v), PARTS[k][1]), 2) for k, v in s.items()}
     out["total"] = round(sum(out.values()), 1)
     out["type"], out["tags"] = typ, tags

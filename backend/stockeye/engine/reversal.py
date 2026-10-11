@@ -13,10 +13,14 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-VERSION = "TR-0.1"
+VERSION = "TR-0.2"
 CANDIDATE, PRIORITY = 70.0, 80.0
-PARTS = {"bottom15": ("하락·바닥", 15), "base25": ("바닥 횡보", 25), "ma35": ("이평 전환", 35),
-         "rebound15": ("초기 반등", 15), "volume10": ("거래량·변동성", 10)}
+PARTS = {"bottom15": ("하락·바닥", 15), "base25": ("바닥 횡보", 25), "ma35": ("이평 전환", 30),
+         "rebound15": ("초기 반등", 15), "volume10": ("거래량·변동성", 10), "news5": ("뉴스", 5)}
+# 뉴스 (2026-10-12): 네이버 뉴스 최근 3일 제목 → 호재 5 · 중립/기사 없음 2.5 · 악재 0 (analysis.news_flags 가 저녁 배치에서 조정).
+#   과거 뉴스는 없으므로 점수 계산·백테스트에서는 모두 중립 2.5
+NEWS_NEUTRAL = 2.5
+
 SUBS = {  # 세부 항목: (상위 항목, 이름, 배점)
     "d60": ("bottom15", "60일 고점 대비 하락률", 15),
     "r20": ("base25", "20일 종가 횡보폭", 10), "low": ("base25", "저점 유지", 10), "run": ("base25", "바닥권 체류일", 5),
@@ -142,12 +146,15 @@ def totals(s: dict) -> dict:
     """세부 점수 → 5개 항목 + 총점 (각 항목 배점 상한, 자료 없는 세부 항목은 0점)"""
     out = {}
     for p, (_, mx) in PARTS.items():
+        if p == "news5":
+            continue
         subs = [s[k].fillna(0) for k, (pp, _, _) in SUBS.items() if pp == p]
         tot = subs[0]
         for v in subs[1:]:
             tot = tot + v
-        out[p] = tot.clip(upper=mx)
-    t = out["bottom15"] + out["base25"] + out["ma35"] + out["rebound15"] + out["volume10"]
+        out[p] = tot.clip(upper=35) * (30 / 35) if p == "ma35" else tot.clip(upper=mx)   # 이평 전환 35 → 30
+    out["news5"] = out["bottom15"] * 0 + NEWS_NEUTRAL                                  # 뉴스 5 (중립 2.5)
+    t = out["bottom15"] + out["base25"] + out["ma35"] + out["rebound15"] + out["volume10"] + out["news5"]
     out["total"] = t
     return out
 

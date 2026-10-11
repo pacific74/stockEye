@@ -88,7 +88,7 @@ class PlanLine extends StatelessWidget {
     final zoneRow = infoBoxes([
       // 최근 3일 뉴스 악재 (심각 = 4개 탭에선 이미 제외, V3·보유는 경고만)
       if (nl == 'neg' || nl == 'severe')
-        InfoBox('⚠ 뉴스 ${news['word'] ?? '악재'}${c['news_penalty'] != null ? ' −${(c['news_penalty'] as num).toStringAsFixed(0)}점' : ''}',
+        InfoBox('⚠ 뉴스 ${news['word'] ?? '악재'}${c['news_delta'] is num ? ' ${(c['news_delta'] as num).toStringAsFixed(1)}점' : ''}',
             color: nl == 'severe' ? Colors.red : Colors.orange, bold: true, fill: true),
       planChip(s.zone, s.color),
       // 매수구간 칩 옆에 구간 가격

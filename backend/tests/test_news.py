@@ -29,15 +29,21 @@ def test_parse_filters_and_dedupes():
 def test_annotate_scores_and_excludes():
     rep = {"strategies": {
         "nextday": {"candidates": [
-            {"code": "A", "name": "가", "score": 70.0, "rank": 1, "nextday": {"score": 70.0}},
+            {"code": "A", "name": "가", "score": 70.0, "rank": 1, "nextday": {"score": 70.0, "parts": {"newsF": 12.5}}},
             {"code": "B", "name": "나", "score": 68.0, "rank": 2, "nextday": {"score": 68.0}},
-            {"code": "C", "name": "다", "score": 66.0, "rank": 3, "nextday": {"score": 66.0}}]},
-        "v3": {"candidates": [{"code": "A", "name": "가", "score": 80, "rank": 1}]}}}
-    titles = {"가": ["가, 유상증자 결정"], "나": ["나 대표 횡령 혐의"], "다": ["다, 대규모 수주"]}
+            {"code": "C", "name": "다", "score": 66.0, "rank": 3, "nextday": {"score": 66.0}},
+            {"code": "D", "name": "라", "score": 65.0, "rank": 4, "nextday": {"score": 65.0}}]},
+        "v3": {"candidates": [{"code": "B", "name": "나", "score": 80.0, "rank": 1, "v3": {"score": 80.0, "parts": {"news5": 2.5}}},
+                              {"code": "E", "name": "마", "score": 79.0, "rank": 2}]}}}
+    titles = {"가": ["가, 유상증자 결정"], "나": ["나 대표 횡령 혐의"], "다": ["다, 대규모 수주"], "라": ["라 신제품 출시"]}
+    v3list = rep["strategies"]["v3"]["candidates"]
     nf.annotate(rep, {"H": "보유"}, fetch=lambda name: [{"title": t, "time": "", "link": ""} for t in titles.get(name, [])])
     nd = rep["strategies"]["nextday"]["candidates"]
-    assert [c["code"] for c in nd] == ["A", "C"] and nd[0]["score"] == 67.0 and nd[0]["nextday"]["score"] == 67.0
-    assert nd[1]["rank"] == 2 and rep["strategies"]["nextday"]["news_excluded"][0]["word"] == "횡령"
-    assert rep["strategies"]["v3"]["candidates"][0]["score"] == 80                  # V3 점수는 그대로
-    assert rep["strategies"]["v3"]["candidates"][0]["news"]["level"] == "neg"       # 경고만
+    # 가 악재 -2.5 → 67.5 · 나 심각 → 제외 · 다 호재 +2.5 → 68.5 · 라 중립 → 65
+    assert [c["code"] for c in nd] == ["C", "A", "D"] and nd[1]["score"] == 67.5 and nd[1]["nextday"]["parts"]["newsF"] == 10.0
+    assert nd[0]["score"] == 68.5 and nd[0]["rank"] == 1 and nd[2]["score"] == 65.0
+    assert rep["strategies"]["nextday"]["news_excluded"][0]["word"] == "횡령"
+    v3 = rep["strategies"]["v3"]["candidates"]
+    assert v3 is v3list and [c["code"] for c in v3] == ["E", "B"]            # V3: 심각 악재는 제외 대신 뉴스 0점
+    assert v3[1]["score"] == 77.5 and v3[1]["v3"]["parts"]["news5"] == 0.0
     assert "H" in rep["news_by_code"]

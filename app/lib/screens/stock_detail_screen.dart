@@ -553,7 +553,7 @@ class _V3Score extends StatelessWidget {
     final t = Theme.of(context).textTheme;
     final parts = asMap(v['parts']), labels = asMap(v['labels']), maxes = asMap(v['maxes']);
     final rp = asMap(v['ref_parts']), rl = asMap(v['ref_labels']), rm = asMap(v['ref_maxes']);
-    const order = ['vola15', 'fin25', 'pos20', 'trend5', 'vol5', 'value5', 'flow10', 'news15'];
+    const order = ['vola15', 'fin25', 'pos20', 'trend5', 'vol5', 'value5', 'flow10', 'news15', 'news5'];
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       for (final k in order.where(parts.containsKey)) ...[
         _bar('${labels[k] ?? k}', parts[k] as num?, (maxes[k] as num?) ?? 1, counted: true),

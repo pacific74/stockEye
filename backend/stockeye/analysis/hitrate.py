@@ -31,7 +31,7 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-VERSION = "HIT-1.4"
+VERSION = "HIT-1.5"
 COST = 0.25                                             # 수수료+세금 (%, 왕복)
 H = 20
 TOP = 3

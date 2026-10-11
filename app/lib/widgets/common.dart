@@ -104,11 +104,12 @@ Widget infoBoxes(List<Widget> boxes) => Wrap(spacing: 4, runSpacing: 3, children
 
 /// 종목명 + 코스피/코스닥 + (점수)
 class StockName extends StatelessWidget {
-  const StockName(this.name, {super.key, this.market, this.score, this.style});
+  const StockName(this.name, {super.key, this.market, this.score, this.style, this.scoreDigits = 0});
   final String name;
   final String? market;
   final num? score;
   final TextStyle? style;
+  final int scoreDigits; // 점수 소수 자리 (관심 탭 점수는 1자리)
 
   @override
   Widget build(BuildContext context) => Row(children: [
@@ -116,15 +117,16 @@ class StockName extends StatelessWidget {
             child: Text(name,
                 overflow: TextOverflow.ellipsis, style: style ?? const TextStyle(fontWeight: FontWeight.w600))),
         MarketBadge(market),
-        if (score != null) ...[const SizedBox(width: 6), ScoreBadge(score)],
+        if (score != null) ...[const SizedBox(width: 6), ScoreBadge(score, digits: scoreDigits)],
       ]);
 }
 
 /// 점수 배지 (V3B 100점 환산) — 80↑ 빨강 / 65↑ 주황 / 50↑ 청록 / 그 아래 회색
 class ScoreBadge extends StatelessWidget {
-  const ScoreBadge(this.score, {super.key, this.label});
+  const ScoreBadge(this.score, {super.key, this.label, this.digits = 0});
   final num? score;
   final String? label; // 예: '오늘'
+  final int digits;
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +139,7 @@ class ScoreBadge extends StatelessWidget {
           color: color.withValues(alpha: 0.14),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: color.withValues(alpha: 0.5))),
-      child: Text('${label == null ? '' : '$label '}${v.toStringAsFixed(0)}점',
+      child: Text('${label == null ? '' : '$label '}${v.toStringAsFixed(digits)}점',
           style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
     );
   }

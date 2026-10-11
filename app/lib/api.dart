@@ -27,6 +27,8 @@ Json asMap(dynamic v) => v == null ? <String, dynamic>{} : Map<String, dynamic>.
 List<Json> asList(dynamic v) => (v as List? ?? []).map((e) => asMap(e)).toList();
 
 class Api {
+  /// 관심 목록 새로고침: 캐시한 최신 리포트(2분)를 버리고 다시 읽게
+  static void forgetReport() { if (useCloud) _Cloud.forgetReport(); }
   static Future<Json> dashboard() => useCloud ? _Cloud.dashboard() : _Http.dashboard();
   /// V3 기준 전략: 선정 상태 · 매수/매도 예정일 · 거래일 달력 · 모의 보유 · 고정 이후 성과 (리포트 market.v3)
   static Future<Json> v3() => useCloud ? _Cloud.v3() : _Http.v3();
@@ -144,6 +146,9 @@ class _Cloud {
   // ---------------------------------------------------------------- 리포트
   static Json? _rep;
   static DateTime? _repAt;
+
+  /// 새로고침: 다음 조회 때 최신 리포트를 다시 읽게 (관심 목록 새로고침에서 씀)
+  static void forgetReport() => _repAt = null;
 
   static Future<Json> _latest() async {
     if (_rep != null && _repAt != null && DateTime.now().difference(_repAt!).inMinutes < 2) return _rep!;

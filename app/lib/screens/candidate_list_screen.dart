@@ -37,7 +37,10 @@ class _CandidateListScreenState extends State<CandidateListScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const LogoTitle('관심'),
-          actions: topActions(context, onRefresh: () => setState(() => _gen++)),
+          actions: topActions(context, onRefresh: () {
+            Api.forgetReport();
+            setState(() => _gen++);
+          }),
           bottom: TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,

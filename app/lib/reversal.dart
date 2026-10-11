@@ -89,14 +89,13 @@ class ReversalTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final v = asMap(c[kind.field]);
     final score = v['score'] as num?;
-    final col = reversalColor(score);
     return WatchTile(
       c: c,
       price: price,
       tab: kind.field,
       leading: CircleAvatar(child: Text('$rank')),
-      score: Text(score == null ? '-' : '${score.toStringAsFixed(1)}점',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: col)),
+      score: score,
+      scoreDigits: 1,
       onTap: () => Navigator.push(context,
           MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}', source: kind.field))),
     );

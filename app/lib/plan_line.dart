@@ -54,13 +54,21 @@ Widget planChip(String s, Color color) => Container(
 
 class PlanLine extends StatelessWidget {
   const PlanLine(
-      {super.key, required this.c, this.price, this.live = false, this.extraChips = const [], this.showPrice = false, this.tab});
+      {super.key,
+      required this.c,
+      this.price,
+      this.live = false,
+      this.extraChips = const [],
+      this.showPrice = false,
+      this.tab,
+      this.firstRowReserve = 0});
   final Json c;
   final double? price;
   final bool live; // true = 지금 시세 기준, false = 분석일 종가 기준
   final List<Widget> extraChips;
   final bool showPrice; // (예전) 관심 탭 목록 — 현재가는 이제 카드 오른쪽 위(WatchTile), 매수구간은 상태 칩 옆
   final String? tab; // 어느 탭 종목인지 → 탭별 유형·태그 칩과 확인 가격 줄
+  final double firstRowReserve; // 첫 줄 오른쪽 비워 둘 폭 (카드 오른쪽 위 점수와 겹치지 않게)
 
   @override
   Widget build(BuildContext context) {
@@ -75,20 +83,22 @@ class PlanLine extends StatelessWidget {
     final seen = tc.map((e) => e.$1).toSet();
     final chips = [for (final x in tc) planChip(x.$1, x.$2)];
     final watch = tabWatch(context, c, tab);
+    final zoneRow = infoBoxes([
+      planChip(s.zone, s.color),
+      // 매수구간 칩 옆에 구간 가격
+      if (zoneTxt != null) InfoBox('매수구간 $zoneTxt', color: s.color),
+      ...chips,
+      ...extraChips,
+      for (final tg in tags.where((x) => !seen.contains(x)).take(2)) planChip(strategyLabels[tg] ?? tg, Colors.blueGrey),
+    ]);
+    final pad = EdgeInsets.only(right: firstRowReserve);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      // 지수·업종 급락 → 매수 주의
+      // 지수·업종 급락 → 매수 주의 (첫 줄)
       if (alert != null)
-        Padding(padding: const EdgeInsets.only(top: 3), child: InfoBox('⚠ $alert', color: Colors.orange, bold: true, fill: true)),
+        Padding(padding: const EdgeInsets.only(top: 3).add(pad), child: InfoBox('⚠ $alert', color: Colors.orange, bold: true, fill: true)),
       const SizedBox(height: 3),
-      // 한 줄: 매수구간 상태 + 탭별 유형·태그 (같은 글자는 한 번만)
-      infoBoxes([
-        planChip(s.zone, s.color),
-        // 매수구간 칩 옆에 구간 가격
-        if (zoneTxt != null) InfoBox('매수구간 $zoneTxt', color: s.color),
-        ...chips,
-        ...extraChips,
-        for (final tg in tags.where((x) => !seen.contains(x)).take(2)) planChip(strategyLabels[tg] ?? tg, Colors.blueGrey),
-      ]),
+      // 매수구간 상태 + 탭별 유형·태그 (같은 글자는 한 번만) — 경고가 없으면 이 줄이 첫 줄
+      alert == null ? Padding(padding: pad, child: zoneRow) : zoneRow,
       if (watch != null) Padding(padding: const EdgeInsets.only(top: 3), child: watch),
       if (s.up != null && s.down != null)
         Padding(
@@ -104,19 +114,28 @@ class PlanLine extends StatelessWidget {
 }
 
 /// 관심 탭 목록 카드 (V3 · 익일유망주 · 상승초기 · 추세전환 · 상파 공통)
-///   [순위]  종목명 [시장]                 현재가 48,300원
-///                                          84.8점
+///   [순위]  종목명 [시장] [84.8점]        현재가 48,300원
 ///          [업종 급락 주의] / [매수구간 안] [매수구간 47,400~48,800] / [목표] [손절] [손익비]
 ///   아래 줄들은 카드 오른쪽 끝까지 써서 한 줄에 들어가게
 class WatchTile extends StatelessWidget {
   const WatchTile(
-      {super.key, required this.c, required this.leading, required this.score, this.price, this.tab, this.onTap});
+      {super.key,
+      required this.c,
+      required this.leading,
+      this.score,
+      this.scoreDigits = 1,
+      this.price,
+      this.tab,
+      this.onTap,
+      this.extra});
   final Json c;
   final Widget leading;
-  final Widget score;
+  final num? score; // 종목명 옆 점수 배지
+  final int scoreDigits;
   final double? price; // 지금 시세 (없으면 분석일 종가)
   final String? tab;
   final VoidCallback? onTap;
+  final Widget? extra; // 맨 아래 한 줄 더 (메인: 넥스트레이드 시세)
 
   @override
   Widget build(BuildContext context) {
@@ -134,24 +153,20 @@ class WatchTile extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                // 종목명 [시장] [점수]  ·····  현재가
+                Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: StockName('${c['name']}', market: c['market'] as String?, style: t.titleMedium),
-                    ),
-                  ),
+                      child: StockName('${c['name']}',
+                          market: c['market'] as String?, score: score, scoreDigits: scoreDigits, style: t.titleMedium)),
                   const SizedBox(width: 6),
-                  Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    if (px != null)
-                      Text.rich(TextSpan(children: [
-                        TextSpan(text: price != null ? '현재가 ' : '기준가 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
-                        TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                      ])),
-                    score,
-                  ]),
+                  if (px != null)
+                    Text.rich(TextSpan(children: [
+                      TextSpan(text: price != null ? '현재가 ' : '기준가 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
+                      TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                    ])),
                 ]),
                 PlanLine(c: c, price: price, live: price != null, tab: tab),
+                if (extra != null) extra!,
               ]),
             ),
           ]),

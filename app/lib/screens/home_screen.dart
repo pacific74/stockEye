@@ -80,8 +80,10 @@ class _HomeScreenState extends State<HomeScreen> {
       _pool = const [];
     }
     // 금일 관심주: 후보 메뉴의 탭마다 점수 높은 3개 (새 탭이 생기면 자동으로 같이)
+    //   관심 목록과 똑같이: 저장 순위(rank)로 30개를 받아 점수순으로 다시 정렬 → 상위 3
+    //   (예전엔 rank 순 10개만 받아 정렬해서, rank 11~30 에 점수 높은 종목이 있으면 목록 탭과 달랐음)
     const keys = CandidateListScreen.keys;
-    final lists = await Future.wait(keys.map((k) => Api.candidates(k, top: 10)
+    final lists = await Future.wait(keys.map((k) => Api.candidates(k)
         .then((d) => sortByScore(asList(d['candidates'])).take(3).toList(), onError: (_) => <Json>[])));
     _picks = {for (var i = 0; i < keys.length; i++) keys[i]: lists[i]};
     await _refreshLive();
@@ -435,42 +437,34 @@ class _LiveCandidateTile extends StatelessWidget {
   final MarketClock clock;
   final bool weak; // 이 종목의 시장이 60일선 아래 (시장 필터)
 
-  @override
-  Widget build(BuildContext context) {
-    final plan = asMap(c['plan']);
-    final score = (c['score'] as num?)?.toDouble() ?? 0;
-    final t = Theme.of(context).textTheme;
-    final nxt = q != null && !clock.open && q!.overStatus == 'OPEN' && q!.overPrice != null;
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ListTile(
-        leading: CircleAvatar(child: Text('${c['rank']}')),
-        title: StockName('${c['name']}', market: c['market'] as String?, score: score),
-        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          PlanLine(c: c, price: q?.price, live: q != null, tab: c['_tab'] as String?),
-          if (nxt) Text('넥스트레이드 ${num0(q!.overPrice)} (${pct(q!.overRatio)})', style: t.bodySmall),
-        ]),
-        isThreeLine: true,
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: q == null
-              ? [
-                  Text(num0(plan['price'] as num?), style: const TextStyle(fontWeight: FontWeight.bold)),
-                  Text('분석일 종가', style: t.bodySmall),
-                ]
-              : [
-                  Text(num0(q!.price), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  Text(pct(q!.ratio),
-                      style: TextStyle(color: q!.ratio >= 0 ? upColor : downColor, fontWeight: FontWeight.bold)),
-                ],
-        ),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => StockDetailScreen(code: c['code'] as String, name: c['name'] as String, source: c['_tab'] as String?))),
-      ),
-    );
+  /// 관심 목록 카드와 같은 점수 (탭별 점수)
+  static num? _score(Json c, String? tab) {
+    if (tab != null && c[tab] is Map && asMap(c[tab])['score'] is num) return asMap(c[tab])['score'] as num;
+    return c['score'] as num?;
   }
 
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final tab = c['_tab'] as String?;
+    final nxt = q != null && !clock.open && q!.overStatus == 'OPEN' && q!.overPrice != null;
+    // 관심 목록(WatchTile)과 같은 모양: 순위 · 종목명 · 현재가 · 점수 · 경고 · 매수구간 · 목표/손절/손익비
+    return WatchTile(
+      c: c,
+      price: q?.price,
+      tab: tab,
+      leading: CircleAvatar(child: Text('${c['rank']}')),
+      score: _score(c, tab),
+      scoreDigits: tab == 'v3' ? 0 : 1,
+      extra: nxt
+          ? Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text('넥스트레이드 ${num0(q!.overPrice)} (${pct(q!.overRatio)})', style: t.bodySmall))
+          : null,
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => StockDetailScreen(code: c['code'] as String, name: c['name'] as String, source: tab))),
+    );
+  }
 }
 
 /// 내 보유종목 지금 손익

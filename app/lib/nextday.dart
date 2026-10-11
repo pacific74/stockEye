@@ -56,8 +56,8 @@ class NextdayTile extends StatelessWidget {
       leading: CircleAvatar(
           backgroundColor: col.withValues(alpha: 0.15),
           child: Text('${v['grade'] ?? rank}', style: TextStyle(color: col, fontWeight: FontWeight.bold))),
-      score: Text(score == null ? '-' : '${score.toStringAsFixed(1)}점',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: col)),
+      score: score,
+      scoreDigits: 1,
       onTap: () => Navigator.push(context,
           MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}', source: 'nextday'))),
     );

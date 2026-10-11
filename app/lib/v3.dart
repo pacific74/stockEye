@@ -84,8 +84,8 @@ class V3PickTile extends StatelessWidget {
       price: price,
       tab: 'v3',
       leading: CircleAvatar(child: Text('$rank')),
-      score: Text(v['score'] == null ? '-' : '${(v['score'] as num).toStringAsFixed(0)}점',
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+      score: v['score'] as num?,
+      scoreDigits: 0,
       onTap: () => Navigator.push(context,
           MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${c['code']}', name: '${c['name']}', source: 'v3'))),
     );

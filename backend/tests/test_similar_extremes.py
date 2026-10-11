@@ -19,3 +19,24 @@ def test_extremes_catch_intraday_spike():
     assert x["max_day"] == 2 and round(x["max20"], 1) == 30.0 and round(x["max5"], 1) == 30.0
     assert x["min_day"] == 5 and round(x["min20"], 1) == -10.0 and round(x["min3"] if "min3" in x else x["min5"], 1) <= 0
     assert x["max_close"] == 0.0            # 종가로만 보면 놓치는 급등
+
+
+def test_group_candles_robust_to_outliers():
+    """30개 중 23개는 1일차 −1%, 몇 개만 +10% 고가 → 그룹 봉 고가는 +10% 가 아니라 가운데 쪽 값"""
+    H = 20
+    res = []
+    for i in range(30):
+        o = np.zeros((H, 4))
+        o[:, 0], o[:, 3] = -1.0, -1.0
+        o[:, 1], o[:, 2] = 0.0, -2.0
+        if i in (0, 10, 20):
+            o[0, 1] = 10.0                                   # 극단 고가 몇 개
+        if i == 3:
+            o[0, 2] = -10.0                                  # 극단 저가 하나
+        res.append({"similarity": 80 - i, "_ohlc": o})
+    pi = PatternIndex.__new__(PatternIndex)
+    g = pi._groups(res, H)
+    assert [x["name"] for x in g] == ["상위 20%", "중위 30%", "하위 50%"] and [x["n"] for x in g] == [6, 9, 15]
+    o_, h_, l_, c_ = g[0]["candles"][0]
+    assert c_ == -1.0 and h_ < 10 and l_ > -10                # 극단값에 끌려가지 않음
+    assert all("_ohlc" not in r for r in res)

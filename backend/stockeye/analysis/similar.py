@@ -28,12 +28,15 @@ from numpy.lib.stride_tricks import sliding_window_view
 
 
 class PatternIndex:
-    WEIGHTS = {"price": 0.5, "ma": 0.3, "volume": 0.2}
+    WEIGHTS = {"price": 0.45, "ma": 0.40, "volume": 0.15}
+    MA_N = (20, 60, 120)
+    MIN_N, MAX_N, GOOD_SIM = 30, 200, 60.0       # 비교 표본: 유사도 60 이상 개수 (최소 30, 최대 200)
+    GROUPS = (("상위 20%", 0.2), ("중위 30%", 0.3), ("하위 50%", 0.5))
 
     def __init__(self, ohlcv: pd.DataFrame, window: int = 20, step: int = 2, horizons=(5, 10, 20),
                  min_value: float = 1e9, prefilter: int = 4000):
         self.window, self.step, self.horizons = window, step, tuple(horizons)
-        extra = [c for c in ("chg_pct", "high", "low") if c in ohlcv]
+        extra = [c for c in ("chg_pct", "open", "high", "low") if c in ohlcv]
         df = ohlcv[["date", "code", "close", "value"] + extra].copy()
         if "chg_pct" in df:
             df["r"] = df["chg_pct"] / 100.0
@@ -45,7 +48,7 @@ class PatternIndex:
         # 장중 고가·저가 ÷ 그날 종가 (분할 영향 없는 비율) → 패턴 이후 '기간 중 최고·최저' 계산용
         cl = df.pivot(index="date", columns="code", values="close").reindex_like(self.r).astype("float32")
         cl = cl.where(cl > 0)
-        for nm_ in ("high", "low"):
+        for nm_ in ("open", "high", "low"):
             if nm_ in df:
                 x = df.pivot(index="date", columns="code", values=nm_).reindex_like(self.r).astype("float32")
                 ratio = (x.where(x > 0) / cl).to_numpy()
@@ -65,7 +68,7 @@ class PatternIndex:
         px = pd.DataFrame(np.exp(self.cum[1:]))
         vcnt = pd.DataFrame(self.valid.astype("float32"))
         self.lma = {}
-        for n in (20, 60):
+        for n in self.MA_N:
             ma = px.rolling(n, min_periods=n).mean().to_numpy()
             okn = vcnt.rolling(n, min_periods=n).sum().to_numpy() >= n * 0.9
             self.lma[n] = np.where(okn, np.log(ma), np.nan).astype("float32")
@@ -96,6 +99,7 @@ class PatternIndex:
             return {"error": "최근 구간에 거래정지/결측 있음"}
         H = max(self.horizons)
         qz, q_amp = self._z(q[None, :])[0], float(q[-1] - q.min() + 1e-9)
+        qside = self._ma_side(np.array([T]), np.array([col]))[0]
 
         last_end = T - H                         # 결과(+H일)까지 as_of 이전에 끝난 구간만
         ends = np.arange(self.window - 1, last_end + 1, self.step)
@@ -115,6 +119,10 @@ class PatternIndex:
             ok[e >= T - 60, col] = False                              # 자기 자신의 최근 구간 제외
             amp = paths[..., -1] - paths.min(axis=-1) + 1e-9
             ok &= (amp / q_amp > 0.5) & (amp / q_amp < 2.0)           # 크기도 비슷한 것만
+            for j, n in ((0, 60), (1, 120)):                          # 가격이 60·120일선 위/아래가 지금과 같은 것만
+                if np.isfinite(qside[j]):
+                    sd_ = self.cum[e + 1, :] - self.lma[n][e, :]
+                    ok &= np.isfinite(sd_) & (np.sign(sd_) == np.sign(qside[j]))
             d = np.sqrt(((self._z(paths) - qz) ** 2).mean(axis=-1))
             dist[b:b + 100] = np.where(ok, d, np.inf)
 
@@ -133,6 +141,7 @@ class PatternIndex:
         wt = self.WEIGHTS
         comb = wt["price"] * d_p + wt["ma"] * d_m + wt["volume"] * d_v
         order = np.argsort(comb)
+        order = order[np.isfinite(comb[order])]                       # 이평선 위치가 다른 구간은 제외
         sim = lambda d: round(float(max(0.0, 1 - d / 1.5)) * 100, 1)  # noqa: E731
         res, seen = [], set()
         for j in order:
@@ -159,6 +168,14 @@ class PatternIndex:
                         **{k2: round(v * 100, 2) for k2, v in fwd.items()}, **ext})
         if not res:
             return {"error": "비슷한 구간 없음"}
+        # 표본 수: 유사도 60 이상인 구간 수 (최소 30, 최대 200) — 유사도 낮은 구간까지 끌어오지 않게
+        sims = np.array([r["similarity"] for r in res])
+        buckets = {f"{b}": int(((sims >= b) & (sims < b + 10)).sum()) for b in (80, 70, 60, 50)}
+        buckets["80"] += int((sims >= 90).sum())
+        buckets["<50"] = int((sims < 50).sum())
+        n_use = int(min(self.MAX_N, max(self.MIN_N, (sims >= self.GOOD_SIM).sum())))
+        res = res[:n_use]
+        groups = self._groups(res, H)
         stats = {}
         for h in self.horizons:
             arr = np.array([r[f"ret{h}"] for r in res])
@@ -178,7 +195,41 @@ class PatternIndex:
                 "query_ma": self._ma_state(T, col),
                 "query_path": [round(float(v), 4) for v in np.expm1(q)],
                 "matches": res[:top], "sample_size": len(res), "stats": stats,
+                "sim_buckets": buckets, "groups": groups,
                 "disclaimer": "과거 유사 패턴의 결과일 뿐이며 미래 수익을 예측하지 않습니다. 참고자료로만 사용하세요."}
+
+    def _groups(self, res: list[dict], H: int) -> list[dict]:
+        """유사도 순서로 상위 20% / 중위 30% / 하위 50% → 날마다 그룹 대표 봉 (시가·종가 = 중앙값,
+        고가 = 고가들의 75% 지점, 저가 = 저가들의 25% 지점: 극단값 몇 개에 끌려가지 않게) + 요약"""
+        n = len(res)
+        out, start = [], 0
+        for i, (name, frac) in enumerate(self.GROUPS):
+            end = n if i == len(self.GROUPS) - 1 else start + max(1, int(round(n * frac)))
+            g = [r for r in res[start:end] if r.get("_ohlc") is not None and len(r["_ohlc"]) == H]
+            start = end
+            if not g:
+                continue
+            a = np.stack([r["_ohlc"] for r in g])                       # (m, H, 4)
+            with np.errstate(all="ignore"), warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                o, cl = np.nanmedian(a[:, :, 0], axis=0), np.nanmedian(a[:, :, 3], axis=0)
+                hi, lo = np.nanpercentile(a[:, :, 1], 75, axis=0), np.nanpercentile(a[:, :, 2], 25, axis=0)
+            hi, lo = np.maximum(hi, np.maximum(o, cl)), np.minimum(lo, np.minimum(o, cl))
+            candles = [[round(float(x), 2) for x in (o[k], hi[k], lo[k], cl[k])] for k in range(H)]
+            close_end = a[:, -1, 3]
+            mx, mn = np.nanmax(a[:, :, 1], axis=1), np.nanmin(a[:, :, 2], axis=1)
+            sims = [r["similarity"] for r in g]
+            out.append({"name": name, "n": len(g), "sim_max": max(sims), "sim_min": min(sims), "candles": candles,
+                        "close_median": round(float(np.nanmedian(close_end)), 2),
+                        "up_ratio": round(float((close_end > 0).mean()) * 100, 1),
+                        "max_median": round(float(np.nanmedian(mx)), 2), "min_median": round(float(np.nanmedian(mn)), 2),
+                        "max_day": int(np.nanmedian(np.nanargmax(a[:, :, 1], axis=1)) + 1),
+                        "min_day": int(np.nanmedian(np.nanargmin(a[:, :, 2], axis=1)) + 1),
+                        "hit_up10": round(float((mx >= 10).mean()) * 100, 1),
+                        "hit_dn10": round(float((mn <= -10).mean()) * 100, 1)})
+        for r in res:                                                  # 내부용 경로는 결과에서 뺌
+            r.pop("_ohlc", None)
+        return out
 
     def _extremes(self, e: int, ci: int, H: int) -> dict:
         """패턴 끝날(e) 종가 기준 1~H일 동안 장중 최고가·최저가(%)와 그날(몇 일째) + h일별 최고·최저, 최고 종가"""
@@ -195,6 +246,8 @@ class PatternIndex:
                 out[f"min{h}"] = round(float(lo[:h].min()) * 100, 2)
         out["max_day"] = int(np.argmax(hi)) + 1
         out["min_day"] = int(np.argmin(lo)) + 1
+        op = c * self.open_r[e + 1:e + 1 + H, ci] - 1.0
+        out["_ohlc"] = np.stack([op, hi, lo, rel], axis=1) * 100          # (H, 4) %, 그룹 차트용 (화면에는 안 보냄)
         out["max_close"] = round(float(rel.max()) * 100, 2)
         out["max_close_day"] = int(np.argmax(rel)) + 1
         return out
@@ -215,18 +268,44 @@ class PatternIndex:
     def _ma_paths(self, e, c):
         rows, base, mu, sd = self._norm(e, c)
         out = []
-        for n in (20, 60):
+        for n in self.MA_N:
             m = (self.lma[n][rows, c[:, None]] - base[:, None] - mu[:, None]) / sd[:, None]
             out.append(np.clip(m, -6, 6))
         return out
 
+    def _ma_side(self, e, c) -> np.ndarray:
+        """구간 끝날: 가격−60일선, 가격−120일선, 20−60일선, 60−120일선 (log 차이). (K, 4)"""
+        lp = self.cum[e + 1, c]
+        m20, m60, m120 = (self.lma[n][e, c] for n in self.MA_N)
+        return np.stack([lp - m60, lp - m120, m20 - m60, m60 - m120], axis=1)
+
     def _ma_dist(self, T, col, e, c) -> np.ndarray:
-        q20, q60 = (x[0] for x in self._ma_paths(np.array([T]), np.array([col])))
-        m20, m60 = self._ma_paths(e, c)
-        d = np.sqrt((((m20 - q20) ** 2).mean(axis=1) + ((m60 - q60) ** 2).mean(axis=1)) / 2)
-        if np.isnan(q20).any() or np.isnan(q60).any():               # 지금 종목 이평선을 못 구하면 비교 안 함
+        """이평선 거리 = 20·60·120일선 경로 모양 + 끝날 위치 관계(가격이 60·120일선 위/아래, 정배열/역배열, 120일선과의 거리).
+        가격이 60일선·120일선의 어느 쪽에 있는지가 지금과 다르면 inf (비교 대상에서 뺌)"""
+        qs = self._ma_paths(np.array([T]), np.array([col]))
+        ms = self._ma_paths(e, c)
+        parts = []
+        for q, m in list(zip(qs, ms))[:2]:                             # 모양은 20·60일선 (120일선은 아래 위치 관계로)
+            if np.isnan(q[0]).any():
+                continue
+            parts.append(((m - q[0]) ** 2).mean(axis=1))
+        if not parts:                                                  # 지금 종목 이평선을 못 구하면 비교 안 함
             return np.zeros(len(e), dtype="float32")
-        return np.where(np.isfinite(d), d, 1.5).astype("float32")
+        d = np.sqrt(np.mean(parts, axis=0))
+        d = np.where(np.isfinite(d), d, 1.5)
+        qside = self._ma_side(np.array([T]), np.array([col]))[0]
+        side = self._ma_side(e, c)
+        for j in (0, 1):                                               # 가격 vs 60·120일선: 같은 쪽이어야
+            if np.isfinite(qside[j]):
+                bad = ~np.isfinite(side[:, j]) | (np.sign(side[:, j]) != np.sign(qside[j]))
+                d = np.where(bad, np.inf, d)
+        for j in (2, 3):                                               # 정배열/역배열 다르면 감점
+            if np.isfinite(qside[j]):
+                d = d + np.where(np.sign(side[:, j]) != np.sign(qside[j]), 0.3, 0.0)
+        if np.isfinite(qside[1]):                                      # 120일선과의 거리 차이 (10% 차이 = +0.3)
+            gap = np.abs(np.nan_to_num(side[:, 1], nan=9) - qside[1])
+            d = d + np.minimum(gap / 0.10 * 0.3, 1.0)
+        return d.astype("float32")
 
     def _vol_feat(self, e, c):
         rows = self._rows(e)
@@ -252,7 +331,7 @@ class PatternIndex:
         """지금 종목의 이평선 상태 (화면 설명용)"""
         lp = self.cum[T + 1, col]
         out = {}
-        for n in (20, 60):
+        for n in self.MA_N:
             m = self.lma[n][T, col]
             m5 = self.lma[n][T - 5, col] if T >= 5 else np.nan
             out[f"dist{n}"] = None if np.isnan(m) else round(float(np.expm1(lp - m)) * 100, 1)

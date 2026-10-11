@@ -114,7 +114,10 @@ class _SimilarScreenState extends State<SimilarScreen> {
                     ]),
                   ),
                 ),
-              // ④ 결과 분포
+              // ④ 그 뒤 20일: 유사도 그룹(상위 20% · 중위 30% · 하위 50%)별 대표 봉
+              if (asList(d['groups']).isNotEmpty)
+                _GroupCard(d: d)
+              else
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(14),
@@ -185,12 +188,6 @@ class _SimilarScreenState extends State<SimilarScreen> {
                             // 작은 차트: 비슷했던 20일(진한 선) | 점선 | 그 뒤 20일(연한 선)
                             Sparkline(values: [..._path(mm['path']), ..._path(mm['future'])], height: 36,
                                 split: _path(mm['path']).length, color: selected ? orange : null),
-                            const SizedBox(height: 2),
-                            infoBoxes([
-                              for (final h in const [5, 10, 20])
-                                InfoBox('종가 $h일 ${pct(mm['ret$h'] as num?)}',
-                                    color: ((mm['ret$h'] as num?) ?? 0) >= 0 ? upColor : downColor),
-                            ]),
                           ]),
                         ),
                         const SizedBox(width: 12),
@@ -206,7 +203,6 @@ class _SimilarScreenState extends State<SimilarScreen> {
                           if (mm['min20'] != null)
                             Text('최저 ${pct(mm['min20'] as num?)} (${mm['min_day']}일째)',
                                 style: t.bodySmall?.copyWith(color: downColor)),
-                          if (mm['max20'] == null) Text('5일 ${pct(mm['ret5'] as num?)}', style: t.bodySmall),
                         ]),
                       ]),
                     ),
@@ -432,4 +428,136 @@ class _PatternRequestState extends State<_PatternRequest> {
       ),
     ]);
   }
+}
+
+
+/// 그 뒤 20일 — 유사도 그룹별 대표 봉 차트 + 요약
+class _GroupCard extends StatefulWidget {
+  const _GroupCard({required this.d});
+  final Json d;
+
+  @override
+  State<_GroupCard> createState() => _GroupCardState();
+}
+
+class _GroupCardState extends State<_GroupCard> {
+  int _g = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final d = widget.d;
+    final gs = asList(d['groups']);
+    if (_g >= gs.length) _g = 0;
+    final g = gs[_g];
+    final b = asMap(d['sim_buckets']);
+    final low = (asList(d['matches']).isEmpty ? 0 : ((asList(d['matches']).first['similarity'] as num?) ?? 0)) < 50;
+    final candles = (g['candles'] as List? ?? const []).map((e) => (e as List).map((x) => (x as num).toDouble()).toList()).toList();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('비슷한 구간 ${d['sample_size']}개 · 그 뒤 20일', style: t.titleSmall),
+          const SizedBox(height: 4),
+          // 유사도 분포 (상위 200개 중) → 60 이상 개수만큼 사용 (최소 30)
+          infoBoxes([
+            for (final k in const ['80', '70', '60', '50'])
+              if ((b[k] ?? 0) > 0) InfoBox('$k점대 ${b[k]}개'),
+            if ((b['<50'] ?? 0) > 0) InfoBox('50점 미만 ${b['<50']}개', color: Colors.grey),
+          ]),
+          const SizedBox(height: 2),
+          Text('유사도 60 이상인 구간만 씀 (적으면 상위 30개)', style: t.bodySmall?.copyWith(color: Colors.grey)),
+          if (low)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: InfoBox('⚠ 많이 비슷한 구간이 없어요 (최고 유사도 50 미만) — 참고만', color: Colors.orange, fill: true),
+            ),
+          const SizedBox(height: 10),
+          Wrap(spacing: 6, runSpacing: 4, children: [
+            for (var i = 0; i < gs.length; i++)
+              ChoiceChip(
+                label: Text('${gs[i]['name']} · ${gs[i]['n']}개'),
+                selected: _g == i,
+                onSelected: (_) => setState(() => _g = i),
+              ),
+          ]),
+          const SizedBox(height: 4),
+          Text('유사도 ${g['sim_min']} ~ ${g['sim_max']}', style: t.bodySmall?.copyWith(color: Colors.grey)),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 200,
+            child: CustomPaint(size: Size.infinite, painter: _GroupCandlePainter(candles, Theme.of(context).colorScheme.onSurface)),
+          ),
+          const SizedBox(height: 8),
+          infoBoxes([
+            InfoBox('20일째 종가 중앙 ${pct(g['close_median'] as num?)}',
+                color: ((g['close_median'] as num?) ?? 0) >= 0 ? upColor : downColor, bold: true),
+            InfoBox('오른 채 끝남 ${g['up_ratio']}%'),
+            InfoBox('기간 중 최고 ${pct(g['max_median'] as num?)} (${g['max_day']}일째쯤)', color: upColor),
+            InfoBox('최저 ${pct(g['min_median'] as num?)} (${g['min_day']}일째쯤)', color: downColor),
+            InfoBox('+10% 닿음 ${g['hit_up10']}%', color: upColor),
+            InfoBox('−10% 닿음 ${g['hit_dn10']}%', color: downColor),
+          ]),
+          const SizedBox(height: 6),
+          Text('봉 = 그 그룹의 날마다 대표값 (패턴 끝날 종가 = 0%). 시가·종가 = 중앙값, 윗꼬리 = 고가들의 75% 지점, '
+              '아랫꼬리 = 저가들의 25% 지점 — 몇 개 튀는 값에 끌려가지 않게. 최고·최저 = 종목별 20일 중 최고가·최저가의 중앙값.',
+              style: t.bodySmall?.copyWith(color: Colors.grey)),
+        ]),
+      ),
+    );
+  }
+}
+
+class _GroupCandlePainter extends CustomPainter {
+  _GroupCandlePainter(this.c, this.fg);
+  final List<List<double>> c; // [시가, 고가, 저가, 종가] %
+  final Color fg;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (c.isEmpty) return;
+    const left = 40.0, bottom = 16.0;
+    final w = size.width - left, h = size.height - bottom;
+    var hi = 0.0, lo = 0.0;
+    for (final k in c) {
+      hi = math.max(hi, k[1]);
+      lo = math.min(lo, k[2]);
+    }
+    final pad = (hi - lo) * 0.08 + 0.5;
+    hi += pad;
+    lo -= pad;
+    double y(double v) => (hi - v) / (hi - lo) * h;
+    final grid = Paint()
+      ..color = fg.withValues(alpha: 0.12)
+      ..strokeWidth = 1;
+    final tp = TextPainter(textDirection: TextDirection.ltr);
+    final step = (hi - lo) > 30 ? 10.0 : (hi - lo) > 12 ? 5.0 : 2.0;
+    for (var v = (lo / step).ceil() * step; v <= hi; v += step) {
+      canvas.drawLine(Offset(left, y(v)), Offset(size.width, y(v)), v == 0 ? (Paint()..color = fg.withValues(alpha: 0.45)) : grid);
+      tp.text = TextSpan(text: '${v > 0 ? '+' : ''}${v.toStringAsFixed(0)}%', style: TextStyle(fontSize: 9, color: fg.withValues(alpha: 0.6)));
+      tp.layout();
+      tp.paint(canvas, Offset(0, y(v) - tp.height / 2));
+    }
+    final cw = w / c.length;
+    for (var i = 0; i < c.length; i++) {
+      final k = c[i];
+      final x = left + cw * (i + 0.5);
+      final up = k[3] >= k[0];
+      final col = up ? upColor : downColor;
+      final p = Paint()
+        ..color = col
+        ..strokeWidth = 1;
+      canvas.drawLine(Offset(x, y(k[1])), Offset(x, y(k[2])), p);
+      final top = y(math.max(k[0], k[3])), bot = y(math.min(k[0], k[3]));
+      canvas.drawRect(Rect.fromLTRB(x - cw * 0.32, top, x + cw * 0.32, math.max(bot, top + 1)), p..style = PaintingStyle.fill);
+      if (i == 0 || (i + 1) % 5 == 0) {
+        tp.text = TextSpan(text: '${i + 1}일', style: TextStyle(fontSize: 9, color: fg.withValues(alpha: 0.6)));
+        tp.layout();
+        tp.paint(canvas, Offset(x - tp.width / 2, h + 3));
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _GroupCandlePainter old) => old.c != c;
 }

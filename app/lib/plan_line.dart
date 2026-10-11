@@ -83,7 +83,13 @@ class PlanLine extends StatelessWidget {
     final seen = tc.map((e) => e.$1).toSet();
     final chips = [for (final x in tc) planChip(x.$1, x.$2)];
     final watch = tabWatch(context, c, tab);
+    final news = asMap(c['news']);
+    final nl = news['level'] as String?;
     final zoneRow = infoBoxes([
+      // 최근 3일 뉴스 악재 (심각 = 4개 탭에선 이미 제외, V3·보유는 경고만)
+      if (nl == 'neg' || nl == 'severe')
+        InfoBox('⚠ 뉴스 ${news['word'] ?? '악재'}${c['news_penalty'] != null ? ' −${(c['news_penalty'] as num).toStringAsFixed(0)}점' : ''}',
+            color: nl == 'severe' ? Colors.red : Colors.orange, bold: true, fill: true),
       planChip(s.zone, s.color),
       // 매수구간 칩 옆에 구간 가격
       if (zoneTxt != null) InfoBox('매수구간 $zoneTxt', color: s.color),
@@ -176,6 +182,17 @@ class WatchTile extends StatelessWidget {
   }
 }
 
+
+/// 뉴스 제목 호재(+1)·악재(-1)·중립(0) — 서버 engine/news.py 키워드와 같은 목록
+int newsTone(String title) {
+  const neg = ['유상증자', '전환사채', '신주인수권부사채', '교환사채', '횡령', '배임', '소송', '감자', '불성실공시', '관리종목',
+      '거래정지', '감사의견', '상장적격성', '회생', '부도', '최대주주변경', '투자주의', '투자경고', '투자위험', '상장폐지'];
+  const pos = ['공급계약', '수주', '자기주식취득', '자사주', '무상증자', '특허', '기술이전', '흑자전환', '주식소각'];
+  final t = title.replaceAll(' ', '');
+  if (neg.any(t.contains)) return -1;
+  if (pos.any(t.contains)) return 1;
+  return 0;
+}
 
 /// 탭별 유형·태그·경고 칩 글자와 색 (관심 목록 · 메인 금일 관심주 · 종목 상세 공통)
 List<(String, Color)> tabChipTexts(Json c, String? tab) {

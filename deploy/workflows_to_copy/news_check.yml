@@ -1,0 +1,31 @@
+# 네이버 뉴스(API HUB) 키 확인: Actions → news-check → Run workflow (종목명 입력)
+#   GitHub Secrets 에 NAVER_HUB_ID · NAVER_HUB_SECRET 를 넣은 뒤 실행. 키 값은 로그에 나오지 않음
+name: news-check
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: "검색할 종목명 (예: 삼성전자)"
+        required: false
+        default: "삼성전자"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TZ: Asia/Seoul
+      PYTHONUTF8: "1"
+      NAVER_HUB_ID: ${{ secrets.NAVER_HUB_ID }}
+      NAVER_HUB_SECRET: ${{ secrets.NAVER_HUB_SECRET }}
+      NAME: ${{ inputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: 뉴스 검색
+        working-directory: backend
+        run: python -m scripts.news_check "$NAME"

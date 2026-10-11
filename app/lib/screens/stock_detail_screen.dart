@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../format.dart';
@@ -275,6 +276,32 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
               else if (v3.isNotEmpty)
                 _V3Score(v: v3),
 
+              // ---- 최근 뉴스 (3일 · 비슷한 제목은 하나만 · 관심 탭 상위·보유종목만) ----
+              if (asList(asMap(c['news'])['items']).isNotEmpty) ...[
+                SectionTitle('최근 뉴스 (3일)',
+                    trailing: asMap(c['news'])['count'] != null
+                        ? Text('${asMap(c['news'])['count']}건', style: Theme.of(context).textTheme.bodySmall)
+                        : null),
+                ...asList(asMap(c['news'])['items']).map((x) {
+                  final tone = newsTone('${x['title']}');
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: tone == 0
+                        ? null
+                        : Icon(tone < 0 ? Icons.warning_amber_rounded : Icons.trending_up,
+                            size: 18, color: tone < 0 ? Colors.orange : upColor),
+                    minLeadingWidth: 18,
+                    title: Text('${x['title']}', maxLines: 2, overflow: TextOverflow.ellipsis),
+                    subtitle: Text('${x['time'] ?? ''}'),
+                    trailing: const Icon(Icons.open_in_new, size: 16),
+                    onTap: () {
+                      final u = Uri.tryParse('${x['link'] ?? ''}');
+                      if (u != null) launchUrl(u, mode: LaunchMode.externalApplication);
+                    },
+                  );
+                }),
+              ],
               if (disc.isNotEmpty) ...[
                 const SectionTitle('최근 공시 (30일)'),
                 ...disc.map((x) => ListTile(

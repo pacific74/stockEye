@@ -199,7 +199,9 @@ def build_details(pit, cfg: dict, report: dict, res, view, chart_days: int = 120
                      "sector": sector_of.get(code), "date": date, "score": cand.get("score"),
                      "in_universe": code in in_uni,
                      "candidate": {**cand, "theme": theme_of.get(code, cand.get("theme")),
-                                   "profile": profiles.get(code) or None},
+                                   "profile": profiles.get(code) or None,
+                                   # 최근 뉴스 (탭 상위·보유종목만, 네이버 API HUB) — 없으면 None
+                                   "news": cand.get("news") or (report.get("news_by_code") or {}).get(code)},
                      "chart": charts.get(code, []), "disclosures": discs.get(code, []),
                      "explanation": e, "similar_patterns": None})
     if failed:

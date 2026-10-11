@@ -139,6 +139,12 @@ def main():
         step("V3 기준 전략: 선정 기록·모의 보유·매도 예정일",
              lambda: attach_portfolio(report, pit, sync, record=not args.as_of, eligible=getattr(res, "v3_eligible", None)),
              errors)
+    # 뉴스 (네이버 API HUB): 탭 상위·보유종목 최근 3일 → 종목 상세 '최근 뉴스' · 악재 경고 · 4개 탭 점수 반영
+    from stockeye.analysis.news_flags import annotate as news_annotate
+    def _news():
+        rows_ = sb.select("positions", {"select": "code,name", "status": "eq.open", "limit": "100000"})
+        return news_annotate(report, {r["code"]: r.get("name") or r["code"] for r in rows_})
+    step("뉴스 (네이버 API HUB)", _news, errors)
     if report.get("nextday"):
         from stockeye.engine.nextday_report import attach_log
         step("익일 유망주: 후보 기록·어제 후보 결과",

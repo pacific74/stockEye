@@ -32,10 +32,7 @@ class _SimilarScreenState extends State<SimilarScreen> {
 
   List<double> _path(dynamic v) => (v as List? ?? []).map((e) => (e as num).toDouble()).toList();
 
-  void _select(int i) {
-    setState(() => _sel = i);
-    _scroll.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
-  }
+  void _select(int i) => setState(() => _sel = i);
 
   @override
   void dispose() {
@@ -73,48 +70,130 @@ class _SimilarScreenState extends State<SimilarScreen> {
             controller: _scroll,
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
             children: [
-              // ① 지금 이 종목
-              _ChartCard(
-                title: widget.name,
-                child: PriceChart(bars: curBars, slots: slots, markIndex: win),
-              ),
-              // ② 고른 과거 패턴
-              if (m != null)
-                _ChartCard(
-                  title: '패턴 ${_sel + 1} · ${m['name']}  (유사도 ${m['similarity']})',
-                  subtitle: '${m['start']} ~ ${m['end']}',
-                  trailing: '20일 후 ${pct(m['ret20'] as num?)}',
-                  trailingColor: ((m['ret20'] as num?) ?? 0) >= 0 ? upColor : downColor,
-                  child: mBars.isEmpty
-                      ? const Center(child: Text('차트 데이터 없음 (다음 배치 때 생김)'))
-                      : PriceChart(bars: mBars, slots: slots, markIndex: win),
-                ),
-              // ③ 수익률 겹쳐 보기
-              if (m != null)
+              // 상위 10개 '그 뒤' 흐름 설명
+              if (d['comment'] != null)
                 Card(
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
                   child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('수익률 겹쳐 보기 (시작일 = 0%)', style: t.titleSmall),
-                      const SizedBox(height: 4),
-                      Wrap(spacing: 12, children: [
-                        _legend(Theme.of(context).colorScheme.primary, '지금 ${widget.name}'),
-                        _legend(orange, '패턴 ${_sel + 1}'),
-                        _legend(orange, '그 뒤', dashed: true),
-                      ]),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: 160,
-                        child: CustomPaint(
-                          size: Size.infinite,
-                          painter: _ComparePainter(q, _path(m['path']), fut, Theme.of(context).colorScheme.primary,
-                              orange, Theme.of(context).colorScheme.onSurface),
-                        ),
-                      ),
+                    padding: const EdgeInsets.all(14),
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Icon(Icons.insights, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('${d['comment']}', style: const TextStyle(height: 1.5))),
                     ]),
                   ),
                 ),
-              // ④ 그 뒤 20일: 유사도 그룹(상위 20% · 중위 30% · 하위 50%)별 대표 봉
+              // 차트 비교 (왼쪽) + 패턴 1~10 버튼 (오른쪽 세로)
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    // ① 지금 이 종목
+                    _ChartCard(
+                      title: widget.name,
+                      child: PriceChart(bars: curBars, slots: slots, markIndex: win),
+                    ),
+                    // ② 고른 과거 패턴
+                    if (m != null)
+                      _ChartCard(
+                        title: '패턴 ${_sel + 1} · ${m['name']}  (유사도 ${m['similarity']})',
+                        subtitle: '${m['start']} ~ ${m['end']}',
+                        trailing: '20일 후 ${pct(m['ret20'] as num?)}',
+                        trailingColor: ((m['ret20'] as num?) ?? 0) >= 0 ? upColor : downColor,
+                        child: mBars.isEmpty
+                            ? const Center(child: Text('차트 데이터 없음 (다음 배치 때 생김)'))
+                            : PriceChart(bars: mBars, slots: slots, markIndex: win),
+                      ),
+                    // ③ 수익률 겹쳐 보기
+                    if (m != null)
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text('수익률 겹쳐 보기 (시작일 = 0%)', style: t.titleSmall),
+                            const SizedBox(height: 4),
+                            Wrap(spacing: 12, children: [
+                              _legend(Theme.of(context).colorScheme.primary, '지금 ${widget.name}'),
+                              _legend(orange, '패턴 ${_sel + 1}'),
+                              _legend(orange, '그 뒤', dashed: true),
+                            ]),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              height: 160,
+                              child: CustomPaint(
+                                size: Size.infinite,
+                                painter: _ComparePainter(q, _path(m['path']), fut, Theme.of(context).colorScheme.primary,
+                                    orange, Theme.of(context).colorScheme.onSurface),
+                              ),
+                            ),
+                          ]),
+                        ),
+                      ),
+                    if (m != null)
+                      Builder(builder: (context) {
+                        final e = MapEntry(_sel, m!);
+                        final mm = e.value;
+                      final r20 = ((mm['ret20'] as num?) ?? 0).toDouble();
+                      final selected = e.key == _sel;
+                      return Card(
+                        shape: selected
+                            ? RoundedRectangleBorder(
+                                side: const BorderSide(color: orange, width: 2), borderRadius: BorderRadius.circular(12))
+                            : null,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => _select(e.key),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(children: [
+                              Expanded(
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text('패턴 ${e.key + 1} · ${mm['name']}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                                  Text('${mm['start']} ~ ${mm['end']} · 유사도 ${mm['similarity']}', style: t.bodySmall),
+                                  if (mm['sim_price'] != null)
+                                    Text('가격 ${mm['sim_price']} · 이평선 ${mm['sim_ma']} · 거래량 ${mm['sim_volume']}',
+                                        style: t.bodySmall?.copyWith(color: Colors.grey)),
+                                  const SizedBox(height: 4),
+                                  // 작은 차트: 비슷했던 20일(진한 선) | 점선 | 그 뒤 20일(연한 선)
+                                  Sparkline(values: [..._path(mm['path']), ..._path(mm['future'])], height: 36,
+                                      split: _path(mm['path']).length, color: selected ? orange : null),
+                                ]),
+                              ),
+                              const SizedBox(width: 12),
+                              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                                Text('20일 후', style: t.bodySmall),
+                                Text(pct(r20),
+                                    style: TextStyle(
+                                        fontSize: 18, fontWeight: FontWeight.bold, color: r20 >= 0 ? upColor : downColor)),
+                                // 20일 동안 장중 최고·최저와 그날 (2일째 상한가 후 음봉 같은 경우도 보이게)
+                                if (mm['max20'] != null)
+                                  Text('최고 ${pct(mm['max20'] as num?)} (${mm['max_day']}일째)',
+                                      style: t.bodySmall?.copyWith(color: upColor)),
+                                if (mm['min20'] != null)
+                                  Text('최저 ${pct(mm['min20'] as num?)} (${mm['min_day']}일째)',
+                                      style: t.bodySmall?.copyWith(color: downColor)),
+                              ]),
+                            ]),
+                          ),
+                        ),
+                      );
+                      }),
+                  ]),
+                ),
+                const SizedBox(width: 6),
+                Column(children: [
+                  for (var i = 0; i < matches.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: _PatternButton(
+                        n: i + 1,
+                        ret: (matches[i]['ret20'] as num?)?.toDouble(),
+                        selected: i == _sel,
+                        onTap: () => _select(i),
+                      ),
+                    ),
+                ]),
+              ]),
+              // 그 뒤 20일 — 유사도 그룹별 (맨 아래)
               if (asList(d['groups']).isNotEmpty)
                 _GroupCard(d: d)
               else
@@ -161,54 +240,6 @@ class _SimilarScreenState extends State<SimilarScreen> {
                   ]),
                 ),
               ),
-              const SectionTitle('비슷했던 구간 (눌러서 위에서 비교)'),
-              ...matches.asMap().entries.map((e) {
-                final mm = e.value;
-                final r20 = ((mm['ret20'] as num?) ?? 0).toDouble();
-                final selected = e.key == _sel;
-                return Card(
-                  shape: selected
-                      ? RoundedRectangleBorder(
-                          side: const BorderSide(color: orange, width: 2), borderRadius: BorderRadius.circular(12))
-                      : null,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => _select(e.key),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(children: [
-                        Expanded(
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text('패턴 ${e.key + 1} · ${mm['name']}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                            Text('${mm['start']} ~ ${mm['end']} · 유사도 ${mm['similarity']}', style: t.bodySmall),
-                            if (mm['sim_price'] != null)
-                              Text('가격 ${mm['sim_price']} · 이평선 ${mm['sim_ma']} · 거래량 ${mm['sim_volume']}',
-                                  style: t.bodySmall?.copyWith(color: Colors.grey)),
-                            const SizedBox(height: 4),
-                            // 작은 차트: 비슷했던 20일(진한 선) | 점선 | 그 뒤 20일(연한 선)
-                            Sparkline(values: [..._path(mm['path']), ..._path(mm['future'])], height: 36,
-                                split: _path(mm['path']).length, color: selected ? orange : null),
-                          ]),
-                        ),
-                        const SizedBox(width: 12),
-                        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                          Text('20일 후', style: t.bodySmall),
-                          Text(pct(r20),
-                              style: TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.bold, color: r20 >= 0 ? upColor : downColor)),
-                          // 20일 동안 장중 최고·최저와 그날 (2일째 상한가 후 음봉 같은 경우도 보이게)
-                          if (mm['max20'] != null)
-                            Text('최고 ${pct(mm['max20'] as num?)} (${mm['max_day']}일째)',
-                                style: t.bodySmall?.copyWith(color: upColor)),
-                          if (mm['min20'] != null)
-                            Text('최저 ${pct(mm['min20'] as num?)} (${mm['min_day']}일째)',
-                                style: t.bodySmall?.copyWith(color: downColor)),
-                        ]),
-                      ]),
-                    ),
-                  ),
-                );
-              }),
             ],
           );
         },
@@ -432,78 +463,59 @@ class _PatternRequestState extends State<_PatternRequest> {
 
 
 /// 그 뒤 20일 — 유사도 그룹별 대표 봉 차트 + 요약
-class _GroupCard extends StatefulWidget {
+class _GroupCard extends StatelessWidget {
   const _GroupCard({required this.d});
   final Json d;
 
   @override
-  State<_GroupCard> createState() => _GroupCardState();
-}
-
-class _GroupCardState extends State<_GroupCard> {
-  int _g = 0;
-
-  @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
-    final d = widget.d;
     final gs = asList(d['groups']);
-    if (_g >= gs.length) _g = 0;
-    final g = gs[_g];
-    final b = asMap(d['sim_buckets']);
     final low = (asList(d['matches']).isEmpty ? 0 : ((asList(d['matches']).first['similarity'] as num?) ?? 0)) < 50;
-    final candles = (g['candles'] as List? ?? const []).map((e) => (e as List).map((x) => (x as num).toDouble()).toList()).toList();
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('비슷한 구간 ${d['sample_size']}개 · 그 뒤 20일', style: t.titleSmall),
-          const SizedBox(height: 4),
-          // 유사도 분포 (상위 200개 중) → 60 이상 개수만큼 사용 (최소 30)
-          infoBoxes([
-            for (final k in const ['80', '70', '60', '50'])
-              if ((b[k] ?? 0) > 0) InfoBox('$k점대 ${b[k]}개'),
-            if ((b['<50'] ?? 0) > 0) InfoBox('50점 미만 ${b['<50']}개', color: Colors.grey),
-          ]),
-          const SizedBox(height: 2),
-          Text('유사도 60 이상인 구간만 씀 (적으면 상위 30개)', style: t.bodySmall?.copyWith(color: Colors.grey)),
+          Text('비슷한 구간 ${d['sample_size']}개', style: t.titleSmall),
           if (low)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: InfoBox('⚠ 많이 비슷한 구간이 없어요 (최고 유사도 50 미만) — 참고만', color: Colors.orange, fill: true),
             ),
-          const SizedBox(height: 10),
-          Wrap(spacing: 6, runSpacing: 4, children: [
-            for (var i = 0; i < gs.length; i++)
-              ChoiceChip(
-                label: Text('${gs[i]['name']} · ${gs[i]['n']}개'),
-                selected: _g == i,
-                onSelected: (_) => setState(() => _g = i),
-              ),
-          ]),
-          const SizedBox(height: 4),
-          Text('유사도 ${g['sim_min']} ~ ${g['sim_max']}', style: t.bodySmall?.copyWith(color: Colors.grey)),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 200,
-            child: CustomPaint(size: Size.infinite, painter: _GroupCandlePainter(candles, Theme.of(context).colorScheme.onSurface)),
-          ),
-          const SizedBox(height: 8),
-          infoBoxes([
-            InfoBox('20일째 종가 중앙 ${pct(g['close_median'] as num?)}',
-                color: ((g['close_median'] as num?) ?? 0) >= 0 ? upColor : downColor, bold: true),
-            InfoBox('오른 채 끝남 ${g['up_ratio']}%'),
-            InfoBox('기간 중 최고 ${pct(g['max_median'] as num?)} (${g['max_day']}일째쯤)', color: upColor),
-            InfoBox('최저 ${pct(g['min_median'] as num?)} (${g['min_day']}일째쯤)', color: downColor),
-            InfoBox('+10% 닿음 ${g['hit_up10']}%', color: upColor),
-            InfoBox('−10% 닿음 ${g['hit_dn10']}%', color: downColor),
-          ]),
-          const SizedBox(height: 6),
-          Text('봉 = 그 그룹의 날마다 대표값 (패턴 끝날 종가 = 0%). 시가·종가 = 중앙값, 윗꼬리 = 고가들의 75% 지점, '
-              '아랫꼬리 = 저가들의 25% 지점 — 몇 개 튀는 값에 끌려가지 않게. 최고·최저 = 종목별 20일 중 최고가·최저가의 중앙값.',
-              style: t.bodySmall?.copyWith(color: Colors.grey)),
+          // 상위 20% · 중위 30% · 하위 50% 모두 펼쳐서
+          for (final g in gs) _group(context, g),
         ]),
       ),
+    );
+  }
+
+  Widget _group(BuildContext context, Json g) {
+    final t = Theme.of(context).textTheme;
+    final candles = (g['candles'] as List? ?? const []).map((e) => (e as List).map((x) => (x as num).toDouble()).toList()).toList();
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Text('${g['name']}', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(width: 10),
+          Text('유사도 ${g['sim_min']} ~ ${g['sim_max']}', style: t.titleSmall?.copyWith(color: Colors.grey)),
+        ]),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: 180,
+          child: CustomPaint(size: Size.infinite, painter: _GroupCandlePainter(candles, Theme.of(context).colorScheme.onSurface)),
+        ),
+        const SizedBox(height: 6),
+        infoBoxes([
+          InfoBox('20일째 종가 중앙 ${pct(g['close_median'] as num?)}',
+              color: ((g['close_median'] as num?) ?? 0) >= 0 ? upColor : downColor, bold: true),
+          InfoBox('오른 채 끝남 ${g['up_ratio']}%'),
+          InfoBox('기간 중 최고 ${pct(g['max_median'] as num?)} (${g['max_day']}일째쯤)', color: upColor),
+          InfoBox('최저 ${pct(g['min_median'] as num?)} (${g['min_day']}일째쯤)', color: downColor),
+          InfoBox('+10%이상 ${g['hit_up10']}%', color: upColor),
+          InfoBox('-10%이하 ${g['hit_dn10']}%', color: downColor),
+        ]),
+      ]),
     );
   }
 }
@@ -560,4 +572,37 @@ class _GroupCandlePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _GroupCandlePainter old) => old.c != c;
+}
+
+
+/// 오른쪽 세로 패턴 버튼: 번호 + 20일 후 색 (빨강 = 올랐음, 파랑 = 내렸음)
+class _PatternButton extends StatelessWidget {
+  const _PatternButton({required this.n, required this.ret, required this.selected, required this.onTap});
+  final int n;
+  final double? ret;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const orange = Color(0xFFFF9800);
+    final col = (ret ?? 0) >= 0 ? upColor : downColor;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? orange.withValues(alpha: 0.2) : null,
+          border: Border.all(color: selected ? orange : Colors.grey.withValues(alpha: 0.4), width: selected ? 2 : 1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(children: [
+          Text('$n', style: TextStyle(fontWeight: FontWeight.bold, color: selected ? orange : null)),
+          if (ret != null) Text('${ret! >= 0 ? '+' : ''}${ret!.toStringAsFixed(0)}%', style: TextStyle(fontSize: 9, color: col)),
+        ]),
+      ),
+    );
+  }
 }

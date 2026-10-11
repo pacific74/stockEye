@@ -175,6 +175,7 @@ class PatternIndex:
         buckets["<50"] = int((sims < 50).sum())
         n_use = int(min(self.MAX_N, max(self.MIN_N, (sims >= self.GOOD_SIM).sum())))
         res = res[:n_use]
+        comment = self._comment(res[:10], H)                           # 상위 10개 '그 뒤' 흐름 설명
         groups = self._groups(res, H)
         stats = {}
         for h in self.horizons:
@@ -195,8 +196,61 @@ class PatternIndex:
                 "query_ma": self._ma_state(T, col),
                 "query_path": [round(float(v), 4) for v in np.expm1(q)],
                 "matches": res[:top], "sample_size": len(res), "stats": stats,
-                "sim_buckets": buckets, "groups": groups,
+                "sim_buckets": buckets, "groups": groups, "comment": comment,
                 "disclaimer": "과거 유사 패턴의 결과일 뿐이며 미래 수익을 예측하지 않습니다. 참고자료로만 사용하세요."}
+
+    @staticmethod
+    def _comment(top: list[dict], H: int) -> str | None:
+        """상위 10개 구간의 '그 뒤 H일' 종가 흐름(중앙값)을 읽어 문장으로: 초반 → 바닥/고점 → 마무리 + 일치도"""
+        paths = [r["_ohlc"][:, 3] for r in top if r.get("_ohlc") is not None and len(r["_ohlc"]) == H]
+        if len(paths) < 5:
+            return None
+        a = np.stack(paths)                                            # (n, H) 종가 % (패턴 끝날 = 0)
+        m = np.nanmedian(a, axis=0)
+        n = len(paths)
+        f = lambda v: f"{'+' if v >= 0 else ''}{v:.1f}%"  # noqa: E731
+        early_d = 3
+        e3 = m[early_d - 1]
+        lo_d, hi_d = int(np.argmin(m)) + 1, int(np.argmax(m)) + 1
+        lo, hi, end = m[lo_d - 1], m[hi_d - 1], m[-1]
+        parts = []
+        if e3 >= 1:
+            parts.append(f"처음 {early_d}일은 {f(e3)} 오르며 출발했")
+        elif e3 <= -1:
+            parts.append(f"처음 {early_d}일은 {f(e3)} 밀리며 출발했")
+        else:
+            parts.append(f"처음 {early_d}일은 큰 움직임 없이 출발했")
+        if lo_d < hi_d and lo < min(e3, 0) - 0.5:
+            # 바닥 → 반등. 바닥 근처에서 머문 날 수 (바닥 ±1.5% 안)
+            base = int(((m >= lo - 1.5) & (m <= lo + 1.5)).sum())
+            dig = f" {base}일가량 바닥을 다진 뒤" if base >= 4 else " 저점을 찍은 뒤"
+            if lo_d <= early_d:
+                parts.append(f"초반 저점({f(lo)}) 근처에서{dig.replace(' 저점을 찍은 뒤', ' 잠시 머문 뒤')} 반등해 {hi_d}일째 {f(hi)}까지 올랐")
+            else:
+                parts.append(f"{lo_d}일째 {f(lo)}까지 내려가{dig} 반등해 {hi_d}일째 {f(hi)}까지 올랐")
+        elif hi_d < lo_d and hi > max(e3, 0) + 0.5:
+            parts.append(f"{hi_d}일째 {f(hi)}까지 오른 뒤 되밀려 {lo_d}일째 {f(lo)}까지 내려갔")
+        elif hi_d > early_d and hi > e3 + 1:
+            parts.append(f"이후 꾸준히 올라 {hi_d}일째 {f(hi)}까지 갔")
+        elif lo_d > early_d and lo < e3 - 1:
+            parts.append(f"이후 계속 밀려 {lo_d}일째 {f(lo)}까지 내려갔")
+        else:
+            parts.append("이후에도 좁은 범위에서 옆으로 움직였")
+        if H not in (hi_d, lo_d):
+            parts.append(f"{H}일째에는 {f(end)}로 마쳤습니다")
+        else:
+            parts[-1] = parts[-1] + "고, 그 흐름으로 끝났습니다"
+            parts = parts[:-1] + [parts[-1]]
+        txt = f"비슷했던 상위 {n}개 구간은 대체로 " + "고, ".join(parts)
+        if not txt.endswith("다"):
+            txt += "습니다"
+        txt += "."
+        up = int((a[:, -1] > 0).sum())
+        spread = float(np.nanpercentile(a[:, -1], 75) - np.nanpercentile(a[:, -1], 25))
+        txt += f" {n}개 중 {up}개가 오른 채 끝났"
+        txt += ("고, 흐름이 서로 비슷해 참고할 만합니다." if spread < 8 else
+                "지만 종목마다 결과 차이가 커서 참고만 하세요.")
+        return txt
 
     def _groups(self, res: list[dict], H: int) -> list[dict]:
         """유사도 순서로 상위 20% / 중위 30% / 하위 50% → 날마다 그룹 대표 봉 (시가·종가 = 중앙값,

@@ -43,6 +43,9 @@ class Api {
   static Future<Json> similar(String code) => useCloud ? _Cloud.similar(code) : _Http.get('/api/stocks/$code/similar');
   static Future<Json> requestPattern(String code) => _Cloud.requestPattern(code);
   static Future<Json> patternStatus(String code) => useCloud ? _Cloud.patternStatus(code) : Future.value(<String, dynamic>{});
+  /// 관심종목 적중률 계산 요청 (관리자) — only: 'HIT' · 'HIT:nextday' · 'HIT:2025' · 'HIT:early:2024,2025'
+  static Future<Json> requestHitRate(String only) => _Cloud.requestHitRate(only);
+  static Future<Json> hitRateJob() => useCloud ? _Cloud.hitRateJob() : Future.value(<String, dynamic>{});
   static Future<List<Json>> strategies() => useCloud ? _Cloud.strategies() : _Http.getList('/api/strategies');
   static Future<Json> backtest(Json req) => useCloud ? _Cloud.backtest(req) : _Http.post('/api/backtest', req);
   static Future<Json> latestBacktest({String? strategy}) => useCloud
@@ -276,6 +279,25 @@ class _Cloud {
       return asMap(await db.rpc('request_pattern', params: {'p_code': code}));
     } on PostgrestException catch (e) {
       throw Exception(e.message);
+    }
+  }
+
+  static Future<Json> requestHitRate(String only) async {
+    try {
+      return asMap(await db.rpc('request_hitrate', params: {'p_only': only}));
+    } on PostgrestException catch (e) {
+      throw Exception(e.message);
+    }
+  }
+
+  /// 적중률 계산 상태 (queued · running · done · failed) + 갱신 시각
+  static Future<Json> hitRateJob() async {
+    try {
+      final r = await db.from('system_status').select('payload,updated_at').eq('key', 'hitrate_job').maybeSingle();
+      if (r == null) return {};
+      return {...asMap(r['payload']), 'updated_at': r['updated_at']};
+    } catch (_) {
+      return {};
     }
   }
 

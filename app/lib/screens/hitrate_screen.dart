@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../api.dart';
@@ -9,7 +11,7 @@ import '../widgets/common.dart';
 Future<Json> loadHitRate() => Api.latestBacktest(strategy: 'HIT');
 
 const _cols = [('t1', '1차'), ('t2', '2차'), ('t3', '3차'), ('stop', '손절'), ('flat', '보합')];
-const _tabs = [('v3', 'V3'), ('nextday', '익일유망주'), ('early', '상승초기'), ('reversal', '추세전환'), ('uplimit', '상파')];
+const _tabList = [('v3', 'V3'), ('nextday', '익일유망주'), ('early', '상승초기'), ('reversal', '추세전환'), ('uplimit', '상파')];
 
 Color _colOf(String k) => switch (k) {
       't1' || 't2' || 't3' => const Color(0xFFD32F2F),
@@ -44,8 +46,8 @@ class _HitRateSectionState extends State<HitRateSection> {
           return Card(
             child: Padding(
               padding: const EdgeInsets.all(12),
-              child: Text('아직 적중률 결과가 없어요. 매주 토요일 주간 배치가 계산합니다. 지금 보려면 Actions → weekly-backtest → '
-                  'Run workflow 에서 칸에 HIT 를 넣고 실행하세요. (탭·연도 일부: HIT:nextday · HIT:2025 · HIT:early:2024,2025)',
+              child: Text('아직 적중률 결과가 없어요. 위의 [전체 계산 요청]을 누르면 계산해요 (약 45분). '
+                  '(GitHub Actions → weekly-backtest → Run workflow 에서 직접 돌려도 돼요)',
                   style: t.bodySmall),
             ),
           );
@@ -58,13 +60,14 @@ class _HitRateSectionState extends State<HitRateSection> {
           SectionTitle('관심종목 적중률', trailing: Text('${r['end'] ?? ''} 기준', style: t.bodySmall)),
           Text('탭마다 매일 상위 3종목 → 다음 날 시가 매수 → 20거래일 안에 차트 목표가·손절가 중 어디에 닿았나. '
               '승률 = 목표 ÷ (목표 + 손절). '
-              '손익 = 목표마다 1/3씩 팔고, 남은 몫은 손절가나 20일째 종가에 판 평균 수익 (수수료·세금 0.25% 뺌). '
+              '손익 = 1차 50% · 2차 30% · 3차 20% 나눠 팔고, 1차를 판 뒤 남은 몫은 매수가까지 밀리면 본전에, '
+              '1차 전에는 손절가에, 끝까지 남으면 20일째 종가에 판 평균 수익 (수수료·세금 0.25% 뺌). '
               '승률이 높아도 손익이 마이너스면 손절 한 번이 목표 여러 번을 까먹는다는 뜻이에요. '
               '연도를 누르면 분기, 숫자를 누르면 며칠째에 닿았는지 보여요.',
               style: t.bodySmall?.copyWith(color: Colors.grey)),
           const SizedBox(height: 8),
           Wrap(spacing: 6, runSpacing: 4, children: [
-            for (final x in _tabs)
+            for (final x in _tabList)
               if (tabs.containsKey(x.$1))
                 ChoiceChip(label: Text(x.$2), selected: _tab == x.$1, onSelected: (_) => setState(() => _tab = x.$1)),
           ]),
@@ -149,7 +152,7 @@ class _HitRateSectionState extends State<HitRateSection> {
               child: Text(s['win'] == null ? '-' : '${(s['win'] as num).toStringAsFixed(0)}%',
                   textAlign: TextAlign.right, style: base?.copyWith(fontWeight: FontWeight.bold)),
             ),
-            // 평균 손익 (1/3씩 분할 매도, 비용 뺀 뒤)
+            // 평균 손익 (50·30·20% 분할 매도 + 1차 뒤 본전 손절, 비용 뺀 뒤)
             Expanded(
               flex: 6,
               child: Text(pnl == null ? '-' : '${pnl >= 0 ? '+' : ''}${pnl.toStringAsFixed(1)}%',
@@ -224,6 +227,154 @@ class _HitRateSectionState extends State<HitRateSection> {
               }),
           ]),
         ),
+      ),
+    );
+  }
+}
+
+/// 적중률 계산 요청 (관리자) — 전체 · 탭별 · 연도별. Supabase → GitHub 'weekly-backtest' 작업에 바로 신호.
+///   전체는 약 45분 (V3 를 매일 다시 계산하는 데 대부분). 일부만 돌리면 나머지 탭·연도는 이전 결과에 합쳐짐.
+class HitRunCard extends StatefulWidget {
+  const HitRunCard({super.key, required this.onDone});
+  final VoidCallback onDone; // 계산이 끝나면 표 새로고침
+  @override
+  State<HitRunCard> createState() => _HitRunCardState();
+}
+
+class _HitRunCardState extends State<HitRunCard> {
+  final Set<String> _tabs = {};
+  final Set<int> _years = {};
+  Json _job = {};
+  bool _busy = false;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _poll();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  bool get _active => _job['status'] == 'queued' || _job['status'] == 'running';
+
+  Future<void> _poll() async {
+    final was = _active;
+    final j = await Api.hitRateJob();
+    if (!mounted) return;
+    setState(() => _job = j);
+    if (was && j['status'] == 'done') widget.onDone();
+    _timer?.cancel();
+    if (_active) _timer = Timer(const Duration(seconds: 30), _poll); // 계산 중이면 30초마다 상태 확인
+  }
+
+  String get _only {
+    final parts = ['HIT'];
+    if (_tabs.isNotEmpty) parts.add(_tabs.join(','));
+    if (_years.isNotEmpty) parts.add((_years.toList()..sort()).join(','));
+    return parts.join(':');
+  }
+
+  Future<void> _request() async {
+    setState(() => _busy = true);
+    try {
+      final r = await Api.requestHitRate(_only);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(r['ok'] == true
+              ? '계산을 요청했어요 (${r['only']}). 시작까지 1~2분, 전체는 45분쯤 걸려요.'
+              : '${r['message'] ?? '요청하지 못했어요'} (${r['only'] ?? ''})')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'.replaceFirst('Exception: ', ''))));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+      _poll();
+    }
+  }
+
+  String _status() {
+    final s = _job['status'];
+    final only = _job['only'] ?? '';
+    return switch (s) {
+      'queued' => '대기 중 ($only) — 다른 배치가 돌고 있으면 끝난 뒤 시작해요',
+      'running' => '계산 중 ($only) · ${_job['started'] ?? ''} 시작',
+      'done' => '마지막 계산: $only · ${_job['finished'] ?? ''} 끝 (${_job['minutes'] ?? '-'}분)',
+      'failed' => '실패 ($only): ${_job['message'] ?? ''}',
+      _ => '',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final now = DateTime.now().year;
+    final years = [for (var y = now - 5; y <= now; y++) y];
+    final st = _status();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.play_circle_outline, size: 18),
+            const SizedBox(width: 6),
+            Text('적중률 다시 계산', style: t.titleSmall),
+          ]),
+          const SizedBox(height: 4),
+          Text('아무것도 안 고르면 전체(5개 탭 × 5년, 약 45분). 탭이나 연도를 고르면 그 부분만 다시 계산해서 기존 결과에 합쳐요.',
+              style: t.bodySmall?.copyWith(color: Colors.grey)),
+          const SizedBox(height: 8),
+          Text('탭', style: t.labelSmall),
+          Wrap(spacing: 6, runSpacing: 2, children: [
+            for (final x in _tabList)
+              FilterChip(
+                visualDensity: VisualDensity.compact,
+                label: Text(x.$2),
+                selected: _tabs.contains(x.$1),
+                onSelected: (v) => setState(() => v ? _tabs.add(x.$1) : _tabs.remove(x.$1)),
+              ),
+          ]),
+          const SizedBox(height: 4),
+          Text('연도', style: t.labelSmall),
+          Wrap(spacing: 6, runSpacing: 2, children: [
+            for (final y in years)
+              FilterChip(
+                visualDensity: VisualDensity.compact,
+                label: Text('$y'),
+                selected: _years.contains(y),
+                onSelected: (v) => setState(() => v ? _years.add(y) : _years.remove(y)),
+              ),
+          ]),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _busy || _active ? null : _request,
+              icon: _busy || _active
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.play_arrow),
+              label: Text(_active
+                  ? '계산 중이에요'
+                  : (_tabs.isEmpty && _years.isEmpty
+                      ? '전체 계산 요청'
+                      : '${[
+                          if (_tabs.isNotEmpty) _tabList.where((x) => _tabs.contains(x.$1)).map((x) => x.$2).join('·'),
+                          if (_years.isNotEmpty) (_years.toList()..sort()).join('·'),
+                        ].join(' / ')} 계산 요청')),
+            ),
+          ),
+          if (st.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(children: [
+                Expanded(child: Text(st, style: t.bodySmall?.copyWith(color: _job['status'] == 'failed' ? Colors.red : Colors.grey))),
+                if (_active) IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.refresh, size: 18), onPressed: _poll),
+              ]),
+            ),
+        ]),
       ),
     );
   }

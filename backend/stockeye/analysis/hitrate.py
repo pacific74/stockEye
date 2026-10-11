@@ -10,8 +10,8 @@
            · 손절: 1차 목표 전에 손절가에 닿음
            · 보합: 20일 동안 1차 목표도 손절도 안 닿음
            승률 = 목표 도달 ÷ (목표 도달 + 손절)  — 보합(20일 동안 아무것도 안 닿음)은 빼고
-  평균 손익 1/3씩 나눠 팔았다고 보고 계산: 닿은 목표마다 1/3 을 그 목표가에, 남은 몫은 손절가(시초가가 더 낮으면
-           시초가)에, 끝까지 아무것도 안 닿으면 20일째 종가에. 수수료·세금 0.25% 뺌. → '한 번 사면 평균 몇 %'
+  평균 손익 분할 매도: 1차 50% · 2차 30% · 3차 20%를 그 목표가에. 1차를 판 뒤 남은 몫은 매수가(본전)까지 밀리면 매도.
+           1차 전에는 손절가(시초가가 더 낮으면 시초가)에 전부, 20일 끝까지 남은 몫은 20일째 종가. 수수료·세금 0.25% 뺌.
   일별 분포 목표·손절에 처음 닿은 날(1~20일째) 개수
   묶음     탭 × 연도 × 분기, 분기마다 코스피 등락률과 그때 시장 이슈(market_issues.json, 직접 고칠 수 있음)
   제외     다음 날 시가가 이미 1차 목표가 위(또는 손절가 아래)라 계획대로 살 수 없는 경우
@@ -28,7 +28,7 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-VERSION = "HIT-1.1"
+VERSION = "HIT-1.2"
 COST = 0.25                                             # 수수료+세금 (%, 왕복)
 H = 20
 TOP = 3
@@ -74,18 +74,39 @@ def judge(o: np.ndarray, h: np.ndarray, l: np.ndarray, t: tuple, stop: float) ->
     return ("stop" if "stop" in first else "flat"), first
 
 
-def pnl(o: np.ndarray, c: np.ndarray, entry: float, t: tuple, stop: float, first: dict) -> float:
-    """1/3씩 분할 매도 손익(%) — 닿은 목표마다 1/3, 남은 몫은 손절 또는 20일째 종가"""
-    got = [f"t{i}" in first for i in (1, 2, 3)]
-    val = sum(t[i] for i in range(3) if got[i]) / 3
-    rest = (3 - sum(got)) / 3
-    if rest:
-        if "stop" in first:
-            k = first["stop"] - 1
-            val += rest * (min(o[k], stop) if o[k] > 0 else stop)
-        else:
-            cc = c[np.isfinite(c) & (c > 0)]
-            val += rest * (float(cc[-1]) if len(cc) else entry)
+SELL = (0.5, 0.3, 0.2)                                   # 1차 50% · 2차 30% · 3차 20%
+
+
+def pnl(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray, entry: float, t: tuple, stop: float) -> float:
+    """분할 매도 손익(%) — 1차 50% · 2차 30% · 3차 20%. 1차를 판 뒤에는 남은 몫의 손절을 매수가(본전)로 올림.
+    손절(또는 본전)에 닿으면 남은 몫 전부, 20일 끝까지 남으면 20일째 종가. 비용 COST 뺌.
+    같은 날 손절과 목표가 모두 닿으면 손절 먼저 (judge 와 같은 규칙: 시초가가 1차 위로 뜬 날만 목표 먼저)"""
+    pos, val, st = 1.0, 0.0, stop
+    sold = [False, False, False]
+    for k in range(len(h)):
+        if not (h[k] > 0):
+            break
+        gap_up = not sold[0] and o[k] >= t[0]
+        if (l[k] <= st or o[k] <= st) and not gap_up:
+            val += pos * min(o[k], st) if o[k] > 0 else pos * st
+            pos = 0.0
+            break
+        for i in range(3):
+            if not sold[i] and t[i] > 0 and h[k] >= t[i]:
+                val += SELL[i] * t[i]
+                pos -= SELL[i]
+                sold[i] = True
+                if i == 0:
+                    st = max(st, entry)                           # 1차 판 뒤: 본전 손절
+        if pos <= 1e-9:
+            break
+        if l[k] <= st:                                            # 목표 판 그날 다시 매수가(또는 손절가)까지 밀림
+            val += pos * st
+            pos = 0.0
+            break
+    if pos > 1e-9:
+        cc = c[np.isfinite(c) & (c > 0)]
+        val += pos * (float(cc[-1]) if len(cc) else entry)
     return (val / entry - 1) * 100 - COST
 
 
@@ -132,7 +153,8 @@ def evaluate(signals: pd.DataFrame, ohlcv: pd.DataFrame, W: dict) -> pd.DataFram
             rec["skip"] = "시가가 목표 위"; out.append(rec); continue
         res, first = judge(O[i + 1:i + H + 1, j], Hh[i + 1:i + H + 1, j], L[i + 1:i + H + 1, j], t, float(lv["stop"]))
         rec.update({"outcome": res, **{f"d_{k}": v for k, v in first.items()},
-                    "pnl": pnl(O[i + 1:i + H + 1, j], C[i + 1:i + H + 1, j], float(o1), t, float(lv["stop"]), first),
+                    "pnl": pnl(O[i + 1:i + H + 1, j], Hh[i + 1:i + H + 1, j], L[i + 1:i + H + 1, j], C[i + 1:i + H + 1, j],
+                               float(o1), t, float(lv["stop"])),
                     "entry": float(o1), "t1": t[0], "t2": t[1], "t3": t[2], "stop": float(lv["stop"])})
         out.append(rec)
     return pd.concat([signals.reset_index(drop=True), pd.DataFrame(out)], axis=1)

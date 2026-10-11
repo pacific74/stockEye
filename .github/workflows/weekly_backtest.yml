@@ -1,6 +1,8 @@
-# 매주 토요일 10:00(한국시간): 관심종목 적중률(HIT) → 앱 '검증' 화면
-# 수동 실행(Run workflow) only 칸:
-#   비움 또는 HIT     = 적중률 전체 (5개 탭 × 5년, 1·2·3차 목표/손절, 평균 손익)
+# 관심종목 적중률 계산 (HIT) → 앱 '검증' 화면.  매주 자동 실행은 없앰 (2026-10-11) — 필요할 때만:
+#   ① 앱 '검증' 화면 [계산 요청] → Supabase 가 바로 신호(repository_dispatch hitrate_request)
+#      (Supabase app_config 에 github_dispatch_token·github_repo 가 있어야 함 — 패턴 요청과 같은 설정)
+#   ② 여기 Actions → Run workflow, only 칸:
+#   비움 또는 HIT     = 적중률 전체 (5개 탭 × 5년, 약 45분 — V3 를 매일 다시 계산하는 데 대부분)
 #   HIT:nextday       = 적중률, 탭 하나 (여러 개: HIT:nextday,early)
 #   HIT:2025          = 적중률, 연도 하나 (여러 개: HIT:2024,2025)
 #   HIT:early:2024,2025 = 적중률, 탭 + 연도
@@ -10,8 +12,8 @@
 name: weekly-backtest
 
 on:
-  schedule:
-    - cron: "0 1 * * 6"
+  repository_dispatch:
+    types: [hitrate_request]
   workflow_dispatch:
     inputs:
       only:
@@ -25,7 +27,6 @@ concurrency:
 
 jobs:
   backtest:
-    if: github.event_name == 'workflow_dispatch' || vars.BACKTEST_RUNNER != 'vm'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
@@ -34,6 +35,7 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      ONLY: ${{ inputs.only || github.event.client_payload.only }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -42,6 +44,8 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r backend/requirements.txt
-      - name: 백테스트
+      - name: 적중률 계산
         working-directory: backend
-        run: python -m scripts.cloud_backtest ${{ inputs.only && format('--only {0}', inputs.only) || '' }}
+        # 입력값은 환경변수로만 넘김 (명령줄에 직접 넣지 않음)
+        run: |
+          if [ -n "$ONLY" ]; then python -m scripts.cloud_backtest --only "$ONLY"; else python -m scripts.cloud_backtest; fi

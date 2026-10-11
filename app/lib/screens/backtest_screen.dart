@@ -32,7 +32,10 @@ class _BacktestScreenState extends State<BacktestScreen> {
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-          children: [HitRateSection(future: _hit)],
+          children: [
+            HitRunCard(onDone: () => setState(() => _hit = loadHitRate())),
+            HitRateSection(future: _hit),
+          ],
         ),
       ),
     );

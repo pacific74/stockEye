@@ -165,6 +165,15 @@ def main():
     if rows:
         step("종목 상세 발행", lambda: pub.publish_details(sb, rows, report["date"]), errors)
     step("검색 종목 패턴 요청 처리", lambda: process_pattern_requests(sb, pit), errors)
+    # 당일단타: 오늘 아침 PC 가 남긴 신호 → 오늘 1분봉으로 결과 (1·2차 익절·손절·마감) → 검증 탭에 누적
+    if os.getenv("KIS_APP_KEY") and not args.as_of:
+        def _daytrade():
+            from stockeye.analysis.daytrade_eval import evaluate_day
+            from stockeye.data.sources.kis_source import KISClient
+            kc = cfg.get("kis", {})
+            kis = KISClient(kc.get("env", "prod"), data_dir(cfg) / ".kis_token.json", kc.get("calls_per_sec", 15))
+            return evaluate_day(sb, kis, report["date"])
+        step("당일단타 결과 매기기", _daytrade, errors)
 
     # 매매일지: 앱을 쓰는 모든 사용자 각각 (본인 데이터만 본인에게 보임)
     from stockeye.cloud.journal import CloudJournal

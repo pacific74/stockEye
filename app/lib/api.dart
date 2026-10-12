@@ -48,6 +48,8 @@ class Api {
   /// 관심종목 적중률 계산 요청 (관리자) — only: 'HIT' · 'HIT:nextday' · 'HIT:2025' · 'HIT:early:2024,2025'
   static Future<Json> requestHitRate(String only) => _Cloud.requestHitRate(only);
   static Future<Json> hitRateJob() => useCloud ? _Cloud.hitRateJob() : Future.value(<String, dynamic>{});
+  /// 당일단타: PC 가 09:00~10:30 1분마다 올리는 후보 (system_status 'daytrade')
+  static Future<Json> daytrade() => useCloud ? _Cloud.daytrade() : Future.value(<String, dynamic>{});
   static Future<List<Json>> strategies() => useCloud ? _Cloud.strategies() : _Http.getList('/api/strategies');
   static Future<Json> backtest(Json req) => useCloud ? _Cloud.backtest(req) : _Http.post('/api/backtest', req);
   static Future<Json> latestBacktest({String? strategy}) => useCloud
@@ -292,6 +294,16 @@ class _Cloud {
       return asMap(await db.rpc('request_hitrate', params: {'p_only': only}));
     } on PostgrestException catch (e) {
       throw Exception(e.message);
+    }
+  }
+
+  static Future<Json> daytrade() async {
+    try {
+      final r = await db.from('system_status').select('payload,updated_at').eq('key', 'daytrade').maybeSingle();
+      if (r == null) return {};
+      return {...asMap(r['payload']), 'updated_at': r['updated_at']};
+    } catch (_) {
+      return {};
     }
   }
 

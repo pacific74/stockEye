@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../daytrade.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
 import 'hitrate_screen.dart';
@@ -17,24 +18,37 @@ class BacktestScreen extends StatefulWidget {
 
 class _BacktestScreenState extends State<BacktestScreen> {
   late Future<Json> _hit = loadHitRate();
+  late Future<Json> _dt = loadDaytradeValidation();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
           title: const LogoTitle('검증'),
-          actions: topActions(context, onRefresh: () => setState(() => _hit = loadHitRate()))),
+          actions: topActions(context, onRefresh: () => setState(() {
+            _hit = loadHitRate();
+            _dt = loadDaytradeValidation();
+          }))),
       body: RefreshIndicator(
         onRefresh: () async {
-          setState(() => _hit = loadHitRate());
+          setState(() {
+            _hit = loadHitRate();
+            _dt = loadDaytradeValidation();
+          });
           await _hit.catchError((_) => <String, dynamic>{});
         },
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: [
-            HitRunCard(onDone: () => setState(() => _hit = loadHitRate())),
+            HitRunCard(onDone: () => setState(() {
+            _hit = loadHitRate();
+            _dt = loadDaytradeValidation();
+          })),
             HitRateSection(future: _hit),
+            const SizedBox(height: 16),
+            // 당일단타: 실전 기록 + 되돌려 보기
+            DaytradeValidation(future: _dt),
           ],
         ),
       ),

@@ -9,6 +9,9 @@
   - 접근토큰 발급  POST /oauth2/tokenP           (하루 1회 정도로 재사용: data/.kis_token.json 에 캐시)
   - 현재가         FHKST01010100  /uapi/domestic-stock/v1/quotations/inquire-price
   - 종목별 프로그램매매추이(일별)  FHPPG04650201  /uapi/domestic-stock/v1/quotations/program-trade-by-stock-daily
+  - 당일 1분봉     FHKST03010200  /uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice   (당일단타)
+  - 과거 1분봉     FHKST03010230  /uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice  (당일단타 검증)
+  - 호가           FHKST01010200  /uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn  (스프레드)
 
 ※ 본인 투자 목적의 개인 사용 기준. 시세를 타인에게 제공하는 서비스로 확장하면 별도 이용계약이 필요할 수 있음.
 """
@@ -110,6 +113,63 @@ class KISClient:
                 "prev_close": num("stck_sdpr"),
                 "volume": num("acml_vol"), "value": num("acml_tr_pbmn"), "sector": o.get("bstp_kor_isnm"),
                 "per": num("per"), "pbr": num("pbr"), "time": pd.Timestamp.now().isoformat(timespec="seconds")}
+
+    # ---------------- 당일단타용: 1분봉 · 호가 ----------------
+    @staticmethod
+    def _bars(rows, day: str | None = None) -> pd.DataFrame:
+        df = pd.DataFrame(rows or [])
+        if df.empty or "stck_cntg_hour" not in df:
+            return pd.DataFrame(columns=["time", "open", "high", "low", "close", "volume", "value"])
+        f = lambda c: pd.to_numeric(df.get(c), errors="coerce")  # noqa: E731
+        d = df["stck_bsop_date"] if "stck_bsop_date" in df else pd.Series([day] * len(df))
+        out = pd.DataFrame({"time": pd.to_datetime(d.astype(str) + df["stck_cntg_hour"].astype(str).str.zfill(6),
+                                                   format="%Y%m%d%H%M%S", errors="coerce"),
+                            "open": f("stck_oprc"), "high": f("stck_hgpr"), "low": f("stck_lwpr"),
+                            "close": f("stck_prpr"), "volume": f("cntg_vol"), "value": f("acml_tr_pbmn")})
+        return out.dropna(subset=["time", "close"]).sort_values("time").reset_index(drop=True)
+
+    def minute_bars(self, code: str, until: str = "153000") -> pd.DataFrame:
+        """당일 1분봉 (until 시각부터 거꾸로 30개) — 주식당일분봉조회 FHKST03010200"""
+        js = self._get("/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice", "FHKST03010200",
+                       {"FID_ETC_CLS_CODE": "", "FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code,
+                        "FID_INPUT_HOUR_1": until, "FID_PW_DATA_INCU_YN": "Y"})
+        return self._bars(js.get("output2"))
+
+    def minute_bars_day(self, code: str, start: str = "090000", end: str = "153000", day: str | None = None,
+                        max_calls: int = 14) -> pd.DataFrame:
+        """start~end 1분봉 전부 (30개씩 거꾸로 이어 받기). day=YYYYMMDD 면 과거 날짜 (주식일별분봉조회 FHKST03010230 —
+        실전 계좌 전용·보관 기간 제한. 안 되면 빈 표)"""
+        parts, until = [], end
+        for _ in range(max_calls):
+            if day:
+                js = self._get("/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice", "FHKST03010230",
+                               {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code, "FID_INPUT_HOUR_1": until,
+                                "FID_INPUT_DATE_1": day, "FID_PW_DATA_INCU_YN": "Y", "FID_FAKE_TICK_INCU_YN": ""})
+                b = self._bars(js.get("output2"), day)
+                b = b[b["time"].dt.strftime("%Y%m%d") == day]
+            else:
+                b = self.minute_bars(code, until)
+            if b.empty:
+                break
+            parts.append(b)
+            first = b["time"].iloc[0]
+            if first.strftime("%H%M%S") <= start:
+                break
+            until = (first - pd.Timedelta(minutes=1)).strftime("%H%M%S")
+        if not parts:
+            return self._bars([])
+        out = pd.concat(parts).drop_duplicates("time").sort_values("time")
+        hm = out["time"].dt.strftime("%H%M%S")
+        return out[(hm >= start) & (hm <= end)].reset_index(drop=True)
+
+    def asking(self, code: str) -> dict:
+        """1호가 매도·매수 → 스프레드 (주식현재가 호가 FHKST01010200)"""
+        js = self._get("/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn", "FHKST01010200",
+                       {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code})
+        o = js.get("output1") or {}
+        ask, bid = float(o.get("askp1") or 0), float(o.get("bidp1") or 0)
+        mid = (ask + bid) / 2
+        return {"ask": ask, "bid": bid, "spread": (ask - bid) / mid if ask > 0 and bid > 0 and mid > 0 else None}
 
     def program_daily(self, code: str) -> pd.DataFrame:
         """종목별 프로그램 순매수 금액(일별, 최근 약 30영업일)."""

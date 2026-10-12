@@ -1,0 +1,48 @@
+# 종가배팅 — 평일 오후 자동 (PC 꺼져 있어도) → 앱 메인·'관심 > 종가배팅'
+#   14:30(한국시간) 예약 → 14:50 까지 기다렸다가 15:20 까지 1분마다 계산 → 15:20 이후 매수 후보 상위 3 저장
+#   (GitHub 예약은 10~20분 늦게 시작될 수 있어서 20분 일찍 잡음. 15:20 넘어 시작되면 한 번만 계산하고 저장)
+#   다음 날 저녁 배치가 '종가 매수 → 다음 날 오전 매도' 결과를 매겨 '검증' 에 누적
+#   PC 에서 16_closingbet.bat 을 같이 켜도 같은 결과를 덮어쓸 뿐 문제없음
+#   ⚠ 주문은 하지 않는다
+name: closingbet
+
+on:
+  schedule:
+    - cron: "30 5 * * 1-5"        # UTC 05:30 = 한국 14:30
+  workflow_dispatch:
+
+concurrency:
+  group: stockeye-closingbet
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      TZ: Asia/Seoul
+      PYTHONUTF8: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      NAVER_HUB_ID: ${{ secrets.NAVER_HUB_ID }}
+      NAVER_HUB_SECRET: ${{ secrets.NAVER_HUB_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: 일봉 데이터 캐시 (저녁 배치 캐시와 따로 — 바뀐 조각만 Storage 에서 받기)
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: stockeye-cbdata-${{ github.run_id }}
+          restore-keys: stockeye-cbdata-
+      - run: pip install -r backend/requirements.txt
+      - name: 종가배팅 (14:50~15:20)
+        working-directory: backend
+        run: python -m scripts.closingbet --cloud

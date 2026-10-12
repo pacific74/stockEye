@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../closingbet.dart';
 import '../daytrade.dart';
 import '../format.dart';
 import '../live.dart';
@@ -67,6 +68,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _reload() => setState(_load);
 
+  /// 당일단타 [종목찾기] 끝 → 당일단타 3개만 다시 읽기
+  Future<void> _reloadDaytrade() async {
+    final d = await Api.daytrade();
+    if (!mounted) return;
+    setState(() => _picks = {..._picks, 'daytrade': dtIsToday(d) ? asList(d['items']).take(3).toList() : <Json>[]});
+  }
+
   Future<void> _afterReport(Json d) async {
     _report = d;
     try {
@@ -84,9 +92,10 @@ class _HomeScreenState extends State<HomeScreen> {
     //   관심 목록과 똑같이: 저장 순위(rank)로 30개를 받아 점수순으로 다시 정렬 → 상위 3
     //   (예전엔 rank 순 10개만 받아 정렬해서, rank 11~30 에 점수 높은 종목이 있으면 목록 탭과 달랐음)
     const keys = CandidateListScreen.keys;
-    final lists = await Future.wait(keys.map((k) => k == 'daytrade'
-        // 당일단타: PC 가 아침에 올린 오늘 후보 상위 3 (오늘 것이 아니면 비움)
-        ? Api.daytrade().then((d) => dtIsToday(d) ? asList(d['items']).take(3).toList() : <Json>[], onError: (_) => <Json>[])
+    final lists = await Future.wait(keys.map((k) => k == 'daytrade' || k == 'closingbet'
+        // 당일단타·종가배팅: PC 가 올린 오늘 후보 상위 3 (오늘 것이 아니면 비움)
+        ? (k == 'daytrade' ? Api.daytrade() : Api.closingbet())
+            .then((d) => dtIsToday(d) ? asList(d['items']).take(3).toList() : <Json>[], onError: (_) => <Json>[])
         : Api.candidates(k)
         .then((d) => sortByScore(asList(d['candidates'])).take(3).toList(), onError: (_) => <Json>[])));
     _picks = {for (var i = 0; i < keys.length; i++) keys[i]: lists[i]};
@@ -199,17 +208,26 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Row(children: [
                       Text(strategyLabels[k] ?? k, style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
                       const Spacer(),
+                      if (k == 'daytrade') DaytradeFindButton(onDone: _reloadDaytrade),
                       TextButton(onPressed: () => goTab(context, 1, list: k), child: const Text('전체')),
                     ]),
                   ),
                   if ((_picks[k] ?? (k == 'v3' ? top10.take(3).toList() : const <Json>[])).isEmpty)
                     Padding(
                         padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-                        child: Text(k == 'daytrade' ? '평일 09:00~10:30 PC 에서 당일단타를 켜 두면 여기에 나와요' : '오늘 조건을 만족한 종목이 없습니다',
+                        child: Text(
+                            k == 'daytrade'
+                                ? '평일 09:00~10:30 PC 에서 당일단타를 켜 두면 여기에 나와요'
+                                : k == 'closingbet'
+                                    ? '평일 14:50~15:20 PC 에서 종가배팅을 켜 두면 여기에 나와요'
+                                    : '오늘 조건을 만족한 종목이 없습니다',
                             style: t.bodySmall)),
                   if (k == 'daytrade')
                     ...(_picks[k] ?? const <Json>[]).asMap().entries.map((e) =>
                         DaytradeTile(r: e.value, rank: e.key + 1, price: quotes['${e.value['code']}']?.price))
+                  else if (k == 'closingbet')
+                    ...(_picks[k] ?? const <Json>[]).asMap().entries.map((e) =>
+                        ClosingbetTile(r: e.value, rank: e.key + 1, price: quotes['${e.value['code']}']?.price))
                   else
                   ...(_picks[k] ?? (k == 'v3' ? top10.take(3).toList() : const <Json>[])).asMap().entries.map((e) =>
                       _LiveCandidateTile(

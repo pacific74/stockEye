@@ -50,6 +50,11 @@ class Api {
   static Future<Json> hitRateJob() => useCloud ? _Cloud.hitRateJob() : Future.value(<String, dynamic>{});
   /// 당일단타: PC 가 09:00~10:30 1분마다 올리는 후보 (system_status 'daytrade')
   static Future<Json> daytrade() => useCloud ? _Cloud.daytrade() : Future.value(<String, dynamic>{});
+  /// 종가배팅: PC 가 14:50~15:20 1분마다 올리는 후보 (system_status 'closingbet')
+  static Future<Json> closingbet() => useCloud ? _Cloud.statusOf('closingbet') : Future.value(<String, dynamic>{});
+  /// 당일단타 [종목찾기] (관리자) → GitHub 'daytrade' 작업이 지금 시세로 한 번 계산
+  static Future<Json> requestDaytrade() => _Cloud.requestDaytrade();
+  static Future<Json> daytradeJob() => useCloud ? _Cloud.statusOf('daytrade_job') : Future.value(<String, dynamic>{});
   static Future<List<Json>> strategies() => useCloud ? _Cloud.strategies() : _Http.getList('/api/strategies');
   static Future<Json> backtest(Json req) => useCloud ? _Cloud.backtest(req) : _Http.post('/api/backtest', req);
   static Future<Json> latestBacktest({String? strategy}) => useCloud
@@ -294,6 +299,24 @@ class _Cloud {
       return asMap(await db.rpc('request_hitrate', params: {'p_only': only}));
     } on PostgrestException catch (e) {
       throw Exception(e.message);
+    }
+  }
+
+  static Future<Json> requestDaytrade() async {
+    try {
+      return asMap(await db.rpc('request_daytrade'));
+    } on PostgrestException catch (e) {
+      throw Exception(e.message);
+    }
+  }
+
+  static Future<Json> statusOf(String key) async {
+    try {
+      final r = await db.from('system_status').select('payload,updated_at').eq('key', key).maybeSingle();
+      if (r == null) return {};
+      return {...asMap(r['payload']), 'updated_at': r['updated_at']};
+    } catch (_) {
+      return {};
     }
   }
 

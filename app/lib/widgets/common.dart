@@ -167,6 +167,7 @@ const strategyLabels = {
   'nextday': '익일유망주',
   'uplimit': '상파',
   'daytrade': '당일단타',
+  'closingbet': '종가배팅',
   'now': '지금 매수구간',
   'signal': '매수 신호',
   'buy': '강력·매수 후보',

@@ -175,6 +175,20 @@ def main():
             return evaluate_day(sb, kis, report["date"])
         step("당일단타 결과 매기기", _daytrade, errors)
 
+        # 종가배팅: 지난 거래일 15:20 매수 후보 → 그날 종가 매수 · 오늘 오전(10:30 까지) 매도 결과 → 검증 탭
+        def _closingbet():
+            from stockeye.analysis.closingbet_eval import evaluate_prev
+            from stockeye.data.sources.kis_source import KISClient
+            kc = cfg.get("kis", {})
+            kis = KISClient(kc.get("env", "prod"), data_dir(cfg) / ".kis_token.json", kc.get("calls_per_sec", 15))
+            oh = pit.ohlcv
+
+            def close_of(code, d):
+                r = oh[(oh["code"] == code) & (oh["date"] == pd.Timestamp(d))]
+                return float(r["close"].iloc[0]) if len(r) else None
+            return evaluate_prev(sb, kis, report["date"], close_of)
+        step("종가배팅 결과 매기기", _closingbet, errors)
+
     # 매매일지: 앱을 쓰는 모든 사용자 각각 (본인 데이터만 본인에게 보임)
     from stockeye.cloud.journal import CloudJournal
     uids = {r["user_id"] for r in sb.select("positions", {"select": "user_id", "limit": "100000"})}

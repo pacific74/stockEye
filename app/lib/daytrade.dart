@@ -140,6 +140,12 @@ class _DaytradeTabState extends State<DaytradeTab> with AutomaticKeepAliveClient
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(padding: const EdgeInsets.fromLTRB(12, 8, 12, 24), children: [
+        if (useCloud && isAdminUser)
+          Row(children: [
+            Text('당일단타', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+            const Spacer(),
+            DaytradeFindButton(onDone: _load),
+          ]),
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
           child: Text(
@@ -175,6 +181,71 @@ class _DaytradeTabState extends State<DaytradeTab> with AutomaticKeepAliveClient
             ' · 1차 ${num0(x['t1'] as num?)} · 2차 ${num0(x['t2'] as num?)}',
             style: t.bodySmall),
     ];
+  }
+}
+
+/// [종목찾기] — 관리자만. GitHub 이 지금 시세로 한 번 계산(1~3분) → 끝나면 onDone 으로 다시 읽기
+class DaytradeFindButton extends StatefulWidget {
+  const DaytradeFindButton({super.key, this.onDone});
+  final VoidCallback? onDone;
+  @override
+  State<DaytradeFindButton> createState() => _DaytradeFindButtonState();
+}
+
+class _DaytradeFindButtonState extends State<DaytradeFindButton> {
+  bool _busy = false;
+  Timer? _poll;
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  void _snack(String m) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
+
+  Future<void> _find() async {
+    setState(() => _busy = true);
+    try {
+      final r = await Api.requestDaytrade();
+      _snack(r['ok'] == true ? '종목을 찾는 중이에요 (1~3분)' : '${r['message'] ?? '이미 찾는 중입니다'}');
+    } catch (e) {
+      _snack('요청 실패: ${'$e'.replaceFirst('Exception: ', '')}');
+      if (mounted) setState(() => _busy = false);
+      return;
+    }
+    final t0 = DateTime.now();
+    _poll?.cancel();
+    _poll = Timer.periodic(const Duration(seconds: 10), (_) async {
+      final j = await Api.daytradeJob();
+      final st = '${j['status'] ?? ''}';
+      final late = DateTime.now().difference(t0).inMinutes >= 8;
+      if (st == 'done' || st == 'failed' || late) {
+        _poll?.cancel();
+        if (!mounted) return;
+        setState(() => _busy = false);
+        _snack(st == 'done'
+            ? '종목찾기 끝 · ${j['found'] ?? 0}개'
+            : st == 'failed'
+                ? '종목찾기 실패 — GitHub Actions 기록을 확인하세요'
+                : '아직 끝나지 않았어요 — 잠시 뒤 당겨서 새로고침');
+        widget.onDone?.call();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!useCloud || !isAdminUser) return const SizedBox.shrink();
+    return TextButton.icon(
+      onPressed: _busy ? null : _find,
+      icon: _busy
+          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+          : const Icon(Icons.search, size: 18),
+      label: Text(_busy ? '찾는 중' : '종목찾기'),
+    );
   }
 }
 

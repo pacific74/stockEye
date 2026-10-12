@@ -9,7 +9,7 @@
 
   python -m scripts.daytrade                 # 기본: 지금부터 10:30 까지
   python -m scripts.daytrade --until 11:00 --every 60 --top 100
-  python -m scripts.daytrade --once          # 한 번만 계산해 보기 (장중)
+  python -m scripts.daytrade --once          # 한 번만 계산 (장중) — 앱 '종목찾기' 버튼이 GitHub 에서 이걸 실행
 
 필요한 환경변수 (setx): KIS_APP_KEY · KIS_APP_SECRET · SUPABASE_URL · SUPABASE_SERVICE_KEY
   (선택) NAVER_HUB_ID · NAVER_HUB_SECRET — 뉴스 재료 점수. 없으면 중립 5점
@@ -30,6 +30,15 @@ SHOW = 20
 
 def _now() -> pd.Timestamp:
     return pd.Timestamp.now(tz="Asia/Seoul").tz_localize(None)
+
+
+def _job(sb, **payload) -> None:
+    """앱 '종목찾기' 버튼 요청 상태 (system_status 'daytrade_job')"""
+    try:
+        from stockeye.cloud import publish as pub
+        pub.publish_status(sb, "daytrade_job", payload)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def watch_codes(sb) -> set[str]:
@@ -151,9 +160,14 @@ class Runner:
         if not self.sb or not self.signals:
             return
         import json
-        self.sb.upload(f"daytrade/signals/{self.day}.json",
-                       json.dumps(list(self.signals.values()), ensure_ascii=False, default=str).encode("utf-8"),
-                       "application/json")
+        key = f"daytrade/signals/{self.day}.json"
+        try:                                                   # 같은 날 여러 번 돌렸으면 (버튼·PC) 합침
+            old = json.loads(self.sb.download(key) or b"[]")
+        except Exception:  # noqa: BLE001
+            old = []
+        seen = {(r["code"], r["type"]) for r in old}
+        merged = old + [r for r in self.signals.values() if (r["code"], r["type"]) not in seen]
+        self.sb.upload(key, json.dumps(merged, ensure_ascii=False, default=str).encode("utf-8"), "application/json")
 
 
 def main():
@@ -177,10 +191,26 @@ def main():
     if now.weekday() >= 5 or naver_live.is_trading_day() is False:
         print("오늘은 장이 열리지 않음 → 종료"); return
     cfg = load_config()
-    listing = DataStore(data_dir(cfg)).load("listing")
+    sb = Supabase() if enabled() and not args.dry_run else None
+    try:
+        listing = DataStore(data_dir(cfg)).load("listing")
+    except Exception:  # noqa: BLE001
+        listing = None
+    if (listing is None or listing.empty) and sb:
+        # GitHub(앱 '종목찾기' 버튼)처럼 PC 데이터가 없는 곳: 앱용 종목 상세 표에서 종목 목록만
+        rows, off = [], 0
+        while True:                                                   # 한 번에 1000행 제한 → 나눠 받기
+            part = sb.select("stock_details", {"select": "code,name,market", "order": "code",
+                                               "limit": "1000", "offset": str(off)})
+            rows += part or []
+            if not part or len(part) < 1000:
+                break
+            off += 1000
+        listing = pd.DataFrame(rows)
     if listing is None or listing.empty:
         sys.exit("종목 목록(listing)이 없습니다 — 먼저 4_daily.bat 로 데이터를 받아 두세요")
-    sb = Supabase() if enabled() and not args.dry_run else None
+    job = (lambda **kw: _job(sb, **kw)) if args.once and sb else (lambda **kw: None)
+    job(status="running", started=_now().strftime("%H:%M"))
     if sb is None and not args.dry_run:
         print("⚠ SUPABASE_URL / SUPABASE_SERVICE_KEY 가 없어 앱에 발행하지 않고 화면에만 보여줍니다")
     kc = cfg.get("kis", {})
@@ -205,6 +235,7 @@ def main():
             break
         time.sleep(max(5, args.every - (time.time() - t0)))
     run.save_signals()
+    job(status="done" if p else "failed", finished=_now().strftime("%H:%M"), found=len((p or {}).get("items") or []))
     if sb and p and not args.once:
         try:
             p["closed"] = True

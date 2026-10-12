@@ -31,7 +31,14 @@ def summary(rows: list[dict]) -> dict:
     return {"n": n, **{k: round(v / n * 100, 1) for k, v in cnt.items()},
             "win": round(win / (win + cnt["stop"]) * 100, 1) if win + cnt["stop"] else None,
             "pnl": round(sum(pnls) / len(pnls), 3) if pnls else None,
-            "pnl_sum": round(sum(pnls), 2) if pnls else None}
+            "pnl_sum": round(sum(pnls), 2) if pnls else None, **win_loss(pnls)}
+
+
+def win_loss(pnls: list[float]) -> dict:
+    """이긴 거래 평균 손익 · 진 거래 평균 손익 (%, 비용 뺀 뒤)"""
+    w = [p for p in pnls if p > 0]
+    lo = [p for p in pnls if p <= 0]
+    return {"avg_win": round(sum(w) / len(w), 3) if w else None, "avg_loss": round(sum(lo) / len(lo), 3) if lo else None}
 
 
 def report(rows: list[dict], recent: int = 30) -> dict:

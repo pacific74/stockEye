@@ -231,7 +231,14 @@ class ClosingbetValidation extends StatelessWidget {
     final t = Theme.of(context).textTheme;
     final tot = asMap(r['total']);
     final byGap = asMap(r['by_gap']);
-    final byYear = asMap(r['by_year']);
+    final groups = <MapEntry<String, Json>>[
+      MapEntry('전체', tot),
+      for (final g in const ['낮음', '보통', '높음'])
+        if (byGap[g] != null) MapEntry('갭 $g', asMap(byGap[g])),
+      if (years) for (final e in asMap(r['by_year']).entries) MapEntry(e.key, asMap(e.value)),
+    ];
+    String p(dynamic v) => '${v ?? 0}%';
+    String p2(dynamic a, dynamic b) => '${(((a as num?) ?? 0) + ((b as num?) ?? 0)).toStringAsFixed(1)}%';
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -240,21 +247,37 @@ class ClosingbetValidation extends StatelessWidget {
           if ((tot['n'] ?? 0) == 0)
             Padding(padding: const EdgeInsets.only(top: 4), child: Text(empty, style: t.bodySmall))
           else ...[
-            Text('${r['first'] ?? ''} ~ ${r['last'] ?? ''} · ${r['days'] ?? 0}일${r['note'] != null ? ' · ${r['note']}' : ''}',
+            Text('${r['first'] ?? ''} ~ ${r['last'] ?? ''} · ${r['days'] ?? 0}일 · 갭 하락 ${tot['gap_down'] ?? '-'}%'
+                '${r['note'] != null ? ' · ${r['note']}' : ''}',
                 style: t.bodySmall?.copyWith(color: Colors.grey)),
-            const SizedBox(height: 4),
-            _row(context, '전체', tot, bold: true),
-            Text('  2차 ${tot['t2'] ?? 0}% · 1차 ${tot['t1'] ?? 0}% · 시간 ${(tot['time'] ?? 0) + (tot['open'] ?? 0)}% · '
-                '손절 ${tot['stop'] ?? 0}% · 갭 손절 ${tot['gap_stop'] ?? 0}% · 갭 하락 ${tot['gap_down'] ?? '-'}%',
-                style: t.bodySmall?.copyWith(color: Colors.grey)),
-            for (final g in const ['낮음', '보통', '높음'])
-              if (byGap[g] != null) _row(context, '갭 $g', asMap(byGap[g])),
-            if (years) for (final e in byYear.entries) _row(context, e.key, asMap(e.value)),
             const SizedBox(height: 6),
-            for (final x in asList(r['recent']).take(8))
-              Text('${x['date']} ${x['name']} ${x['type'] ?? ''} → ${_out(x['outcome'] as String?)} ${pct(x['pnl'] as num?)}'
-                  ' (시가 ${pct(x['open_pnl'] as num?)})',
-                  style: t.bodySmall?.copyWith(color: ((x['pnl'] as num?) ?? 0) >= 0 ? upColor : downColor)),
+            Text('결과 비율', style: t.labelMedium),
+            StatTable(header: const ['구분', '건수', '2차', '1차', '시간', '손절', '갭손절'], rows: [
+              for (final g in groups)
+                [StatCell(g.key), StatCell('${g.value['n'] ?? 0}'), StatCell(p(g.value['t2'])), StatCell(p(g.value['t1'])),
+                 StatCell(p2(g.value['time'], g.value['open'])), StatCell(p(g.value['stop']), color: downColor),
+                 StatCell(p(g.value['gap_stop']), color: downColor)],
+            ]),
+            const SizedBox(height: 8),
+            Text('손익 (비용 0.25% 뺀 %)', style: t.labelMedium),
+            StatTable(header: const ['구분', '승률', '시가', '평균', '이긴', '진', '누적'], rows: [
+              for (final g in groups)
+                [StatCell(g.key), StatCell(g.value['win'] == null ? '-' : '${g.value['win']}%'),
+                 pnlCell(g.value['open_pnl'] as num?), pnlCell(g.value['pnl'] as num?, bold: true),
+                 pnlCell(g.value['avg_win'] as num?), pnlCell(g.value['avg_loss'] as num?), pnlCell(g.value['pnl_sum'] as num?, d: 0)],
+            ]),
+            Text('시가 = 다음 날 시초가에 전부 판 경우 · 평균·이긴·진 = 매도 규칙대로 판 손익 · 누적 = 건마다 같은 금액 넣었을 때 % 합',
+                style: t.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
+            if (asList(r['recent']).isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('최근 기록', style: t.labelMedium),
+              StatTable(firstFlex: 1.2, boldFirst: false, header: const ['날짜', '종목', '결과', '규칙', '시가'], rows: [
+                for (final x in asList(r['recent']).take(10))
+                  [StatCell('${'${x['date'] ?? ''}'.length >= 10 ? '${x['date']}'.substring(5) : x['date']}'),
+                   StatCell('${x['name'] ?? ''}'), StatCell(_out(x['outcome'] as String?)),
+                   pnlCell(x['pnl'] as num?), pnlCell(x['open_pnl'] as num?)],
+              ]),
+            ],
           ],
         ]),
       ),
@@ -271,22 +294,4 @@ class ClosingbetValidation extends StatelessWidget {
         _ => '-',
       };
 
-  Widget _row(BuildContext context, String label, Json s, {bool bold = false}) {
-    final t = Theme.of(context).textTheme;
-    final pnl = s['pnl'] as num?;
-    final op = s['open_pnl'] as num?;
-    final st = t.bodySmall?.copyWith(fontWeight: bold ? FontWeight.bold : null);
-    Color? c(num? v) => v == null ? null : (v >= 0 ? upColor : downColor);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(children: [
-        SizedBox(width: 56, child: Text(label, style: st)),
-        Expanded(child: Text('${s['n'] ?? 0}건 · 이긴 비율 ${s['win'] ?? '-'}%', style: st)),
-        Text('시가 ', style: st?.copyWith(color: Colors.grey)),
-        Text(_sgn(op, d: 2), style: st?.copyWith(color: c(op))),
-        Text('  규칙 ', style: st?.copyWith(color: Colors.grey)),
-        Text(_sgn(pnl, d: 2), style: st?.copyWith(color: c(pnl), fontWeight: FontWeight.bold)),
-      ]),
-    );
-  }
 }

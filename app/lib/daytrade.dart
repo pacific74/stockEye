@@ -339,7 +339,11 @@ class DaytradeValidation extends StatelessWidget {
   Widget _block(BuildContext context, String title, Json r, {required String empty, String? note}) {
     final t = Theme.of(context).textTheme;
     final tot = asMap(r['total']);
-    final by = asMap(r['by_type']);
+    final groups = <MapEntry<String, Json>>[
+      MapEntry('전체', tot),
+      for (final e in asMap(r['by_type']).entries) MapEntry('${e.key}형', asMap(e.value)),
+    ];
+    String p(dynamic v) => '${v ?? 0}%';
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -350,14 +354,31 @@ class DaytradeValidation extends StatelessWidget {
           else ...[
             Text('${r['first'] ?? ''} ~ ${r['last'] ?? ''} · ${r['days'] ?? 0}일${note != null ? ' · $note' : ''}',
                 style: t.bodySmall?.copyWith(color: Colors.grey)),
-            const SizedBox(height: 4),
-            _row(context, '전체', tot, bold: true),
-            for (final e in by.entries) _row(context, '${e.key}형', asMap(e.value)),
             const SizedBox(height: 6),
-            for (final x in asList(r['recent']).take(8))
-              Text('${x['date']} ${x['time']} ${x['name']} ${x['type']} → ${_out(x['outcome'] as String?)} '
-                  '${pct(x['pnl'] as num?)}',
-                  style: t.bodySmall?.copyWith(color: ((x['pnl'] as num?) ?? 0) >= 0 ? upColor : downColor)),
+            Text('결과 비율', style: t.labelMedium),
+            StatTable(header: const ['구분', '건수', '2차', '1차', '손절', '마감'], rows: [
+              for (final g in groups)
+                [StatCell(g.key), StatCell('${g.value['n'] ?? 0}'), StatCell(p(g.value['t2'])), StatCell(p(g.value['t1'])),
+                 StatCell(p(g.value['stop']), color: downColor), StatCell(p(g.value['close']))],
+            ]),
+            const SizedBox(height: 8),
+            Text('손익 (비용 0.2% 뺀 %)', style: t.labelMedium),
+            StatTable(header: const ['구분', '승률', '평균', '이긴 평균', '진 평균', '누적'], rows: [
+              for (final g in groups)
+                [StatCell(g.key), StatCell(g.value['win'] == null ? '-' : '${g.value['win']}%'), pnlCell(g.value['pnl'] as num?, bold: true),
+                 pnlCell(g.value['avg_win'] as num?), pnlCell(g.value['avg_loss'] as num?), pnlCell(g.value['pnl_sum'] as num?, d: 1)],
+            ]),
+            Text('누적 = 신호마다 같은 금액을 넣었을 때 손익 % 합', style: t.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
+            if (asList(r['recent']).isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('최근 기록', style: t.labelMedium),
+              StatTable(firstFlex: 1.6, boldFirst: false, header: const ['날짜', '종목', '유형', '결과', '손익'], rows: [
+                for (final x in asList(r['recent']).take(10))
+                  [StatCell('${'${x['date'] ?? ''}'.length >= 10 ? '${x['date']}'.substring(5) : x['date']} ${x['time'] ?? ''}'),
+                   StatCell('${x['name'] ?? ''}'), StatCell('${x['type'] ?? ''}'), StatCell(_out(x['outcome'] as String?)),
+                   pnlCell(x['pnl'] as num?)],
+              ]),
+            ],
           ],
         ]),
       ),
@@ -372,21 +393,4 @@ class DaytradeValidation extends StatelessWidget {
         _ => '-',
       };
 
-  Widget _row(BuildContext context, String label, Json s, {bool bold = false}) {
-    final t = Theme.of(context).textTheme;
-    final pnl = s['pnl'] as num?;
-    final st = t.bodySmall?.copyWith(fontWeight: bold ? FontWeight.bold : null);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(children: [
-        SizedBox(width: 56, child: Text(label, style: st)),
-        Expanded(
-            child: Text('${s['n'] ?? 0}건 · 2차 ${s['t2'] ?? 0}% · 1차 ${s['t1'] ?? 0}% · 손절 ${s['stop'] ?? 0}% · 마감 ${s['close'] ?? 0}%',
-                style: st)),
-        Text('승률 ${s['win'] ?? '-'}%  ', style: st),
-        Text(pnl == null ? '-' : '${pnl >= 0 ? '+' : ''}${pnl.toStringAsFixed(2)}%',
-            style: st?.copyWith(color: pnl == null ? null : (pnl >= 0 ? upColor : downColor), fontWeight: FontWeight.bold)),
-      ]),
-    );
-  }
 }

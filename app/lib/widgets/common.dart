@@ -297,3 +297,63 @@ class _SparkPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _SparkPainter old) => old.v != v;
 }
+
+/// 검증 표 한 칸
+class StatCell {
+  const StatCell(this.text, {this.color, this.bold = false});
+  final String text;
+  final Color? color;
+  final bool bold;
+}
+
+/// 손익(%) 칸: +빨강 / −파랑
+StatCell pnlCell(num? v, {int d = 2, bool bold = false}) => StatCell(
+    v == null ? '-' : '${v >= 0 ? '+' : ''}${v.toStringAsFixed(d)}%',
+    color: v == null ? null : (v >= 0 ? upColor : downColor),
+    bold: bold);
+
+/// 검증용 작은 표 (첫 칸 = 구분, 나머지는 오른쪽 정렬). 첫 데이터 줄(전체)은 굵게
+class StatTable extends StatelessWidget {
+  const StatTable({super.key, required this.header, required this.rows, this.firstFlex = 1.5, this.boldFirst = true});
+  final List<String> header;
+  final List<List<StatCell>> rows;
+  final double firstFlex;
+  final bool boldFirst;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final base = t.bodySmall?.copyWith(fontSize: 11.5);
+    final line = Theme.of(context).dividerColor.withValues(alpha: 0.4);
+    Widget cell(String s, {TextAlign al = TextAlign.right, TextStyle? st}) =>
+        Padding(padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2), child: Text(s, textAlign: al, style: st ?? base));
+    return Table(
+      columnWidths: {0: FlexColumnWidth(firstFlex)},
+      defaultColumnWidth: const FlexColumnWidth(1),
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      children: [
+        TableRow(
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: line))),
+          children: [
+            for (var i = 0; i < header.length; i++)
+              cell(header[i], al: i == 0 ? TextAlign.left : TextAlign.right, st: base?.copyWith(color: Colors.grey)),
+          ],
+        ),
+        for (var r = 0; r < rows.length; r++)
+          TableRow(
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: line.withValues(alpha: 0.2)))),
+            children: [
+              for (var i = 0; i < header.length; i++)
+                () {
+                  final c = i < rows[r].length ? rows[r][i] : const StatCell('');
+                  return cell(c.text,
+                      al: i == 0 ? TextAlign.left : TextAlign.right,
+                      st: base?.copyWith(
+                          color: c.color, fontWeight: (c.bold || (boldFirst && r == 0)) ? FontWeight.bold : null));
+                }(),
+            ],
+          ),
+      ],
+    );
+  }
+}

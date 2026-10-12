@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from ..engine import closingbet as cb
+from .daytrade_eval import win_loss
 
 log = logging.getLogger(__name__)
 KEY = "CLOSE"
@@ -39,7 +40,8 @@ def summary(rows: list[dict]) -> dict:
             "pnl": round(float(np.mean(pn)), 3) if pn else None,
             "open_pnl": round(float(np.mean(op)), 3) if op else None,
             "gap_down": round(sum(1 for g in gp if g < 0) / len(gp) * 100, 1) if gp else None,
-            "gap_p10": round(float(np.percentile(gp, 10)), 2) if gp else None}
+            "gap_p10": round(float(np.percentile(gp, 10)), 2) if gp else None,
+            "pnl_sum": round(float(np.sum(pn)), 2) if pn else None, **win_loss(pn)}
 
 
 def report(rows: list[dict], recent: int = 30) -> dict:

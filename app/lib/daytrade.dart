@@ -216,11 +216,13 @@ class _DaytradeTabState extends State<DaytradeTab> with AutomaticKeepAliveClient
   }
 }
 
-/// [종목찾기] — 관리자만 (당일단타·종가배팅 공용). GitHub 이 지금 시세로 한 번 계산(1~3분) → 끝나면 onDone 으로 다시 읽기
+/// [종목찾기] — 관리자만 (당일단타·종가배팅·상한가포착 공용). GitHub 이 지금 시세로 한 번 계산(1~3분) → 끝나면 onDone 으로 다시 읽기
 class DaytradeFindButton extends StatefulWidget {
-  const DaytradeFindButton({super.key, this.onDone, this.closing = false});
+  const DaytradeFindButton({super.key, this.onDone, this.closing = false, this.kind});
   final VoidCallback? onDone;
   final bool closing; // true = 종가배팅 [종목찾기]
+  final String? kind; // 'daytrade' · 'closingbet' · 'limitcatch' (없으면 closing 으로 정함)
+  String get k => kind ?? (closing ? 'closingbet' : 'daytrade');
   @override
   State<DaytradeFindButton> createState() => _DaytradeFindButtonState();
 }
@@ -249,7 +251,11 @@ class _DaytradeFindButtonState extends State<DaytradeFindButton> {
 
   /// PC 실행 중 = 최근 결과가 PC 것이고 3분 안에 갱신됐고 아직 끝나지 않음
   Future<void> _checkPc() async {
-    final d = await (widget.closing ? Api.closingbet() : Api.daytrade());
+    final d = await switch (widget.k) {
+      'closingbet' => Api.closingbet(),
+      'limitcatch' => Api.limitcatch(),
+      _ => Api.daytrade(),
+    };
     final at = DateTime.tryParse('${d['updated_at'] ?? ''}');
     final live = d['runner'] == 'pc' &&
         d['closed'] != true &&
@@ -265,7 +271,11 @@ class _DaytradeFindButtonState extends State<DaytradeFindButton> {
   Future<void> _find() async {
     setState(() => _busy = true);
     try {
-      final r = await (widget.closing ? Api.requestClosingbet() : Api.requestDaytrade());
+      final r = await switch (widget.k) {
+        'closingbet' => Api.requestClosingbet(),
+        'limitcatch' => Api.requestLimitcatch(),
+        _ => Api.requestDaytrade(),
+      };
       _snack(r['ok'] == true ? '종목을 찾는 중이에요 (1~3분)' : '${r['message'] ?? '이미 찾는 중입니다'}');
     } catch (e) {
       _snack('요청 실패: ${'$e'.replaceFirst('Exception: ', '')}');
@@ -275,7 +285,11 @@ class _DaytradeFindButtonState extends State<DaytradeFindButton> {
     final t0 = DateTime.now();
     _poll?.cancel();
     _poll = Timer.periodic(const Duration(seconds: 10), (_) async {
-      final j = await (widget.closing ? Api.closingbetJob() : Api.daytradeJob());
+      final j = await switch (widget.k) {
+        'closingbet' => Api.closingbetJob(),
+        'limitcatch' => Api.limitcatchJob(),
+        _ => Api.daytradeJob(),
+      };
       final st = '${j['status'] ?? ''}';
       final late = DateTime.now().difference(t0).inMinutes >= 6;
       if (st == 'done' || st == 'failed' || late) {

@@ -115,12 +115,14 @@ class Supabase:
         return r.json() if returning else []
 
     def upsert(self, table: str, rows: list[dict], on_conflict: str, chunk: int = 300,
-               max_bytes: int = 2_000_000) -> int:
+               max_bytes: int = 2_000_000, ignore_duplicates: bool = False) -> int:
         """여러 번에 나눠 올림: 행 수(chunk)와 요청 크기(max_bytes) 둘 다 제한.
-        서버가 5xx(Cloudflare 520~525·타임아웃 등)로 계속 실패하면 그 묶음을 반으로 나눠 다시 시도."""
+        서버가 5xx(Cloudflare 520~525·타임아웃 등)로 계속 실패하면 그 묶음을 반으로 나눠 다시 시도.
+        ignore_duplicates=True 면 이미 있는 행(같은 on_conflict 키)은 건드리지 않고 새 행만 넣음 (추천 기록: 하루 첫 기록 유지)"""
         if not rows:
             return 0
-        h = {"Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"}
+        res = "ignore-duplicates" if ignore_duplicates else "merge-duplicates"
+        h = {"Content-Type": "application/json", "Prefer": f"resolution={res},return=minimal"}
 
         def send(part: list[dict]) -> None:
             data = _dumps(part).encode()

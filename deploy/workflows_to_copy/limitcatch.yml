@@ -1,0 +1,49 @@
+# 상한가포착 종목찾기 (한 번) → 앱 메인·'관심 > 상한가포착'  — PC 꺼져 있어도 됨
+#   ① 앱 [종목찾기] 버튼(관리자) → Supabase 가 바로 신호(repository_dispatch limitcatch_request)
+#   ② 여기 Actions → Run workflow
+#   python -m scripts.limitcatch --cloud --once : Storage 에서 일봉·종목 목록 받아 지금 시세로 한 번 계산 (보통 1~2분)
+#     후보 찾기는 KIS 등락률 순위 1번 (상승률 상위 30) → +20% 이상 종목만 현재가·호가·분봉
+#   장중 1분 감시는 PC(19_limitcatch.bat) 가 함 — Actions 로 1분마다 돌리면 무료 사용량을 크게 씀
+#   ⚠ 주문은 하지 않는다
+name: limitcatch
+
+on:
+  repository_dispatch:
+    types: [limitcatch_request]
+  workflow_dispatch:
+
+concurrency:
+  group: stockeye-limitcatch
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: Asia/Seoul
+      PYTHONUTF8: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+      NAVER_HUB_ID: ${{ secrets.NAVER_HUB_ID }}
+      NAVER_HUB_SECRET: ${{ secrets.NAVER_HUB_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-live.txt
+      - run: pip install -r backend/requirements-live.txt
+      - name: 상한가포착 종목찾기
+        working-directory: backend
+        run: python -m scripts.limitcatch --cloud --once
+      - name: 실패하면 앱 버튼에 '실패' 표시 (안 그러면 앱이 계속 '찾는 중')
+        if: failure()
+        working-directory: backend
+        run: >-
+          python -c "from stockeye.cloud.client import Supabase; from stockeye.cloud import publish as pub;
+          pub.publish_status(Supabase(), 'limitcatch_job', {'status': 'failed', 'error': 'GitHub 작업 실패 — Actions 기록 확인'})"

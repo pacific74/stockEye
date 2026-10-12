@@ -73,6 +73,8 @@ class Runner:
         self.adr: dict[str, float | None] = {}                       # code → 평소 하루 변동폭 (하루 한 번)
         self.signals: dict[tuple, dict] = {}
         self.day = _now().strftime("%Y-%m-%d")
+        from stockeye.cloud.recommend import IntradayRecorder
+        self.rec = IntradayRecorder(sb, "daytrade", runner)          # 검증용 추천 기록 ('진입 조건 충족' 첫 시점)
 
     def _news(self, code: str) -> str | None:
         if code not in self.news:
@@ -192,6 +194,7 @@ class Runner:
             return
         from stockeye.cloud import publish as pub
         pub.publish_status(self.sb, "daytrade", payload)
+        self.rec(self.day, payload.get("items") or [], payload.get("version"), payload.get("time"))
 
     def save_signals(self) -> None:
         if not self.sb or not self.signals:

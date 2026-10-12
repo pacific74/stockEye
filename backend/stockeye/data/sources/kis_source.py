@@ -11,7 +11,8 @@
   - 종목별 프로그램매매추이(일별)  FHPPG04650201  /uapi/domestic-stock/v1/quotations/program-trade-by-stock-daily
   - 당일 1분봉     FHKST03010200  /uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice   (당일단타)
   - 과거 1분봉     FHKST03010230  /uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice  (당일단타 검증)
-  - 호가           FHKST01010200  /uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn  (스프레드)
+  - 등락률 순위    FHPST01700000  /uapi/domestic-stock/v1/ranking/fluctuation  (상한가포착 후보 찾기)
+  - 호가           FHKST01010200  /uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn  (스프레드 · 상한가 매수잔량)
 
 ※ 본인 투자 목적의 개인 사용 기준. 시세를 타인에게 제공하는 서비스로 확장하면 별도 이용계약이 필요할 수 있음.
 """
@@ -118,7 +119,11 @@ class KISClient:
                 "open": num("stck_oprc"), "high": num("stck_hgpr"), "low": num("stck_lwpr"),
                 "prev_close": num("stck_sdpr"),
                 "volume": num("acml_vol"), "value": num("acml_tr_pbmn"), "sector": o.get("bstp_kor_isnm"),
-                "per": num("per"), "pbr": num("pbr"), "time": pd.Timestamp.now().isoformat(timespec="seconds")}
+                "per": num("per"), "pbr": num("pbr"), "time": pd.Timestamp.now().isoformat(timespec="seconds"),
+                # 상한가포착: 상장주식 수 · 종목 상태 (51 관리 · 52 투자위험 · 53 투자경고 · 58 거래정지 등) · 시장경고 (01 주의·02 경고·03 위험)
+                "listed_shares": num("lstn_stcn") or None, "upper_limit": num("stck_mxpr") or None,
+                "status_code": str(o.get("iscd_stat_cls_code") or ""), "warn_code": str(o.get("mrkt_warn_cls_code") or ""),
+                "halted": str(o.get("temp_stop_yn") or "N").upper() == "Y"}
 
     # ---------------- 당일단타용: 1분봉 · 호가 ----------------
     @staticmethod
@@ -189,7 +194,28 @@ class KISClient:
         o = js.get("output1") or {}
         ask, bid = float(o.get("askp1") or 0), float(o.get("bidp1") or 0)
         mid = (ask + bid) / 2
-        return {"ask": ask, "bid": bid, "spread": (ask - bid) / mid if ask > 0 and bid > 0 and mid > 0 else None}
+        num = lambda k: float(o.get(k) or 0)  # noqa: E731
+        return {"ask": ask, "bid": bid, "spread": (ask - bid) / mid if ask > 0 and bid > 0 and mid > 0 else None,
+                # 상한가포착: 1호가 잔량 · 총 잔량 (상한가에 잠기면 bid = 상한가 · bid_qty = 상한가 매수잔량)
+                "bid1": bid, "ask1": ask, "bid_qty": num("bidp_rsqn1"), "ask_qty": num("askp_rsqn1"),
+                "total_bid": num("total_bidp_rsqn"), "total_ask": num("total_askp_rsqn")}
+
+    def fluctuation_rank(self, market: str = "0000") -> pd.DataFrame:
+        """상승률 순위 상위 30 (국내주식 등락률 순위 FHPST01700000) — 상한가포착 후보 찾기 (전 종목 시세 대신 한 번 호출)
+        market: 0000 전체 · 0001 코스피 · 1001 코스닥. 반환 code·name·close·chg_pct·volume·value(가격×거래량 근사)"""
+        js = self._get("/uapi/domestic-stock/v1/ranking/fluctuation", "FHPST01700000",
+                       {"fid_cond_mrkt_div_code": "J", "fid_cond_scr_div_code": "20170", "fid_input_iscd": market,
+                        "fid_rank_sort_cls_code": "0", "fid_input_cnt_1": "0", "fid_prc_cls_code": "0",
+                        "fid_input_price_1": "", "fid_input_price_2": "", "fid_vol_cnt": "", "fid_trgt_cls_code": "0",
+                        "fid_trgt_exls_cls_code": "0", "fid_div_cls_code": "0", "fid_rsfl_rate1": "", "fid_rsfl_rate2": ""})
+        df = pd.DataFrame(js.get("output") or [])
+        if df.empty or "stck_shrn_iscd" not in df:
+            return pd.DataFrame(columns=["code", "name", "close", "chg_pct", "volume", "value"])
+        f = lambda c: pd.to_numeric(df.get(c), errors="coerce")  # noqa: E731
+        out = pd.DataFrame({"code": df["stck_shrn_iscd"].astype(str).str.zfill(6), "name": df.get("hts_kor_isnm"),
+                            "close": f("stck_prpr"), "chg_pct": f("prdy_ctrt"), "volume": f("acml_vol")})
+        out["value"] = out["close"] * out["volume"]
+        return out.dropna(subset=["close", "chg_pct"]).reset_index(drop=True)
 
     def program_daily(self, code: str) -> pd.DataFrame:
         """종목별 프로그램 순매수 금액(일별, 최근 약 30영업일)."""

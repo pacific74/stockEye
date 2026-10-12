@@ -153,6 +153,9 @@ def main():
     step("리포트 → Storage", lambda: (sync.put_json("reports/latest.json", report),
                                        sync.put_json(f"reports/{report['date']}.json", report)), errors)
     step("리포트 발행", lambda: pub.publish_report(sb, report), errors, required=True)
+    if not args.as_of:                                              # 검증용 추천 기록 (영구 · 같은 날 첫 기록만)
+        from stockeye.cloud.recommend import record_daily
+        step("추천 기록 (검증용)", lambda: record_daily(sb, report), errors)
     from stockeye.cloud.entry_info import annotate_positions
     step("매매일지: 매수 당시 후보·점수·상태 기록", lambda: annotate_positions(sb, sync), errors)
     company = step("기업 개요 (주 1회 갱신)", lambda: load_company(sync, report["date"]), errors)
@@ -188,6 +191,20 @@ def main():
                 return float(r["close"].iloc[0]) if len(r) else None
             return evaluate_prev(sb, kis, report["date"], close_of)
         step("종가배팅 결과 매기기", _closingbet, errors)
+
+        # 상한가포착: 지난 거래일 '매수 검토' → 그날 조건 무효 여부 · 오늘 시가 절반 · 09:30 청산 결과 + 점수 구간별 유지율
+        def _limitcatch():
+            from stockeye.analysis.limitcatch_eval import evaluate_prev as lc_prev
+            from stockeye.data.sources.kis_source import KISClient
+            kc = cfg.get("kis", {})
+            kis = KISClient(kc.get("env", "prod"), data_dir(cfg) / ".kis_token.json", kc.get("calls_per_sec", 15))
+            oh = pit.ohlcv
+
+            def row_of(code, d):
+                r = oh[(oh["code"] == code) & (oh["date"] == pd.Timestamp(d))]
+                return r.iloc[0].to_dict() if len(r) else None
+            return lc_prev(sb, kis, report["date"], row_of)
+        step("상한가포착 결과 매기기", _limitcatch, errors)
 
     # 매매일지: 앱을 쓰는 모든 사용자 각각 (본인 데이터만 본인에게 보임)
     from stockeye.cloud.journal import CloudJournal

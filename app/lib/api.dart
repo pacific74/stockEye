@@ -58,6 +58,10 @@ class Api {
   static Future<Json> requestDaytrade() => _Cloud.rpcJob('request_daytrade');
   static Future<Json> requestClosingbet() => _Cloud.rpcJob('request_closingbet');
   static Future<Json> closingbetJob() => useCloud ? _Cloud.statusOf('closingbet_job') : Future.value(<String, dynamic>{});
+  /// 상한가포착: PC 가 09:05~15:20 1분마다 올리는 후보 (system_status 'limitcatch')
+  static Future<Json> limitcatch() => useCloud ? _Cloud.statusOf('limitcatch') : Future.value(<String, dynamic>{});
+  static Future<Json> requestLimitcatch() => _Cloud.rpcJob('request_limitcatch');
+  static Future<Json> limitcatchJob() => useCloud ? _Cloud.statusOf('limitcatch_job') : Future.value(<String, dynamic>{});
   static Future<Json> daytradeJob() => useCloud ? _Cloud.statusOf('daytrade_job') : Future.value(<String, dynamic>{});
   static Future<List<Json>> strategies() => useCloud ? _Cloud.strategies() : _Http.getList('/api/strategies');
   static Future<Json> backtest(Json req) => useCloud ? _Cloud.backtest(req) : _Http.post('/api/backtest', req);

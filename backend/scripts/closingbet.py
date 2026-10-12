@@ -50,6 +50,8 @@ class Runner:
         self.hist = {c: g.sort_values("date").reset_index(drop=True) for c, g in oh[oh["date"].isin(last)].groupby("code")}
         self.bars: dict[str, pd.DataFrame] = {}
         self.news: dict[str, str | None] = {}
+        from stockeye.cloud.recommend import IntradayRecorder
+        self.rec = IntradayRecorder(sb, "closingbet", runner)        # 검증용 추천 기록 ('매수 후보' 첫 시점)
 
     def _news(self, code):
         if code not in self.news:
@@ -127,6 +129,7 @@ class Runner:
         if self.sb:
             from stockeye.cloud import publish as pub
             pub.publish_status(self.sb, "closingbet", p)
+            self.rec(self.day, p.get("items") or [], p.get("version"), p.get("time"))
 
     def save_picks(self, p):
         if self.sb and p and p.get("picks"):

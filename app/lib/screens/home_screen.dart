@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../closingbet.dart';
 import '../daytrade.dart';
+import '../limitcatch.dart';
 import '../format.dart';
 import '../live.dart';
 import '../plan_line.dart';
@@ -40,7 +41,8 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _liveAt; // 마지막으로 시세를 받은 기기 시각
   Timer? _timer;
   Timer? _intraTimer; // 당일단타·종가배팅 1분 새로고침 (그 시간대만)
-  final Map<String, Json> _intraMeta = {}; // 'daytrade'/'closingbet' → {date,time} 계산 시각
+  final Map<String, Json> _intraMeta = {}; // 'daytrade'/'closingbet'/'limitcatch' → {date,time} 계산 시각
+  static const _intraKeys = {'daytrade', 'closingbet', 'limitcatch'}; // PC 가 장중에 올리는 탭
   final Map<String, DateTime> _intraAt = {}; // 앱이 읽은 시각
   int _lastTap = tabTap.value;
 
@@ -52,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _intraTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       if (liveWindow()) _reloadDaytrade();
       if (liveWindow(closing: true)) _reloadClosingbet();
+      if (lcWindow()) _reloadLimitcatch();
     });
   }
 
@@ -88,6 +91,22 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// 상한가포착 메인 3개: 매수 검토 → 강세 후보 → 관찰 순 (조건 무효·제외는 빼고)
+  static List<Json> _lcTop(Json d) => dtIsToday(d)
+      ? asList(d['items']).where((r) => const ['매수 검토', '강세 후보', '관찰'].contains(r['status'])).take(3).toList()
+      : <Json>[];
+
+  /// 상한가포착 [종목찾기] 끝 · 장중 1분마다 → 상한가포착 3개만 다시 읽기
+  Future<void> _reloadLimitcatch() async {
+    final d = await Api.limitcatch();
+    if (!mounted) return;
+    setState(() {
+      _picks = {..._picks, 'limitcatch': _lcTop(d)};
+      _intraMeta['limitcatch'] = d;
+      _intraAt['limitcatch'] = DateTime.now();
+    });
+  }
+
   /// 당일단타 [종목찾기] 끝 → 당일단타 3개만 다시 읽기
   Future<void> _reloadDaytrade() async {
     final d = await Api.daytrade();
@@ -116,11 +135,12 @@ class _HomeScreenState extends State<HomeScreen> {
     //   관심 목록과 똑같이: 저장 순위(rank)로 30개를 받아 점수순으로 다시 정렬 → 상위 3
     //   (예전엔 rank 순 10개만 받아 정렬해서, rank 11~30 에 점수 높은 종목이 있으면 목록 탭과 달랐음)
     const keys = CandidateListScreen.keys;
-    final lists = await Future.wait(keys.map((k) => k == 'daytrade' || k == 'closingbet'
-        // 당일단타·종가배팅: PC 가 올린 오늘 후보 상위 3 (오늘 것이 아니면 비움)
-        ? (k == 'daytrade' ? Api.daytrade() : Api.closingbet()).then((d) {
+    final lists = await Future.wait(keys.map((k) => _intraKeys.contains(k)
+        // 당일단타·상한가포착·종가배팅: PC 가 올린 오늘 후보 상위 3 (오늘 것이 아니면 비움)
+        ? (switch (k) { 'daytrade' => Api.daytrade(), 'limitcatch' => Api.limitcatch(), _ => Api.closingbet() }).then((d) {
             _intraMeta[k] = d;
             _intraAt[k] = DateTime.now();
+            if (k == 'limitcatch') return _lcTop(d);
             return dtIsToday(d) ? asList(d['items']).take(3).toList() : <Json>[];
           }, onError: (_) => <Json>[])
         : Api.candidates(k)
@@ -258,12 +278,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 6),
                       // 조회 시각(당일단타·종가배팅)은 가운데를 채우고, 버튼은 맨 오른쪽에
                       Expanded(
-                          child: (k == 'daytrade' || k == 'closingbet') && _intraMeta[k] != null
+                          child: _intraKeys.contains(k) && _intraMeta[k] != null
                               ? Text(lookupLabel(_intraMeta[k]!, _intraAt[k]),
                                   overflow: TextOverflow.ellipsis, style: t.bodySmall?.copyWith(color: Colors.grey))
                               : const SizedBox.shrink()),
                       if (k == 'daytrade') DaytradeFindButton(onDone: _reloadDaytrade),
                       if (k == 'closingbet') DaytradeFindButton(closing: true, onDone: _reloadClosingbet),
+                      if (k == 'limitcatch') DaytradeFindButton(kind: 'limitcatch', onDone: _reloadLimitcatch),
                       TextButton(onPressed: () => goTab(context, 1, list: k), child: const Text('전체')),
                     ]),
                   ),
@@ -275,7 +296,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ? '평일 09:00~10:00 PC 에서 당일단타를 켜 두면 여기에 나와요'
                                 : k == 'closingbet'
                                     ? '종가배팅 [종목찾기]를 누르거나 PC 에서 켜 두면 여기에 나와요'
-                                    : '오늘 조건을 만족한 종목이 없습니다',
+                                    : k == 'limitcatch'
+                                        ? (dtIsToday(_intraMeta[k] ?? const <String, dynamic>{})
+                                            ? '지금 +20% 이상 · 거래대금 100억 이상인 종목이 없어요'
+                                            : '평일 장중 PC 에서 상한가포착을 켜 두거나 [종목찾기]를 누르면 여기에 나와요')
+                                        : '오늘 조건을 만족한 종목이 없습니다',
                             style: t.bodySmall)),
                   if (k == 'daytrade')
                     ...(_picks[k] ?? const <Json>[]).asMap().entries.map((e) =>
@@ -283,6 +308,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   else if (k == 'closingbet')
                     ...(_picks[k] ?? const <Json>[]).asMap().entries.map((e) =>
                         ClosingbetTile(r: e.value, rank: e.key + 1, price: quotes['${e.value['code']}']?.price))
+                  else if (k == 'limitcatch')
+                    ...(_picks[k] ?? const <Json>[]).asMap().entries.map((e) =>
+                        LimitcatchTile(r: e.value, rank: e.key + 1, price: quotes['${e.value['code']}']?.price))
                   else
                   ...(_picks[k] ?? (k == 'v3' ? top10.take(3).toList() : const <Json>[])).asMap().entries.map((e) =>
                       _LiveCandidateTile(

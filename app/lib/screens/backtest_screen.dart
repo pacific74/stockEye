@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../closingbet.dart';
 import '../daytrade.dart';
+import '../limitcatch.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
 import 'hitrate_screen.dart';
@@ -21,6 +22,7 @@ class _BacktestScreenState extends State<BacktestScreen> {
   late Future<Json> _hit = loadHitRate();
   late Future<Json> _dt = loadDaytradeValidation();
   late Future<Json> _cb = loadClosingbetValidation();
+  late Future<Json> _lc = loadLimitcatchValidation();
 
   @override
   Widget build(BuildContext context) {
@@ -31,6 +33,7 @@ class _BacktestScreenState extends State<BacktestScreen> {
             _hit = loadHitRate();
             _dt = loadDaytradeValidation();
             _cb = loadClosingbetValidation();
+            _lc = loadLimitcatchValidation();
           }))),
       body: RefreshIndicator(
         onRefresh: () async {
@@ -38,6 +41,7 @@ class _BacktestScreenState extends State<BacktestScreen> {
             _hit = loadHitRate();
             _dt = loadDaytradeValidation();
             _cb = loadClosingbetValidation();
+            _lc = loadLimitcatchValidation();
           });
           await _hit.catchError((_) => <String, dynamic>{});
         },
@@ -49,6 +53,7 @@ class _BacktestScreenState extends State<BacktestScreen> {
             _hit = loadHitRate();
             _dt = loadDaytradeValidation();
             _cb = loadClosingbetValidation();
+            _lc = loadLimitcatchValidation();
           })),
             HitRateSection(future: _hit),
             const SizedBox(height: 16),
@@ -57,6 +62,9 @@ class _BacktestScreenState extends State<BacktestScreen> {
             const SizedBox(height: 16),
             // 종가배팅: 실전 기록 + 되돌려 보기 (5년 일봉 · 과거 분봉)
             ClosingbetValidation(future: _cb),
+            const SizedBox(height: 16),
+            // 상한가포착: 실전 기록 + 점수 구간별 유지율 + 되돌려 보기 (과거 분봉 진입 가정 3가지 · 5년 일봉 참고)
+            LimitcatchValidation(future: _lc),
           ],
         ),
       ),

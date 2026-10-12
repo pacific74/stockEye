@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../closingbet.dart';
 import '../daytrade.dart';
+import '../limitcatch.dart';
 import '../live.dart';
 import '../nextday.dart';
 import '../reversal.dart';
@@ -21,8 +22,9 @@ class CandidateListScreen extends StatefulWidget {
   // v3 = V3 기준 전략 (🔒 고정) / now = 오늘 지금 가격 기준 / signal·buy·watch = 매수후보 V2 (참고)
   // nextday = 익일 유망주 (실험 탭 · 60점 이상) / early = 상승초기 (실험 탭 · 60점 이상) / reversal = 추세전환 (실험 탭 · 70점 이상)
   // daytrade = 당일단타 (PC 가 09:00~10:30 1분마다 올림 · system_status)
+  // limitcatch = 상한가포착 (PC 가 09:05~15:20 1분마다 올림 · system_status)
   // closingbet = 종가배팅 (PC 가 14:50~15:20 1분마다 올림 · system_status)
-  static const keys = ['v3', 'nextday', 'early', 'reversal', 'uplimit', 'daytrade', 'closingbet']; // V2 목록(지금 매수구간·매수 신호·강력 후보·관심)은 숨김
+  static const keys = ['v3', 'nextday', 'early', 'reversal', 'uplimit', 'daytrade', 'limitcatch', 'closingbet']; // V2 목록(지금 매수구간·매수 신호·강력 후보·관심)은 숨김
 
   @override
   State<CandidateListScreen> createState() => _CandidateListScreenState();
@@ -59,7 +61,9 @@ class _CandidateListScreenState extends State<CandidateListScreen> {
                         ? DaytradeTab(key: ValueKey('daytrade$_gen'))
                         : k == 'closingbet'
                             ? ClosingbetTab(key: ValueKey('closingbet$_gen'))
-                            : _ListTab(key: ValueKey('$k$_gen'), listKey: k))
+                            : k == 'limitcatch'
+                                ? LimitcatchTab(key: ValueKey('limitcatch$_gen'))
+                                : _ListTab(key: ValueKey('$k$_gen'), listKey: k))
                 .toList()),
       ),
     );

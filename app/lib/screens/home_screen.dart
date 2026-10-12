@@ -117,7 +117,10 @@ class _HomeScreenState extends State<HomeScreen> {
       ...asList(_report!['top10']).map((c) => '${c['code']}'),
       for (final l in _picks.values) ...l.map((c) => '${c['code']}'),
       ..._pool.map((c) => '${c['code']}'),
-      for (final g in asList(_report!['sectors'])) ...asList(g['top']).map((m) => '${m['code']}'),
+      for (final g in asList(_report!['sectors'])) ...[
+        ...asList(g['top']).map((m) => '${m['code']}'),
+        ...asList(g['live']).map((m) => '${m['code']}'),
+      ],
     }.toList();
     final mine = _holdings.map((h) => '${h['code']}').where((c) => !common.contains(c)).toList();
     final r = await Future.wait([Live.indices(), Live.stocks(common), Live.stocks(mine)]);
@@ -181,6 +184,7 @@ class _HomeScreenState extends State<HomeScreen> {
               : _dateLabel(repDate, clock.now);
           final repBasis = intraday != null ? repLabel : '$repLabel 마감'; // "오늘(10/8) 11:00 장중" / "10/7 마감"
           final quotes = _stk?.quotes ?? const <String, LiveQuote>{};
+          final todaySec = sectorsToday(sectors, quotes); // 업종 오늘 지금 등락 (거래대금 가중)
           const weak = <String>{}; // V3: 시장 필터 없음 (비중 고정)
           final t = Theme.of(context).textTheme;
           return RefreshIndicator(
@@ -199,13 +203,18 @@ class _HomeScreenState extends State<HomeScreen> {
                             Navigator.push(context, MaterialPageRoute(builder: (_) => const SectorListScreen())),
                         child: const Text('전체'))),
                 _SectorCompare(
-                    today: sectorsToday(sectors, quotes),
+                    today: todaySec,
                     yesterday: sectors,
                     todayLabel: _liveAt == null ? '오늘' : '오늘 ${_hm(_liveAt!)}',
                     yesterdayLabel: repBasis),
                 SectionTitle('금일 관심주', trailing: Text('$repLabel 분석', style: t.bodySmall)),
                 // 종합지수·업종 −3% 이하 급락 → 매수 주의
-                if (m['drop_alert'] != null) _DropAlert(a: asMap(m['drop_alert'])),
+                if (m['drop_alert'] != null || todaySec.any((x) => x.avg <= -3))
+                  _DropAlert(
+                      a: asMap(m['drop_alert']),
+                      basis: repBasis,
+                      today: {for (final x in todaySec) '${x.g['group']}': x.avg},
+                      live: _liveAt != null && quotes.isNotEmpty),
                 if (_stk?.error != null && quotes.isEmpty)
                   _Notice('지금 시세를 가져오지 못해 $repBasis 가격으로 보여줍니다. (${_stk!.error})'),
                 // 후보 탭별 3개 (탭 데이터를 못 받으면 V3 상위 3)
@@ -554,7 +563,7 @@ class _HoldingNowTile extends StatelessWidget {
   }
 }
 
-/// 돈이 몰리는 업종: 왼쪽 = 오늘 지금 (대표 종목 등락률 평균), 오른쪽 = 어제 마감 점수
+/// 돈이 몰리는 업종: 왼쪽 = 오늘 지금 (거래대금 상위 15종목 가중 평균), 오른쪽 = 어제 마감 점수
 class _SectorCompare extends StatelessWidget {
   const _SectorCompare(
       {required this.today, required this.yesterday, required this.todayLabel, required this.yesterdayLabel});
@@ -596,7 +605,7 @@ class _SectorCompare extends StatelessWidget {
           ),
         );
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      box(todayLabel, '대표종목 등락 평균', [
+      box(todayLabel, '업종 거래대금 상위 종목 가중 평균', [
         for (final (i, s) in today.take(6).indexed)
           _row(
               context,
@@ -616,29 +625,47 @@ class _SectorCompare extends StatelessWidget {
 
 /// 금일 관심주 위: 종합지수·업종 급락 경고 (리포트의 지수·업종 등락률 −3% 이하)
 class _DropAlert extends StatelessWidget {
-  const _DropAlert({required this.a});
-  final Json a;
+  const _DropAlert({required this.a, required this.basis, required this.today, required this.live});
+  final Json a; // 저녁(또는 장중 재분석) 리포트 기준 급락
+  final String basis; // 그 리포트 기준 시점 ("10/9 마감")
+  final Map<String, double> today; // 업종 → 오늘 지금 등락
+  final bool live;
 
   @override
   Widget build(BuildContext context) {
     final idx = asList(a['index']);
     final grp = asList(a['groups']);
-    if (idx.isEmpty && grp.isEmpty) return const SizedBox.shrink();
+    final nowDrop = live ? (today.entries.where((e) => e.value <= -3).toList()..sort((x, y) => x.value.compareTo(y.value))) : const <MapEntry<String, double>>[];
+    if (idx.isEmpty && grp.isEmpty && nowDrop.isEmpty) return const SizedBox.shrink();
     final t = Theme.of(context).textTheme;
     return Card(
       color: Colors.orange.withValues(alpha: 0.12),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(idx.isNotEmpty ? '⚠ 종합지수 급락 · 매수 주의' : '⚠ 업종 급락 · 매수 주의',
-              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
-          const SizedBox(height: 6),
-          infoBoxes([
-            for (final i in idx) InfoBox('${i['name']} ${pct(i['change_pct'] as num?)}', color: downColor, bold: true),
-            for (final g in grp.take(6)) InfoBox('${g['group']} ${pct(g['ret1_pct'] as num?)}', color: downColor),
-          ]),
+          if (nowDrop.isNotEmpty) ...[
+            const Text('⚠ 오늘 업종 급락 · 매수 주의', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+            const SizedBox(height: 6),
+            infoBoxes([for (final e in nowDrop.take(6)) InfoBox('${e.key} 지금 ${pct(e.value)}', color: downColor, bold: true)]),
+            const SizedBox(height: 8),
+          ],
+          if (idx.isNotEmpty || grp.isNotEmpty) ...[
+            Text('${idx.isNotEmpty ? '⚠ 종합지수 급락' : '⚠ 업종 급락'} ($basis 기준)',
+                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+            const SizedBox(height: 6),
+            infoBoxes([
+              for (final i in idx) InfoBox('${i['name']} ${pct(i['change_pct'] as num?)}', color: downColor, bold: true),
+              for (final g in grp.take(6))
+                () {
+                  final now = live ? today['${g['group']}'] : null;
+                  return InfoBox('${g['group']} ${pct(g['ret1_pct'] as num?)}${now != null ? ' → 지금 ${pct(now)}' : ''}',
+                      color: now != null && now > 0 ? upColor : downColor);
+                }(),
+            ]),
+          ],
           const SizedBox(height: 4),
-          Text('해당 시장·업종 종목에는 아래 목록에 ⚠ 표시. 급락 다음 날은 변동이 커서 분할·관망을 권합니다.',
+          Text('해당 시장·업종 종목에는 아래 목록에 ⚠ 표시($basis 기준). 급락 다음 날은 변동이 커서 분할·관망을 권합니다. '
+              '업종 등락은 거래대금 상위 종목 가중 평균이에요.',
               style: t.bodySmall),
         ]),
       ),

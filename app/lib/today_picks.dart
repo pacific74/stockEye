@@ -137,7 +137,7 @@ class TodayPickTile extends StatelessWidget {
       );
 }
 
-/// 업종 '오늘' 강도: 대표 종목들의 지금 등락률 평균 (+ 오른 종목 수)
+/// 업종 '오늘' 강도: 거래대금 상위 15종목 지금 등락률 가중 평균 (+ 오른 종목 수)
 class SectorToday {
   SectorToday(this.g, this.avg, this.up, this.n);
   final Json g;
@@ -148,6 +148,25 @@ class SectorToday {
 List<SectorToday> sectorsToday(List<Json> sectors, Map<String, LiveQuote> quotes) {
   final out = <SectorToday>[];
   for (final g in sectors) {
+    // 저녁 배치가 준 업종 거래대금 상위 15종목·가중치(평소 거래대금)로 가중 평균 — 저녁 리포트 업종 등락과 같은 방식
+    final live = asList(g['live']);
+    if (live.isNotEmpty) {
+      var sw = 0.0, sr = 0.0, up = 0, n = 0;
+      for (final m in live) {
+        final r = quotes['${m['code']}']?.ratio;
+        final w = (m['w'] as num?)?.toDouble() ?? 0;
+        if (r == null || w <= 0) continue;
+        sw += w;
+        sr += w * r;
+        n++;
+        if (r > 0) up++;
+      }
+      if (n >= 3 && sw > 0) {
+        out.add(SectorToday(g, sr / sw, up, n));
+        continue;
+      }
+    }
+    // (예전 리포트) 대표 종목 단순 평균
     final rs = asList(g['top']).map((m) => quotes['${m['code']}']?.ratio).whereType<double>().toList();
     if (rs.isEmpty) continue;
     out.add(SectorToday(g, rs.reduce((a, b) => a + b) / rs.length, rs.where((r) => r > 0).length, rs.length));

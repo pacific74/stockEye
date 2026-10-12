@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'api.dart';
-import 'daytrade.dart' show dtIsToday;
+import 'daytrade.dart' show dtIsToday, DaytradeFindButton;
 import 'format.dart';
 import 'screens/stock_detail_screen.dart';
 import 'widgets/common.dart';
@@ -156,13 +156,19 @@ class _ClosingbetTabState extends State<ClosingbetTab> with AutomaticKeepAliveCl
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(padding: const EdgeInsets.fromLTRB(12, 8, 12, 24), children: [
+        if (useCloud && isAdminUser)
+          Row(children: [
+            Text('종가배팅', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+            const Spacer(),
+            DaytradeFindButton(closing: true, onDone: _load),
+          ]),
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
           child: Text(
               today
                   ? '${d['time']} 기준${d['final'] == true ? ' (오늘 마지막)' : ' · 1분마다 갱신'} · 후보 ${d['scanned'] ?? 0} · '
                       '매수 후보 ${c['매수 후보'] ?? 0} · 우선 관찰 ${c['우선 관찰'] ?? 0} · 관찰 ${c['관찰'] ?? 0}'
-                  : '오늘 종가배팅 결과가 아직 없어요. 평일 오후 PC 에서 16_closingbet.bat 을 켜 두면 14:50~15:20 동안 1분마다 올라와요.'
+                  : '오늘 종가배팅 결과가 아직 없어요. 관리자가 [종목찾기]를 누르거나 PC 에서 16_closingbet.bat 을 켜 두면 올라와요 (매수 후보는 15:10 이후).'
                       '${d['date'] != null ? ' (아래는 ${d['date']} ${d['time']} 결과)' : ''}',
               style: t.bodySmall),
         ),

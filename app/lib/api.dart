@@ -53,7 +53,9 @@ class Api {
   /// 종가배팅: PC 가 14:50~15:20 1분마다 올리는 후보 (system_status 'closingbet')
   static Future<Json> closingbet() => useCloud ? _Cloud.statusOf('closingbet') : Future.value(<String, dynamic>{});
   /// 당일단타 [종목찾기] (관리자) → GitHub 'daytrade' 작업이 지금 시세로 한 번 계산
-  static Future<Json> requestDaytrade() => _Cloud.requestDaytrade();
+  static Future<Json> requestDaytrade() => _Cloud.rpcJob('request_daytrade');
+  static Future<Json> requestClosingbet() => _Cloud.rpcJob('request_closingbet');
+  static Future<Json> closingbetJob() => useCloud ? _Cloud.statusOf('closingbet_job') : Future.value(<String, dynamic>{});
   static Future<Json> daytradeJob() => useCloud ? _Cloud.statusOf('daytrade_job') : Future.value(<String, dynamic>{});
   static Future<List<Json>> strategies() => useCloud ? _Cloud.strategies() : _Http.getList('/api/strategies');
   static Future<Json> backtest(Json req) => useCloud ? _Cloud.backtest(req) : _Http.post('/api/backtest', req);
@@ -302,9 +304,9 @@ class _Cloud {
     }
   }
 
-  static Future<Json> requestDaytrade() async {
+  static Future<Json> rpcJob(String fn) async {
     try {
-      return asMap(await db.rpc('request_daytrade'));
+      return asMap(await db.rpc(fn));
     } on PostgrestException catch (e) {
       throw Exception(e.message);
     }

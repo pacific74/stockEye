@@ -68,6 +68,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _reload() => setState(_load);
 
+  /// 종가배팅 [종목찾기] 끝 → 종가배팅 3개만 다시 읽기
+  Future<void> _reloadClosingbet() async {
+    final d = await Api.closingbet();
+    if (!mounted) return;
+    setState(() => _picks = {..._picks, 'closingbet': dtIsToday(d) ? asList(d['items']).take(3).toList() : <Json>[]});
+  }
+
   /// 당일단타 [종목찾기] 끝 → 당일단타 3개만 다시 읽기
   Future<void> _reloadDaytrade() async {
     final d = await Api.daytrade();
@@ -209,6 +216,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(strategyLabels[k] ?? k, style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
                       const Spacer(),
                       if (k == 'daytrade') DaytradeFindButton(onDone: _reloadDaytrade),
+                      if (k == 'closingbet') DaytradeFindButton(closing: true, onDone: _reloadClosingbet),
                       TextButton(onPressed: () => goTab(context, 1, list: k), child: const Text('전체')),
                     ]),
                   ),
@@ -219,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             k == 'daytrade'
                                 ? '평일 09:00~10:30 PC 에서 당일단타를 켜 두면 여기에 나와요'
                                 : k == 'closingbet'
-                                    ? '평일 14:50~15:20 PC 에서 종가배팅을 켜 두면 여기에 나와요'
+                                    ? '종가배팅 [종목찾기]를 누르거나 PC 에서 켜 두면 여기에 나와요'
                                     : '오늘 조건을 만족한 종목이 없습니다',
                             style: t.bodySmall)),
                   if (k == 'daytrade')

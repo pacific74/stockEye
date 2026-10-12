@@ -9,7 +9,7 @@
 
   python -m scripts.closingbet                    # 기본: 지금부터 15:20 까지
   python -m scripts.closingbet --once             # 한 번만 (장중 아무 때나 시험)
-  python -m scripts.closingbet --cloud            # GitHub 예약 실행 (PC 꺼져도): Storage 에서 일봉·종목 목록 받아서
+  python -m scripts.closingbet --cloud --once     # 앱 [종목찾기] 버튼 → GitHub 에서 한 번 (PC 꺼져도): Storage 에서 일봉·종목 목록 받아서
 필요한 환경변수: KIS_APP_KEY · KIS_APP_SECRET · SUPABASE_URL · SUPABASE_SERVICE_KEY (선택 NAVER_HUB_ID · NAVER_HUB_SECRET)
 ⚠ 주문은 하지 않는다.
 """
@@ -156,6 +156,15 @@ def main():
     if listing is None or listing.empty or ohlcv is None or ohlcv.empty:
         sys.exit("종목 목록·일봉이 없습니다 — 먼저 4_daily.bat 로 데이터를 받아 두세요")
     sb = Supabase() if enabled() and not args.dry_run else None
+
+    def job(**kw):                                                     # 앱 [종목찾기] 진행 상태
+        if sb and args.once:
+            try:
+                from stockeye.cloud import publish as pub
+                pub.publish_status(sb, "closingbet_job", kw)
+            except Exception:  # noqa: BLE001
+                pass
+    job(status="running", started=_now().strftime("%H:%M"))
     kc = cfg.get("kis", {})
     kis = KISClient(kc.get("env", "prod"), data_dir(cfg) / ".kis_token.json", kc.get("calls_per_sec", 15))
     run = Runner(sb, kis, listing, ohlcv, store.load("sectors"), args.top)
@@ -181,6 +190,7 @@ def main():
     if p and p.get("final"):
         run.save_picks(p)
         print(f"오늘 종가배팅 매수 후보 {len(p['picks'])}개 저장 (다음 날 저녁 배치가 결과를 매깁니다)")
+    job(status="done" if p else "failed", finished=_now().strftime("%H:%M"), found=len((p or {}).get("items") or []))
 
 
 if __name__ == "__main__":

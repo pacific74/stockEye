@@ -1,14 +1,14 @@
-# 종가배팅 — 평일 오후 자동 (PC 꺼져 있어도) → 앱 메인·'관심 > 종가배팅'
-#   14:30(한국시간) 예약 → 14:50 까지 기다렸다가 15:20 까지 1분마다 계산 → 15:20 이후 매수 후보 상위 3 저장
-#   (GitHub 예약은 10~20분 늦게 시작될 수 있어서 20분 일찍 잡음. 15:20 넘어 시작되면 한 번만 계산하고 저장)
-#   다음 날 저녁 배치가 '종가 매수 → 다음 날 오전 매도' 결과를 매겨 '검증' 에 누적
-#   PC 에서 16_closingbet.bat 을 같이 켜도 같은 결과를 덮어쓸 뿐 문제없음
+# 종가배팅 종목찾기 (한 번) → 앱 메인·'관심 > 종가배팅'  — PC 꺼져 있어도 됨
+#   ① 앱 [종목찾기] 버튼(관리자) → Supabase 가 바로 신호(repository_dispatch closingbet_request)
+#   ② 여기 Actions → Run workflow
+#   python -m scripts.closingbet --cloud --once : Storage 에서 일봉·종목 목록 받아 지금 시세로 한 번 계산 (2~4분)
+#   매수 후보는 15:10 이후에만 나옴. 15:20 이후에 누르면 매수 후보 상위 3 을 저장 → 다음 날 저녁 배치가 검증 결과를 매김
 #   ⚠ 주문은 하지 않는다
 name: closingbet
 
 on:
-  schedule:
-    - cron: "30 5 * * 1-5"        # UTC 05:30 = 한국 14:30
+  repository_dispatch:
+    types: [closingbet_request]
   workflow_dispatch:
 
 concurrency:
@@ -18,7 +18,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    timeout-minutes: 20
     env:
       TZ: Asia/Seoul
       PYTHONUTF8: "1"
@@ -43,6 +43,6 @@ jobs:
           key: stockeye-cbdata-${{ github.run_id }}
           restore-keys: stockeye-cbdata-
       - run: pip install -r backend/requirements.txt
-      - name: 종가배팅 (14:50~15:20)
+      - name: 종가배팅 종목찾기
         working-directory: backend
-        run: python -m scripts.closingbet --cloud
+        run: python -m scripts.closingbet --cloud --once

@@ -206,6 +206,11 @@ def main():
             return lc_prev(sb, kis, report["date"], row_of)
         step("상한가포착 결과 매기기", _limitcatch, errors)
 
+    # 추천주 검증: recommendations 결과 칸 채우기(관심 탭 20거래일 · 장중 탭은 위 실전 기록) + 통계 → 앱 '검증 > 추천주'
+    if not args.as_of:
+        from stockeye.analysis.rec_eval import run as rec_run
+        step("추천주 검증 (결과·통계)", lambda: rec_run(sb, pit.ohlcv, report["date"]), errors)
+
     # 매매일지: 앱을 쓰는 모든 사용자 각각 (본인 데이터만 본인에게 보임)
     from stockeye.cloud.journal import CloudJournal
     uids = {r["user_id"] for r in sb.select("positions", {"select": "user_id", "limit": "100000"})}

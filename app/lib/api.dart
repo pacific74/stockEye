@@ -64,6 +64,10 @@ class Api {
   static Future<Json> limitcatchJob() => useCloud ? _Cloud.statusOf('limitcatch_job') : Future.value(<String, dynamic>{});
   static Future<Json> daytradeJob() => useCloud ? _Cloud.statusOf('daytrade_job') : Future.value(<String, dynamic>{});
   static Future<List<Json>> strategies() => useCloud ? _Cloud.strategies() : _Http.getList('/api/strategies');
+  /// 추천 기록 (검증 > 추천주): 추천이 있는 날짜 (최근 순) · 그날 추천 전부 (구분이 겹치면 구분마다 한 줄)
+  static Future<List<String>> recDates() => useCloud ? _Cloud.recDates() : Future.value(<String>[]);
+  static Future<List<Json>> recommendations(String date) =>
+      useCloud ? _Cloud.recommendations(date) : Future.value(<Json>[]);
   static Future<Json> backtest(Json req) => useCloud ? _Cloud.backtest(req) : _Http.post('/api/backtest', req);
   static Future<Json> latestBacktest({String? strategy}) => useCloud
       ? _Cloud.latestBacktest(strategy)
@@ -416,6 +420,28 @@ class _Cloud {
       'id': r['id'],
       'message': '백테스트를 요청했습니다. 다음 배치(평일 저녁 또는 토요일)에서 5년치로 실행한 뒤 이 화면에 결과가 나옵니다.',
     };
+  }
+
+  static Future<List<String>> recDates() async {
+    final rows = await db.from('recommendations').select('rec_date').order('rec_date', ascending: false).limit(1000);
+    final out = <String>[];
+    for (final r in rows) {
+      final d = '${r['rec_date']}'.substring(0, 10);
+      if (!out.contains(d)) out.add(d);
+    }
+    return out;
+  }
+
+  static Future<List<Json>> recommendations(String date) async {
+    final rows = await db
+        .from('recommendations')
+        .select('rec_date,kind,code,name,rec_time,score,status,verdict,price,entry,target1,target2,target3,stop,'
+            'stop_pct,target1_pct,rr1,zone1_low,zone1_high,zone2_low,zone2_high,zone3_low,zone3_high,'
+            'res_status,res_done,res_pnl,res_filled,res_days,res_max_up,res_max_dn,res_last,res_d_t1,res_d_stop')
+        .eq('rec_date', date)
+        .order('code')
+        .limit(1000);
+    return rows.map((e) => asMap(e)).toList();
   }
 
   static Future<Json> latestBacktest(String? strategy) async {

@@ -52,14 +52,30 @@ class KISClient:
         self.token = self._token()
 
     # ---------------- 토큰 ----------------
-    def _token(self) -> str:
-        if self.token_path.exists():
+    def _cached(self) -> str | None:
+        try:
             t = json.loads(self.token_path.read_text(encoding="utf-8"))
             if t.get("env") == self.env and pd.Timestamp(t["expires"]) > pd.Timestamp.now() + pd.Timedelta(hours=1):
                 return t["token"]
-        r = self.s.post(f"{self.base}/oauth2/tokenP", timeout=10, data=json.dumps(
-            {"grant_type": "client_credentials", "appkey": self.key, "appsecret": self.secret}),
-            headers={"content-type": "application/json"})
+        except Exception:  # noqa: BLE001 — 파일 없음·쓰는 중
+            pass
+        return None
+
+    def _token(self) -> str:
+        if self.token_path.exists() and (tok := self._cached()):
+            return tok
+        # PC 를 켜면 당일단타·상한가포착이 동시에 시작될 수 있음 → KIS 는 토큰을 1분에 1번만 발급하므로
+        # 실패하면 다른 쪽이 받아 둔 토큰 파일을 기다렸다가 쓰고, 없으면 1분 뒤 한 번 더 받음
+        for attempt in range(2):
+            r = self.s.post(f"{self.base}/oauth2/tokenP", timeout=10, data=json.dumps(
+                {"grant_type": "client_credentials", "appkey": self.key, "appsecret": self.secret}),
+                headers={"content-type": "application/json"})
+            if r.status_code == 200:
+                break
+            for _ in range(13):
+                time.sleep(5)
+                if tok := self._cached():
+                    return tok
         if r.status_code != 200:
             raise RuntimeError(f"KIS 토큰 발급 실패 {r.status_code}: {r.text[:200]}")
         js = r.json()

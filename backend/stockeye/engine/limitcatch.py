@@ -67,7 +67,8 @@ def is_limit(price: float, limit: float) -> bool:
 # ---------------------------------------------------------------- 상한가 잠김·풀림
 def lock_profile(bars: pd.DataFrame | None, limit: float) -> dict:
     """오늘 1분봉으로 상한가 도달·풀림 재구성. 잠김 = 그 분 종가가 상한가.
-    풀림 = 도달 뒤 종가가 상한가 아래인 구간 (도달한 분에 종가가 아래면 그것도 1회)"""
+    풀림 = 도달 뒤 종가가 상한가 아래인 구간 (도달한 분에 종가가 아래면 그것도 1회)
+    상한가에 잠겨 체결이 없던 분은 봉이 없음 → 빠진 분은 앞 상태가 이어진 것으로 봄 (풀림 횟수에 영향 없음)"""
     out = {"reached": False, "reach_time": None, "releases": 0, "release_min": 0, "max_release": 0,
            "last_release": 0, "locked_now": False, "locked_min": 0, "relocked": False, "hold_pct": None}
     if bars is None or len(bars) == 0 or not limit:

@@ -68,3 +68,22 @@ def test_same_stock_in_several_kinds_kept_separately():
     assert {r["kind"] for r in rows} == set(rc.DAILY_KINDS) and {r["code"] for r in rows} == {"005930"}
     rec = rc.IntradayRecorder(sb, "daytrade", "pc")                  # 같은 날 당일단타에도 나오면 또 한 줄
     assert rec("2026-10-12", [{"code": "005930", "status": "진입 조건 충족", "entry": 10000, "stop": 9850}]) == 1
+
+
+def test_collect_past_day():
+    import json as js
+    from scripts.record_recommendations import collect
+
+    class SB2:
+        def select(self, table, q):
+            if table == "candidates":
+                return [{"list": "v3", "payload": _cand()}, {"list": "nextday", "payload": _cand()}]
+            return [{"payload": {"date": "2026-10-12", "time": "15:20",
+                                 "items": [{"code": "000010", "status": "매수 후보", "entry": 10000, "stop": 9800}]}}]
+
+        def download(self, key):
+            return {"daytrade/signals/2026-10-12.json": js.dumps([{"code": "000030", "time": "09:12", "entry": 5000,
+                                                                    "stop": 4930, "t1": 5150}]).encode()}.get(key)
+    rows = collect(SB2(), "2026-10-12")
+    assert [r["kind"] for r in rows] == ["v3", "nextday", "daytrade", "closingbet"]
+    assert rows[2]["status"] == "진입 조건 충족" and rows[3]["rec_time"] == "15:20"

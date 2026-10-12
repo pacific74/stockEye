@@ -110,8 +110,17 @@ def main():
         if not cands:
             sys.exit("최근 5거래일에 +20% 종목이 없어 확인할 수 없음")
         D, _, codes = cands[-1]
-        m = kis.minute_bars_day(codes[0], "090000", "153000", day=D.strftime("%Y%m%d"))
-        print(f"{D:%Y-%m-%d} {codes[0]} 1분봉 {len(m)}개 {'OK' if len(m) > 300 else '← 부족 (과거 분봉 보관 기간·계좌 확인)'}")
+        code = codes[0]
+        m = kis.minute_bars_day(code, "090000", "153000", day=D.strftime("%Y%m%d"))
+        if m.empty:
+            print(f"{D:%Y-%m-%d} {code} 1분봉 0개 ← 과거 분봉을 못 받음 (실전 계좌 앱키·보관 기간 확인)")
+            return
+        t0, t1 = m["time"].iloc[0].strftime("%H:%M"), m["time"].iloc[-1].strftime("%H:%M")
+        ok = t0 <= "09:10" and t1 >= "15:19"
+        # 상한가에 잠겨 체결이 없던 분은 분봉이 아예 없어서 390개보다 적은 게 정상 (판단은 시작·끝 시각으로)
+        print(f"{D:%Y-%m-%d} {code} 1분봉 {len(m)}개 · {t0}~{t1} → "
+              + ("OK (상한가에 잠겨 거래 없던 분은 봉이 없어 390개보다 적을 수 있음)" if ok
+                 else "← 하루 전체가 안 옴 (보관 기간·계좌 확인)"))
         return
     minutes = daily = None
     if args.minutes:

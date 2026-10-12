@@ -4,13 +4,15 @@ import '../api.dart';
 import '../closingbet.dart';
 import '../daytrade.dart';
 import '../limitcatch.dart';
+import '../recommend.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
 import 'hitrate_screen.dart';
 
-/// 검증 탭 — 관심종목 적중률만 (탭별 매일 상위 3 → 20일 안에 목표/손절, 연도·분기, 평균 손익)
+/// 검증 탭 (2026-10-12 두 탭으로 나눔)
+///   추천주   : 날마다 관심 목록에 나온 종목(추천 기록)의 실제 결과 + 승률·손익 통계 (앞으로 쌓이는 진짜 기록)
+///   지난 5년 : 관심종목 적중률(과거 되돌려 보기) · 당일단타 · 종가배팅 · 상한가포착 검증 (예전 검증 화면 그대로)
 ///   예전 V2 엔진 · V3 기준 전략 · 상세 검증(VALID) 화면은 2026-10-11 뺐다.
-///   (계산 코드는 남아 있어 Actions 에서 only=VALID 로 직접 돌릴 수는 있음)
 class BacktestScreen extends StatefulWidget {
   const BacktestScreen({super.key});
 
@@ -19,54 +21,75 @@ class BacktestScreen extends StatefulWidget {
 }
 
 class _BacktestScreenState extends State<BacktestScreen> {
+  int _gen = 0; // 새로고침할 때마다 +1 → 두 탭 다시 만들기
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const LogoTitle('검증'),
+          actions: topActions(context, onRefresh: () => setState(() => _gen++)),
+          bottom: const TabBar(tabs: [Tab(text: '추천주'), Tab(text: '지난 5년')]),
+        ),
+        body: TabBarView(children: [
+          RecTab(key: ValueKey('rec$_gen')),
+          _PastTab(key: ValueKey('past$_gen')),
+        ]),
+      ),
+    );
+  }
+}
+
+/// 지난 5년 — 관심종목 적중률 + 당일단타 · 종가배팅 · 상한가포착 검증 (예전 검증 화면 내용)
+class _PastTab extends StatefulWidget {
+  const _PastTab({super.key});
+
+  @override
+  State<_PastTab> createState() => _PastTabState();
+}
+
+class _PastTabState extends State<_PastTab> with AutomaticKeepAliveClientMixin {
   late Future<Json> _hit = loadHitRate();
   late Future<Json> _dt = loadDaytradeValidation();
   late Future<Json> _cb = loadClosingbetValidation();
   late Future<Json> _lc = loadLimitcatchValidation();
 
   @override
+  bool get wantKeepAlive => true;
+
+  void _reload() => setState(() {
+        _hit = loadHitRate();
+        _dt = loadDaytradeValidation();
+        _cb = loadClosingbetValidation();
+        _lc = loadLimitcatchValidation();
+      });
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-          title: const LogoTitle('검증'),
-          actions: topActions(context, onRefresh: () => setState(() {
-            _hit = loadHitRate();
-            _dt = loadDaytradeValidation();
-            _cb = loadClosingbetValidation();
-            _lc = loadLimitcatchValidation();
-          }))),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          setState(() {
-            _hit = loadHitRate();
-            _dt = loadDaytradeValidation();
-            _cb = loadClosingbetValidation();
-            _lc = loadLimitcatchValidation();
-          });
-          await _hit.catchError((_) => <String, dynamic>{});
-        },
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-          children: [
-            HitRunCard(onDone: () => setState(() {
-            _hit = loadHitRate();
-            _dt = loadDaytradeValidation();
-            _cb = loadClosingbetValidation();
-            _lc = loadLimitcatchValidation();
-          })),
-            HitRateSection(future: _hit),
-            const SizedBox(height: 16),
-            // 당일단타: 실전 기록 + 되돌려 보기
-            DaytradeValidation(future: _dt),
-            const SizedBox(height: 16),
-            // 종가배팅: 실전 기록 + 되돌려 보기 (5년 일봉 · 과거 분봉)
-            ClosingbetValidation(future: _cb),
-            const SizedBox(height: 16),
-            // 상한가포착: 실전 기록 + 점수 구간별 유지율 + 되돌려 보기 (과거 분봉 진입 가정 3가지 · 5년 일봉 참고)
-            LimitcatchValidation(future: _lc),
-          ],
-        ),
+    super.build(context);
+    return RefreshIndicator(
+      onRefresh: () async {
+        _reload();
+        await _hit.catchError((_) => <String, dynamic>{});
+      },
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        children: [
+          HitRunCard(onDone: _reload),
+          HitRateSection(future: _hit),
+          const SizedBox(height: 16),
+          // 당일단타: 실전 기록 + 되돌려 보기
+          DaytradeValidation(future: _dt),
+          const SizedBox(height: 16),
+          // 종가배팅: 실전 기록 + 되돌려 보기 (5년 일봉 · 과거 분봉)
+          ClosingbetValidation(future: _cb),
+          const SizedBox(height: 16),
+          // 상한가포착: 실전 기록 + 점수 구간별 유지율 + 되돌려 보기 (과거 분봉 진입 가정 3가지 · 5년 일봉 참고)
+          LimitcatchValidation(future: _lc),
+        ],
       ),
     );
   }

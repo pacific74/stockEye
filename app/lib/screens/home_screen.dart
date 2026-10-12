@@ -35,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Json> _pool = const []; // 어제 분석의 모든 후보 (지금 매수구간 계산용)
   Map<String, List<Json>> _picks = const {}; // 금일 관심주: 후보 탭별 상위 3
   LiveResult? _idx, _stk;
+  Json _secLive = const {}; // 업종 '오늘' (sector-live 작업이 1시간마다)
   bool _liveBusy = false;
   DateTime? _liveAt; // 마지막으로 시세를 받은 기기 시각
   Timer? _timer;
@@ -136,15 +137,14 @@ class _HomeScreenState extends State<HomeScreen> {
       ...asList(_report!['top10']).map((c) => '${c['code']}'),
       for (final l in _picks.values) ...l.map((c) => '${c['code']}'),
       ..._pool.map((c) => '${c['code']}'),
-      for (final g in asList(_report!['sectors'])) ...[
-        ...asList(g['top']).map((m) => '${m['code']}'),
-        ...asList(g['live']).map((m) => '${m['code']}'),
-      ],
+      for (final g in asList(_report!['sectors'])) ...asList(g['top']).map((m) => '${m['code']}'),
     }.toList();
     final mine = _holdings.map((h) => '${h['code']}').where((c) => !common.contains(c)).toList();
     final r = await Future.wait([Live.indices(), Live.stocks(common), Live.stocks(mine)]);
+    final sl = await Api.sectorsLive().catchError((_) => <String, dynamic>{});
     if (!mounted) return;
     setState(() {
+      _secLive = sl;
       _idx = r[0];
       _stk = Live.merge([r[1], r[2]]);
       _liveAt = DateTime.now();
@@ -216,24 +216,37 @@ class _HomeScreenState extends State<HomeScreen> {
                 // (매매 모드 배너 · V3 기준 전략 카드는 홈에서 뺌 — 후보 탭 'V3 기준'에서 확인)
                 const SectionTitle('지금 시장'),
                 _LiveMarketCard(live: _idx, yesterday: m, busy: _liveBusy && _idx == null, weak: weak),
-                SectionTitle('돈이 몰리는 업종',
+                SectionTitle('업종/테마 강도',
                     trailing: TextButton(
                         onPressed: () =>
                             Navigator.push(context, MaterialPageRoute(builder: (_) => const SectorListScreen())),
                         child: const Text('전체'))),
-                _SectorCompare(
-                    today: todaySec,
-                    yesterday: sectors,
-                    todayLabel: _liveAt == null ? '오늘' : '오늘 ${_hm(_liveAt!)}',
-                    yesterdayLabel: repBasis),
-                SectionTitle('금일 관심주', trailing: Text('$repLabel 분석', style: t.bodySmall)),
-                // 종합지수·업종 −3% 이하 급락 → 매수 주의
-                if (m['drop_alert'] != null || todaySec.any((x) => x.avg <= -3))
-                  _DropAlert(
-                      a: asMap(m['drop_alert']),
-                      basis: repBasis,
-                      today: {for (final x in todaySec) '${x.g['group']}': x.avg},
-                      live: _liveAt != null && quotes.isNotEmpty),
+                () {
+                  // 왼쪽 = 오늘: sector-live(업종 전체 종목, 1시간마다) · 아직 없으면 대표 종목 지금 시세 평균
+                  final byName = {for (final g in sectors) '${g['group']}': g};
+                  final liveToday = dtIsToday(_secLive) && asList(_secLive['groups']).isNotEmpty;
+                  final today = liveToday
+                      ? [
+                          for (final x in asList(_secLive['groups']))
+                            if ((x['chg_pct'] as num?) != null)
+                              (byName['${x['group']}'] ?? {'group': x['group']}, (x['chg_pct'] as num).toDouble()),
+                        ]
+                      : [for (final x in todaySec) (x.g, x.avg)];
+                  final prevDate = '${d['sectors_prev_date'] ?? repDate}';
+                  final prev = [
+                    for (final g in asList(d['sectors_prev']))
+                      if ((g['ret1_pct'] as num?) != null) (g, (g['ret1_pct'] as num).toDouble()),
+                  ]..sort((a, b) => b.$2.compareTo(a.$2));
+                  final pl = _dateLabel(prevDate, clock.now);
+                  return _SectorCompare(
+                    today: today,
+                    todayLabel: liveToday ? '오늘 ${_secLive['time']}' : (_liveAt == null ? '오늘' : '오늘 ${_hm(_liveAt!)}'),
+                    todaySub: liveToday ? '업종 전체 종목 · 1시간마다' : '대표 종목 평균 (전체 집계 전)',
+                    prev: prev,
+                    prevLabel: pl.startsWith('오늘') ? '$pl 마감' : '전일($pl) 마감',
+                    prevSub: '업종 전체 종목 · 저녁 배치',
+                  );
+                }(),
                 if (_stk?.error != null && quotes.isEmpty)
                   _Notice('지금 시세를 가져오지 못해 $repBasis 가격으로 보여줍니다. (${_stk!.error})'),
                 // 후보 탭별 3개 (탭 데이터를 못 받으면 V3 상위 3)
@@ -242,13 +255,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.fromLTRB(4, 8, 0, 0),
                     child: Row(children: [
                       Text(strategyLabels[k] ?? k, style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                      if ((k == 'daytrade' || k == 'closingbet') && _intraMeta[k] != null) ...[
-                        const SizedBox(width: 6),
-                        Flexible(
-                            child: Text(lookupLabel(_intraMeta[k]!, _intraAt[k]),
-                                overflow: TextOverflow.ellipsis, style: t.bodySmall?.copyWith(color: Colors.grey))),
-                      ],
-                      const Spacer(),
+                      const SizedBox(width: 6),
+                      // 조회 시각(당일단타·종가배팅)은 가운데를 채우고, 버튼은 맨 오른쪽에
+                      Expanded(
+                          child: (k == 'daytrade' || k == 'closingbet') && _intraMeta[k] != null
+                              ? Text(lookupLabel(_intraMeta[k]!, _intraAt[k]),
+                                  overflow: TextOverflow.ellipsis, style: t.bodySmall?.copyWith(color: Colors.grey))
+                              : const SizedBox.shrink()),
                       if (k == 'daytrade') DaytradeFindButton(onDone: _reloadDaytrade),
                       if (k == 'closingbet') DaytradeFindButton(closing: true, onDone: _reloadClosingbet),
                       TextButton(onPressed: () => goTab(context, 1, list: k), child: const Text('전체')),
@@ -277,13 +290,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
                 if (_holdings.isNotEmpty) ...[
                   SectionTitle('보유종목',
-                      trailing: TextButton(onPressed: () => goTab(context, 2), child: const Text('보유 탭'))),
-                  ..._holdings.map((h) => _HoldingNowTile(
-                      h: h,
-                      q: quotes['${h['code']}'],
-                      meta: _meta['${h['code']}'] ?? const {},
-                      sellDate: holdingSellDate(asMap(m['v3']), '${h['entry_time'] ?? ''}'.length >= 10 ? '${h['entry_time']}'.substring(0, 10) : null),
-                      today: repDate)),
+                      trailing: TextButton(onPressed: () => goTab(context, 2), child: const Text('전체'))),
+                  _HoldingsTable(holdings: _holdings, quotes: quotes, meta: _meta),
                 ],
                 const SizedBox(height: 16),
                 Text('규칙 기반 분석 결과이며 투자 권유가 아닙니다. 최종 판단과 책임은 본인에게 있습니다. '
@@ -536,164 +544,169 @@ class _LiveCandidateTile extends StatelessWidget {
   }
 }
 
-/// 내 보유종목 지금 손익
-class _HoldingNowTile extends StatelessWidget {
-  const _HoldingNowTile({required this.h, required this.q, this.meta = const {}, this.sellDate, this.today});
-  final Json h;
-  final LiveQuote? q;
-  final Json meta; // {score, market}
-  final String? sellDate; // V3 기준 매도 예정일 (매수일 포함 20거래일째)
-  final String? today;
 
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    final entry = (h['entry_price'] as num?)?.toDouble();
-    final qty = (h['qty'] as num?)?.toDouble();
-    final price = q?.price;
-    final pnl = (price != null && entry != null && entry > 0) ? (price / entry - 1) * 100 : null;
-    final pnlWon = (price != null && entry != null && qty != null) ? (price - entry) * qty : null;
-    Color c(double v) => v >= 0 ? upColor : downColor;
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ListTile(
-        dense: true,
-        title: StockName('${h['name'] ?? h['code']}',
-            market: (meta['market'] ?? h['market']) as String?, score: meta['score'] as num?),
-        subtitle: Text('매수가 ${num0(entry)}', style: t.bodySmall),
-        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-          // 오늘 시세
-          Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(price == null ? '-' : num0(price), style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text(q == null ? '오늘 -' : '오늘 ${pct(q!.ratio)}',
-                style: TextStyle(fontSize: 11, color: q == null ? Colors.grey : c(q!.ratio))),
-          ]),
-          Container(
-              width: 1, height: 30, margin: const EdgeInsets.symmetric(horizontal: 10), color: Colors.grey.withValues(alpha: 0.3)),
-          // 매수가 대비
-          SizedBox(
-            width: 70,
-            child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text(pct(pnl),
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: pnl == null ? null : c(pnl))),
-              Text(pnlWon == null ? '매수가 대비' : '${pnlWon >= 0 ? '+' : ''}${num0(pnlWon.round())}',
-                  style: TextStyle(fontSize: 11, color: pnlWon == null ? Colors.grey : c(pnlWon))),
-            ]),
-          ),
-        ]),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => StockDetailScreen(code: '${h['code']}', name: '${h['name'] ?? h['code']}'))),
-      ),
-    );
-  }
-}
-
-/// 돈이 몰리는 업종: 왼쪽 = 오늘 지금 (거래대금 상위 15종목 가중 평균), 오른쪽 = 어제 마감 점수
+/// 업종/테마 강도: 왼쪽 = 오늘(업종 전체 종목 등락, 1시간마다), 오른쪽 = 전일 마감 (같은 방식) — 높은 순 6개
 class _SectorCompare extends StatelessWidget {
   const _SectorCompare(
-      {required this.today, required this.yesterday, required this.todayLabel, required this.yesterdayLabel});
-  final List<SectorToday> today;
-  final List<Json> yesterday;
-  final String todayLabel, yesterdayLabel;
+      {required this.today,
+      required this.todayLabel,
+      required this.todaySub,
+      required this.prev,
+      required this.prevLabel,
+      required this.prevSub});
+  final List<(Json, double)> today, prev;
+  final String todayLabel, todaySub, prevLabel, prevSub;
 
   void _open(BuildContext context, Json g) =>
       Navigator.push(context, MaterialPageRoute(builder: (_) => SectorDetailScreen(g: g)));
 
-  Widget _row(BuildContext context, int rank, Json g, Widget value) => InkWell(
-        onTap: () => _open(context, g),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
-          child: Row(children: [
-            SizedBox(width: 18, child: Text('$rank', style: const TextStyle(fontWeight: FontWeight.bold))),
-            Expanded(child: Text('${g['group']}', maxLines: 1, overflow: TextOverflow.ellipsis)),
-            value,
-          ]),
-        ),
-      );
-
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
-    Widget box(String title, String sub, List<Widget> rows) => Expanded(
+    Widget row(int rank, Json g, double v) => InkWell(
+          onTap: g['members'] == null ? null : () => _open(context, g),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: Row(children: [
+              SizedBox(width: 18, child: Text('$rank', style: const TextStyle(fontWeight: FontWeight.bold))),
+              Expanded(child: Text('${g['group']}', maxLines: 1, overflow: TextOverflow.ellipsis)),
+              Text(pct(v), style: TextStyle(fontWeight: FontWeight.bold, color: v >= 0 ? upColor : downColor)),
+            ]),
+          ),
+        );
+    Widget box(String title, String sub, List<(Json, double)> rows) => Expanded(
           child: Card(
             margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(title, style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                Text(sub, style: t.bodySmall),
+                Row(children: [
+                  Text('업종 상위', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  Flexible(
+                      child: Text(title,
+                          overflow: TextOverflow.ellipsis, style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold))),
+                ]),
+                Text(sub, style: t.bodySmall?.copyWith(color: Colors.grey)),
                 const SizedBox(height: 4),
                 if (rows.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('-', style: t.bodySmall)),
-                ...rows,
+                for (final (i, r) in rows.take(6).indexed) row(i + 1, r.$1, r.$2),
               ]),
             ),
           ),
         );
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      box(todayLabel, '업종 거래대금 상위 종목 가중 평균', [
-        for (final (i, s) in today.take(6).indexed)
-          _row(
-              context,
-              i + 1,
-              s.g,
-              Text(pct(s.avg),
-                  style: TextStyle(fontWeight: FontWeight.bold, color: s.avg >= 0 ? upColor : downColor))),
-      ]),
-      box(yesterdayLabel, '강도 점수', [
-        for (final (i, g) in yesterday.take(6).indexed)
-          _row(context, i + 1, g, Text('${g['score']}', style: const TextStyle(fontWeight: FontWeight.bold))),
-      ]),
+      box(todayLabel, todaySub, today),
+      box(prevLabel, prevSub, prev),
     ]);
   }
 }
 
+/// 보유종목 표: 종목명(시장·점수 / 지금 매수구간·관심 출처) | 매수가 | 현재가(오늘 등락) | 수익률(손익)
+class _HoldingsTable extends StatelessWidget {
+  const _HoldingsTable({required this.holdings, required this.quotes, required this.meta});
+  final List<Json> holdings;
+  final Map<String, LiveQuote> quotes;
+  final Map<String, Json> meta;
 
-/// 금일 관심주 위: 종합지수·업종 급락 경고 (리포트의 지수·업종 등락률 −3% 이하)
-class _DropAlert extends StatelessWidget {
-  const _DropAlert({required this.a, required this.basis, required this.today, required this.live});
-  final Json a; // 저녁(또는 장중 재분석) 리포트 기준 급락
-  final String basis; // 그 리포트 기준 시점 ("10/9 마감")
-  final Map<String, double> today; // 업종 → 오늘 지금 등락
-  final bool live;
+  /// 관심 탭에서 산 종목이면 [n차 매수구간 lo~hi] · [손절가 아래] · [탭 이름]
+  static List<String> _tags(Json h, double? price) {
+    final o = asMap(h['origin'] ?? asMap(h['plan'])['origin']);
+    final out = <String>[];
+    if (price != null) {
+      final stop = (o['stop'] as num?)?.toDouble();
+      if (stop != null && price <= stop) {
+        out.add('손절가 ${num0(stop)} 아래');
+      } else {
+        for (final z in asList(o['zones'])) {
+          final lo = (z['low'] as num?)?.toDouble(), hi = (z['high'] as num?)?.toDouble();
+          if (lo != null && hi != null && price >= lo && price <= hi) {
+            out.add('${z['name'] ?? ''} 매수구간 ${num0(lo)}~${num0(hi)}'.trim());
+            break;
+          }
+        }
+      }
+    }
+    for (final n in (o['names'] as List? ?? const [])) {
+      out.add('$n');
+    }
+    return out;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final idx = asList(a['index']);
-    final grp = asList(a['groups']);
-    final nowDrop = live ? (today.entries.where((e) => e.value <= -3).toList()..sort((x, y) => x.value.compareTo(y.value))) : const <MapEntry<String, double>>[];
-    if (idx.isEmpty && grp.isEmpty && nowDrop.isEmpty) return const SizedBox.shrink();
     final t = Theme.of(context).textTheme;
+    final line = Theme.of(context).dividerColor.withValues(alpha: 0.35);
+    final head = t.bodySmall?.copyWith(color: Colors.grey);
+    Color c(double v) => v >= 0 ? upColor : downColor;
+    Widget pad(Widget w, {Alignment al = Alignment.centerRight}) =>
+        Padding(padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 3), child: Align(alignment: al, child: w));
     return Card(
-      color: Colors.orange.withValues(alpha: 0.12),
+      margin: const EdgeInsets.symmetric(vertical: 4),
       child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (nowDrop.isNotEmpty) ...[
-            const Text('⚠ 오늘 업종 급락 · 매수 주의', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
-            const SizedBox(height: 6),
-            infoBoxes([for (final e in nowDrop.take(6)) InfoBox('${e.key} 지금 ${pct(e.value)}', color: downColor, bold: true)]),
-            const SizedBox(height: 8),
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+        child: Table(
+          columnWidths: const {0: FlexColumnWidth(3.2), 1: FlexColumnWidth(1.5), 2: FlexColumnWidth(1.7), 3: FlexColumnWidth(1.5)},
+          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+          children: [
+            TableRow(
+              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: line))),
+              children: [
+                pad(Text('종목명', style: head), al: Alignment.centerLeft),
+                pad(Text('매수가', style: head)),
+                pad(Text('현재가', style: head)),
+                pad(Text('수익률', style: head)),
+              ],
+            ),
+            for (final h in holdings)
+              () {
+                final code = '${h['code']}';
+                final q = quotes[code];
+                final m = meta[code] ?? const {};
+                final entry = (h['entry_price'] as num?)?.toDouble();
+                final qty = (h['qty'] as num?)?.toDouble();
+                final price = q?.price;
+                final pnl = (price != null && entry != null && entry > 0) ? (price / entry - 1) * 100 : null;
+                final pnlWon = (price != null && entry != null && qty != null) ? (price - entry) * qty : null;
+                final tags = _tags(h, price);
+                void open() => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => StockDetailScreen(code: code, name: '${h['name'] ?? code}')));
+                Widget tap(Widget w, {Alignment al = Alignment.centerRight}) =>
+                    TableRowInkWell(onTap: open, child: pad(w, al: al));
+                return TableRow(
+                  decoration: BoxDecoration(border: Border(bottom: BorderSide(color: line.withValues(alpha: 0.25)))),
+                  children: [
+                    tap(
+                        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          StockName('${h['name'] ?? code}',
+                              market: (m['market'] ?? h['market']) as String?, score: m['score'] as num?),
+                          if (tags.isNotEmpty)
+                            Text(tags.map((x) => '[$x]').join(' '),
+                                style: t.bodySmall?.copyWith(fontSize: 11, color: Colors.grey)),
+                        ]),
+                        al: Alignment.centerLeft),
+                    tap(Text(num0(entry), style: t.bodySmall)),
+                    tap(Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                      Text(price == null ? '-' : num0(price), style: const TextStyle(fontWeight: FontWeight.bold)),
+                      if (q != null)
+                        Text('${q.ratio >= 0 ? '▲' : '▼'} ${q.ratio.abs().toStringAsFixed(2)}%',
+                            style: TextStyle(fontSize: 11, color: c(q.ratio))),
+                    ])),
+                    tap(Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                      Text(pct(pnl),
+                          style: TextStyle(fontWeight: FontWeight.bold, color: pnl == null ? null : c(pnl))),
+                      if (pnlWon != null)
+                        Text('${pnlWon >= 0 ? '+' : ''}${num0(pnlWon.round())}',
+                            style: TextStyle(fontSize: 11, color: c(pnlWon))),
+                    ])),
+                  ],
+                );
+              }(),
           ],
-          if (idx.isNotEmpty || grp.isNotEmpty) ...[
-            Text('${idx.isNotEmpty ? '⚠ 종합지수 급락' : '⚠ 업종 급락'} ($basis 기준)',
-                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
-            const SizedBox(height: 6),
-            infoBoxes([
-              for (final i in idx) InfoBox('${i['name']} ${pct(i['change_pct'] as num?)}', color: downColor, bold: true),
-              for (final g in grp.take(6))
-                () {
-                  final now = live ? today['${g['group']}'] : null;
-                  return InfoBox('${g['group']} ${pct(g['ret1_pct'] as num?)}${now != null ? ' → 지금 ${pct(now)}' : ''}',
-                      color: now != null && now > 0 ? upColor : downColor);
-                }(),
-            ]),
-          ],
-          const SizedBox(height: 4),
-          Text('해당 시장·업종 종목에는 아래 목록에 ⚠ 표시($basis 기준). 급락 다음 날은 변동이 커서 분할·관망을 권합니다. '
-              '업종 등락은 거래대금 상위 종목 가중 평균이에요.',
-              style: t.bodySmall),
-        ]),
+        ),
       ),
     );
   }
 }
+
+

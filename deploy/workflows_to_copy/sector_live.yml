@@ -1,0 +1,36 @@
+# 업종/테마 '오늘' 강도 — 평일 장중 1시간마다 (09:10 ~ 15:10, 마감 뒤 15:35 한 번 더) → 앱 메인 '업종/테마 강도'
+#   업종·테마별 전체 종목의 지금 등락을 거래대금 가중 평균 (저녁 리포트와 같은 방식). PC 필요 없음
+#   한 번에 1분 안팎 (필요한 패키지만 설치 · 네이버 시세만 사용). GitHub 예약은 10~20분 늦을 수 있음
+name: sector-live
+
+on:
+  schedule:
+    - cron: "10 0-6 * * 1-5"      # UTC 00:10~06:10 = 한국 09:10~15:10 매시
+    - cron: "35 6 * * 1-5"        # 한국 15:35 (마감 값)
+  workflow_dispatch:
+
+concurrency:
+  group: stockeye-sector-live
+  cancel-in-progress: true
+
+jobs:
+  sectors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TZ: Asia/Seoul
+      PYTHONUTF8: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-live.txt
+      - run: pip install -r backend/requirements-live.txt
+      - name: 업종 오늘 강도
+        working-directory: backend
+        run: python -m scripts.sector_live

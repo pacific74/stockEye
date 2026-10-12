@@ -98,7 +98,7 @@ def _arrows(score: float, direction: float) -> str:
 
 def group_strength(x: pd.DataFrame, groups: dict[str, dict], scores: dict[str, float] | None = None,
                    names: pd.DataFrame | None = None, min_value: float = 5e8, top_members: int = 5,
-                   live_members: int = 15) -> list[dict]:
+                   live_members: int | None = None) -> list[dict]:
     """그룹별 강도 점수와 대표 종목."""
     scores = scores or {}
     nm = dict(zip(names["code"], names["name"])) if names is not None and not names.empty else {}
@@ -132,8 +132,10 @@ def group_strength(x: pd.DataFrame, groups: dict[str, dict], scores: dict[str, f
         mem = sorted(r["codes"], key=lambda c: scores.get(c, -1), reverse=True)
         top = [{"code": c, "name": nm.get(c, c), "score": scores.get(c),
                 "ret1": round(float(x.at[c, "ret1"]) * 100, 2)} for c in mem[:top_members]]
-        # 앱 '오늘 지금' 업종 등락용: 평소 거래대금(20일 평균) 상위 live_members 종목과 가중치 → 앱이 지금 시세로 가중 평균
-        va = x.loc[r["codes"], "value_ma20"].astype(float).sort_values(ascending=False).head(live_members)
+        # 앱 '오늘 지금' 업종 등락용: 업종 전체 종목(평소 거래대금 5억↑)과 가중치(20일 평균 거래대금) → 앱이 지금 시세로 가중 평균
+        va = x.loc[r["codes"], "value_ma20"].astype(float).sort_values(ascending=False)
+        if live_members:
+            va = va.head(live_members)
         live_w = [{"code": c, "w": round(float(v / va.sum()), 4)} for c, v in va.items()] if va.sum() > 0 else []
         out.append({
             "group": r["group"], "type": r["type"], "score": int(r["score"]),

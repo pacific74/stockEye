@@ -36,6 +36,8 @@ class Api {
       useCloud ? _Cloud.candidates(list, top) : _Http.candidates(list, top);
   /// 어제(최근) 분석의 모든 후보 (종합 + 전략별, 종목별 1개) — '지금 매수구간' 계산용
   static Future<List<Json>> allCandidates() => useCloud ? _Cloud.allCandidates() : _Http.allCandidates();
+  /// 업종/테마 '오늘' 강도 (GitHub sector-live 가 장중 1시간마다 · 업종 전체 종목 거래대금 가중)
+  static Future<Json> sectorsLive() => useCloud ? _Cloud.statusOf('sectors_live') : Future.value(<String, dynamic>{});
   static Future<Json> sectors() => useCloud ? _Cloud.sectors() : _Http.get('/api/sectors');
   static Future<Json> sector(String group) =>
       useCloud ? _Cloud.sector(group) : _Http.get('/api/sectors/${Uri.encodeComponent(group)}');
@@ -173,11 +175,31 @@ class _Cloud {
   static Future<Json> dashboard() async {
     _repAt = null; // 새로고침 = 최신으로
     final r = await _latest();
+    // 업종 '전일' 값: 최신 리포트가 장중 재분석이면 그 전 날짜(저녁 확정) 리포트의 업종
+    var prev = asList(r['sectors']);
+    var prevDate = r['date'];
+    if (asMap(r['market'])['intraday'] != null) {
+      try {
+        final p = await db
+            .from('daily_reports')
+            .select('date,sectors')
+            .lt('date', r['date'] as String)
+            .order('date', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        if (p != null) {
+          prev = asList(p['sectors']);
+          prevDate = p['date'];
+        }
+      } catch (_) {}
+    }
     return {
       'date': r['date'],
       'as_of': r['as_of'],
       'market': r['market'],
       'sectors': asList(r['sectors']),
+      'sectors_prev': prev,
+      'sectors_prev_date': prevDate,
       'top10': r['top10'] ?? [],
       'strategies': r['strategies'] ?? {},
       'funnel': r['funnel'],

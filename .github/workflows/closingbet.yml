@@ -1,7 +1,7 @@
 # 종가배팅 종목찾기 (한 번) → 앱 메인·'관심 > 종가배팅'  — PC 꺼져 있어도 됨
 #   ① 앱 [종목찾기] 버튼(관리자) → Supabase 가 바로 신호(repository_dispatch closingbet_request)
 #   ② 여기 Actions → Run workflow
-#   python -m scripts.closingbet --cloud --once : Storage 에서 일봉·종목 목록 받아 지금 시세로 한 번 계산 (2~4분)
+#   python -m scripts.closingbet --cloud --once : Storage 에서 일봉·종목 목록 받아 지금 시세로 한 번 계산 (보통 1~2분: 거래대금 상위 40개 · 여러 종목 동시에 · 필요한 패키지만 설치)
 #   매수 후보는 15:10 이후에만 나옴. 15:20 이후에 누르면 매수 후보 상위 3 을 저장 → 다음 날 저녁 배치가 검증 결과를 매김
 #   ⚠ 주문은 하지 않는다
 name: closingbet
@@ -35,14 +35,14 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: backend/requirements.txt
-      - name: 일봉 데이터 캐시 (저녁 배치 캐시와 따로 — 바뀐 조각만 Storage 에서 받기)
-        uses: actions/cache@v4
-        with:
-          path: data
-          key: stockeye-cbdata-${{ github.run_id }}
-          restore-keys: stockeye-cbdata-
-      - run: pip install -r backend/requirements.txt
+          cache-dependency-path: backend/requirements-live.txt
+      - run: pip install -r backend/requirements-live.txt
       - name: 종가배팅 종목찾기
         working-directory: backend
-        run: python -m scripts.closingbet --cloud --once
+        run: python -m scripts.closingbet --cloud --once --top 40
+      - name: 실패하면 앱 버튼에 '실패' 표시 (안 그러면 앱이 계속 '찾는 중')
+        if: failure()
+        working-directory: backend
+        run: >-
+          python -c "from stockeye.cloud.client import Supabase; from stockeye.cloud import publish as pub;
+          pub.publish_status(Supabase(), 'closingbet_job', {'status': 'failed', 'error': 'GitHub 작업 실패 — Actions 기록 확인'})"

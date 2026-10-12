@@ -48,7 +48,7 @@ class Api {
   /// 관심종목 적중률 계산 요청 (관리자) — only: 'HIT' · 'HIT:nextday' · 'HIT:2025' · 'HIT:early:2024,2025'
   static Future<Json> requestHitRate(String only) => _Cloud.requestHitRate(only);
   static Future<Json> hitRateJob() => useCloud ? _Cloud.hitRateJob() : Future.value(<String, dynamic>{});
-  /// 당일단타: PC 가 09:00~10:30 1분마다 올리는 후보 (system_status 'daytrade')
+  /// 당일단타: PC 가 09:00~10:00 1분마다 올리는 후보 (system_status 'daytrade')
   static Future<Json> daytrade() => useCloud ? _Cloud.daytrade() : Future.value(<String, dynamic>{});
   /// 종가배팅: PC 가 14:50~15:20 1분마다 올리는 후보 (system_status 'closingbet')
   static Future<Json> closingbet() => useCloud ? _Cloud.statusOf('closingbet') : Future.value(<String, dynamic>{});

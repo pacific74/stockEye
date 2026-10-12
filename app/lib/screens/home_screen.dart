@@ -225,7 +225,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
                         child: Text(
                             k == 'daytrade'
-                                ? '평일 09:00~10:30 PC 에서 당일단타를 켜 두면 여기에 나와요'
+                                ? '평일 09:00~10:00 PC 에서 당일단타를 켜 두면 여기에 나와요'
                                 : k == 'closingbet'
                                     ? '종가배팅 [종목찾기]를 누르거나 PC 에서 켜 두면 여기에 나와요'
                                     : '오늘 조건을 만족한 종목이 없습니다',

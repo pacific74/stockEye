@@ -45,6 +45,9 @@ class KISClient:
         self.token_path = Path(token_path)
         self.min_gap = 1.0 / calls_per_sec
         self._last = 0.0
+        import threading
+        self._lock = threading.Lock()          # 여러 종목을 동시에 받을 때도 초당 한도를 지키도록 (호출 시각 예약)
+        self._next = 0.0
         self.token = self._token()
 
     # ---------------- 토큰 ----------------
@@ -65,9 +68,12 @@ class KISClient:
         return js["access_token"]
 
     def _get(self, path: str, tr_id: str, params: dict) -> dict:
-        wait = self.min_gap - (time.time() - self._last)
-        if wait > 0:
-            time.sleep(wait)
+        with self._lock:
+            now = time.time()
+            slot = max(now, self._next)
+            self._next = slot + self.min_gap
+        if slot > now:
+            time.sleep(slot - now)
         if self.env == "vps" and tr_id[0] in "TJC":
             tr_id = "V" + tr_id[1:]
         headers = {"content-type": "application/json; charset=utf-8", "authorization": f"Bearer {self.token}",

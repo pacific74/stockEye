@@ -1,4 +1,4 @@
-"""당일단타 — 평일 아침 PC 에서 실행 (scripts_win/14_daytrade.bat). 09:00~10:30 동안 1분마다:
+"""당일단타 — 평일 아침 PC 에서 실행 (scripts_win/14_daytrade.bat). 09:00~10:00 동안 1분마다:
 
   1) 네이버 지금 시세로 전 종목 → 오전 누적 거래대금 상위 TOP + 관심 탭 종목 (보통주만)
   2) 후보마다 KIS 1분봉(처음엔 09:00부터, 그다음엔 최근 30개만) · 점수가 될 만한 종목은 호가(스프레드)
@@ -7,8 +7,8 @@
   4) '진입 조건 충족' 이 처음 뜬 종목은 신호로 기록 → Storage daytrade/signals/YYYY-MM-DD.json
      → 저녁 배치(cloud_daily)가 그날 1분봉으로 결과(1·2차 익절·손절·장 마감 청산)를 매겨 '검증' 에 누적
 
-  python -m scripts.daytrade                 # 기본: 지금부터 10:30 까지
-  python -m scripts.daytrade --until 11:00 --every 60 --top 100
+  python -m scripts.daytrade                 # 기본: 지금부터 10:00 까지
+  python -m scripts.daytrade --until 10:30 --every 60 --top 100
   python -m scripts.daytrade --once          # 한 번만 계산 (장중) — 앱 '종목찾기' 버튼이 GitHub 에서 이걸 실행
 
 필요한 환경변수 (setx): KIS_APP_KEY · KIS_APP_SECRET · SUPABASE_URL · SUPABASE_SERVICE_KEY
@@ -57,9 +57,10 @@ def watch_codes(sb) -> set[str]:
 
 
 class Runner:
-    def __init__(self, sb, kis, listing: pd.DataFrame, top: int = 100):
+    def __init__(self, sb, kis, listing: pd.DataFrame, top: int = 100, workers: int = 8, runner: str = "pc"):
         from stockeye.engine.nextday import common_stock
-        self.sb, self.kis, self.top = sb, kis, top
+        self.sb, self.kis, self.top, self.workers, self.runner = sb, kis, top, workers, runner
+        self.until = "10:00"
         lst = listing.drop_duplicates("code", keep="last")
         self.names = dict(zip(lst["code"], lst["name"]))
         self.market = dict(zip(lst["code"], lst["market"])) if "market" in lst else {}
@@ -92,6 +93,21 @@ class Runner:
                 self.adr[code] = None
         return self.adr[code]
 
+    def _extras(self, code: str) -> None:
+        """호가 스프레드(2분마다) · 뉴스 · 평소 변동폭(하루 한 번)"""
+        t0, sp = self.spread.get(code) or (0, None)
+        if time.time() - t0 > 120:
+            try:
+                sp = self.kis.asking(code)["spread"]
+            except Exception:  # noqa: BLE001
+                sp = None
+            self.spread[code] = (time.time(), sp)
+        try:
+            self._news(code)
+        except Exception:  # noqa: BLE001
+            self.news[code] = None
+        self._adr(code)
+
     def _bars(self, code: str, hhmmss: str) -> pd.DataFrame:
         old = self.bars.get(code)
         try:
@@ -115,33 +131,40 @@ class Runner:
         snap = snap.set_index("code")
         idx = naver_live.indices()
         idx_chg = {r["code"]: float(r["chg_pct"]) for _, r in idx.iterrows()} if not idx.empty else {}
-        top = snap.sort_values("value", ascending=False).head(self.top).index.tolist()
-        cands = list(dict.fromkeys(top + [c for c in self.watch if c in snap.index]))
-        res = []
-        for code in cands:
-            b = self._bars(code, hhmmss)
-            if b is None or b.empty:
-                continue
+        from concurrent.futures import ThreadPoolExecutor
+        live = snap[snap["value"] >= dt.MIN_VALUE]                    # 거래대금 10억 미만은 어차피 제외 → 분봉 안 받음
+        top = live.sort_values("value", ascending=False).head(self.top).index.tolist()
+        cands = list(dict.fromkeys(top + [c for c in self.watch if c in live.index]))
+        with ThreadPoolExecutor(self.workers) as ex:                 # 1분봉을 여러 종목 동시에 (KIS 초당 한도 안에서)
+            bars = dict(zip(cands, ex.map(lambda c: self._bars(c, hhmmss), cands)))
+
+        def ctx_of(code, b):
             q = snap.loc[code]
             prev = q["close"] / (1 + q["chg_pct"] / 100) if q["chg_pct"] > -100 else None
             market = self.market.get(code)
-            ctx = {"name": self.names.get(code, code), "prev_close": prev, "now": now,
-                   "idx_chg": idx_chg.get(market or "KOSPI", idx_chg.get("KOSPI", 0.0)),
-                   "value": float(b["value"].iloc[-1]) if "value" in b and b["value"].iloc[-1] > 0 else float(q["value"]),
-                   "danger": "관리종목" if code in self.admin else None,
-                   "spread": (self.spread.get(code) or (0, None))[1], "news_level": None}
-            r = dt.evaluate(b, ctx)
-            # 점수가 될 만한 종목만 호가·뉴스 (API 아끼기) → 다시 계산
-            if r["score"] >= 60 and not r["excluded"]:
-                t0, sp = self.spread.get(code) or (0, None)
-                if time.time() - t0 > 120:
-                    try:
-                        sp = self.kis.asking(code)["spread"]
-                    except Exception:  # noqa: BLE001
-                        sp = None
-                    self.spread[code] = (time.time(), sp)
-                ctx.update({"spread": sp, "news_level": self._news(code), "adr": self._adr(code)})
-                r = dt.evaluate(b, ctx)
+            return {"name": self.names.get(code, code), "prev_close": prev, "now": now,
+                    "idx_chg": idx_chg.get(market or "KOSPI", idx_chg.get("KOSPI", 0.0)),
+                    "value": float(b["value"].iloc[-1]) if "value" in b and b["value"].iloc[-1] > 0 else float(q["value"]),
+                    "danger": "관리종목" if code in self.admin else None,
+                    "spread": (self.spread.get(code) or (0, None))[1], "news_level": None}
+
+        first = {}
+        for code in cands:
+            b = bars.get(code)
+            if b is None or b.empty:
+                continue
+            first[code] = dt.evaluate(b, ctx_of(code, b))
+        # 점수가 될 만한 종목만 호가·뉴스·평소 변동폭 (API 아끼기) → 동시에 받고 다시 계산
+        need = [c for c, r in first.items() if r["score"] >= 60 and not r["excluded"]]
+        with ThreadPoolExecutor(self.workers) as ex:
+            list(ex.map(self._extras, need))
+        res = []
+        for code, r in first.items():
+            if code in need:
+                ctx = ctx_of(code, bars[code])
+                ctx.update({"spread": (self.spread.get(code) or (0, None))[1], "news_level": self.news.get(code),
+                            "adr": self.adr.get(code)})
+                r = dt.evaluate(bars[code], ctx)
             r.update({"code": code, "name": self.names.get(code, code)})
             res.append(r)
             if r["status"] == "진입 조건 충족":
@@ -161,7 +184,8 @@ class Runner:
             r["rank"] = i
         counts = {s: sum(r["status"] == s for r in res) for s in order}
         return {"date": self.day, "time": now.strftime("%H:%M"), "version": dt.VERSION, "scanned": len(res),
-                "counts": counts, "items": keep, "signals": list(self.signals.values()), "idx_chg": idx_chg}
+                "counts": counts, "items": keep, "signals": list(self.signals.values()), "idx_chg": idx_chg,
+                "runner": self.runner, "until": self.until}
 
     def publish(self, payload: dict) -> None:
         if not self.sb:
@@ -185,9 +209,10 @@ class Runner:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--until", default="10:30")
+    ap.add_argument("--until", default="10:00")
     ap.add_argument("--every", type=int, default=60, help="초")
     ap.add_argument("--top", type=int, default=100)
+    ap.add_argument("--workers", type=int, default=8, help="동시에 받을 종목 수 (KIS 초당 한도 안에서)")
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="발행하지 않고 화면에만")
     args = ap.parse_args()
@@ -204,7 +229,7 @@ def main():
     if now.weekday() >= 5 or naver_live.is_trading_day() is False:
         print("오늘은 장이 열리지 않음 → 종료"); return
     if not args.once and now.strftime("%H:%M") >= args.until:
-        # 작업 스케줄러가 놓친 실행을 늦게 돌린 경우 (PC 를 10:30 넘어 켬) → 아무것도 안 함
+        # 작업 스케줄러가 놓친 실행을 늦게 돌린 경우 (PC 를 10:00 넘어 켬) → 아무것도 안 함
         print(f"이미 {args.until} 이 지나 오늘 당일단타는 끝 → 종료"); return
     cfg = load_config()
     sb = Supabase() if enabled() and not args.dry_run else None
@@ -230,8 +255,13 @@ def main():
     if sb is None and not args.dry_run:
         print("⚠ SUPABASE_URL / SUPABASE_SERVICE_KEY 가 없어 앱에 발행하지 않고 화면에만 보여줍니다")
     kc = cfg.get("kis", {})
-    kis = KISClient(kc.get("env", "prod"), data_dir(cfg) / ".kis_token.json", kc.get("calls_per_sec", 15))
-    run = Runner(sb, kis, listing, args.top)
+    try:
+        kis = KISClient(kc.get("env", "prod"), data_dir(cfg) / ".kis_token.json", kc.get("calls_per_sec", 15))
+        run = Runner(sb, kis, listing, args.top, args.workers, runner="github" if args.once else "pc")
+        run.until = args.until
+    except Exception as e:  # noqa: BLE001 — 앱 [종목찾기] 에 실패 이유를 보여줌
+        job(status="failed", finished=_now().strftime("%H:%M"), error=str(e)[:200])
+        raise
     while _now().strftime("%H:%M") < "09:00" and not args.once:
         print(f"{_now():%H:%M:%S} 장 시작 대기..."); time.sleep(20)
     p = None

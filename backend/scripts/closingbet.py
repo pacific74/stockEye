@@ -9,7 +9,7 @@
 
   python -m scripts.closingbet                    # 기본: 지금부터 15:20 까지
   python -m scripts.closingbet --once             # 한 번만 (장중 아무 때나 시험)
-  python -m scripts.closingbet --cloud --once     # 앱 [종목찾기] 버튼 → GitHub 에서 한 번 (PC 꺼져도): Storage 에서 일봉·종목 목록 받아서
+  python -m scripts.closingbet --cloud --once     # 앱 [종목찾기] 버튼 → GitHub 에서 한 번 (PC 꺼져도): Storage 에서 올해 일봉·종목 목록만 받아서
 필요한 환경변수: KIS_APP_KEY · KIS_APP_SECRET · SUPABASE_URL · SUPABASE_SERVICE_KEY (선택 NAVER_HUB_ID · NAVER_HUB_SECRET)
 ⚠ 주문은 하지 않는다.
 """
@@ -32,10 +32,11 @@ def _now() -> pd.Timestamp:
 
 
 class Runner:
-    def __init__(self, sb, kis, listing: pd.DataFrame, ohlcv: pd.DataFrame, sectors: pd.DataFrame | None, top: int = 80):
+    def __init__(self, sb, kis, listing: pd.DataFrame, ohlcv: pd.DataFrame, sectors: pd.DataFrame | None, top: int = 80,
+                 workers: int = 8, runner: str = "pc"):
         from stockeye.engine.nextday import common_stock
         from scripts.daytrade import watch_codes
-        self.sb, self.kis, self.top = sb, kis, top
+        self.sb, self.kis, self.top, self.workers, self.runner = sb, kis, top, workers, runner
         lst = listing.drop_duplicates("code", keep="last")
         self.names = dict(zip(lst["code"], lst["name"]))
         self.market = dict(zip(lst["code"], lst["market"])) if "market" in lst else {}
@@ -81,15 +82,14 @@ class Runner:
         idx_chg = {r["code"]: float(r["chg_pct"]) for _, r in idx.iterrows()} if not idx.empty else {}
         top = snap.sort_values("value", ascending=False).head(self.top).index.tolist()
         cands = list(dict.fromkeys(top + [c for c in self.watch if c in snap.index]))
-        res = []
-        for code in cands:
+        def one(code):
             daily = self.hist.get(code)
             if daily is None or len(daily) < 30:
-                continue
+                return None
             try:
                 q = self.kis.price(code)
             except Exception:  # noqa: BLE001
-                continue
+                return None
             vol, value = q["volume"], q["value"]
             today = {"open": q["open"], "high": q["high"], "low": q["low"], "close": q["price"], "volume": vol,
                      "value": value, "vwap": value / vol if vol > 0 else None, "prev_close": q["prev_close"] or None}
@@ -97,10 +97,17 @@ class Runner:
                    "danger": "관리종목" if code in self.admin else None, "now": now, "news_level": None}
             r = cb.evaluate(daily, today, None, ctx)
             if r["score"] >= 60 and not r["excluded"]:                   # 될 만한 종목만 분봉·뉴스 (API 아끼기)
-                ctx["news_level"] = self._news(code)
+                try:
+                    ctx["news_level"] = self._news(code)
+                except Exception:  # noqa: BLE001
+                    pass
                 r = cb.evaluate(daily, today, self._bars(code, now.strftime("%H%M%S")), ctx)
             r.update({"code": code, "name": self.names.get(code, code), "atr": round(cb.atr_pct(daily), 4)})
-            res.append(r)
+            return r
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(self.workers) as ex:                 # 여러 종목 동시에 (KIS 초당 한도 안에서)
+            res = [r for r in ex.map(one, cands) if r is not None]
         order = {"매수 후보": 0, "우선 관찰": 1, "관찰": 2, "대상 아님": 3, "진입 금지": 4}
         res.sort(key=lambda r: (order.get(r["status"], 5), -r["score"]))
         keep = [r for r in res if r["status"] in ("매수 후보", "우선 관찰", "관찰")][:SHOW]
@@ -112,7 +119,7 @@ class Runner:
         final = now.strftime("%H:%M") >= "15:20"
         picks = [r for r in res if r["status"] == "매수 후보"][:PICK]
         return {"date": self.day, "time": now.strftime("%H:%M"), "version": cb.VERSION, "scanned": len(res),
-                "counts": counts, "items": keep, "final": final, "idx_chg": idx_chg,
+                "counts": counts, "items": keep, "final": final, "idx_chg": idx_chg, "runner": self.runner,
                 "picks": [{k: r.get(k) for k in ("code", "name", "score", "type", "entry", "stop", "t1", "t2", "atr", "gap")}
                           | {"date": self.day} for r in picks]}
 
@@ -125,6 +132,24 @@ class Runner:
         if self.sb and p and p.get("picks"):
             self.sb.upload(f"closingbet/signals/{self.day}.json",
                            json.dumps(p["picks"], ensure_ascii=False, default=str).encode("utf-8"), "application/json")
+
+
+def cloud_data(sb):
+    """GitHub(PC 데이터 없음): 저녁 배치가 Storage 에 올린 원본 중 필요한 것만 — 종목 목록·업종·올해 일봉(1~4월은 작년도)"""
+    import io
+
+    def get(key):
+        try:
+            b = sb.download(key)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Storage %s 받기 실패: %s", key, e)
+            return None
+        return pd.read_parquet(io.BytesIO(b)) if b else None
+    y = _now().year
+    years = [y - 1, y] if _now().month <= 4 else [y]
+    oh = [d for d in (get(f"data/ohlcv/{yy}.parquet") for yy in years) if d is not None]
+    print(f"Storage → 종목 목록·업종·일봉({', '.join(map(str, years))}) 받음")
+    return get("data/listing.parquet"), (pd.concat(oh, ignore_index=True) if oh else None), get("data/sectors.parquet")
 
 
 def main():
@@ -152,10 +177,9 @@ def main():
     store = DataStore(data_dir(cfg))
     if args.cloud:
         # PC 데이터가 없는 곳: 저녁 배치가 올려 둔 원본 데이터 중 필요한 것만 (바뀐 조각만 받음)
-        from stockeye.cloud.sync import DataSync
-        got = DataSync(store, Supabase()).pull(("listing", "ohlcv", "sectors"))
-        print(f"Storage → 데이터 받기: {', '.join(got) or '바뀐 것 없음 (캐시 사용)'}")
-    listing, ohlcv = store.load("listing"), store.load("ohlcv")
+        listing, ohlcv, sectors = cloud_data(Supabase())
+    else:
+        listing, ohlcv, sectors = store.load("listing"), store.load("ohlcv"), store.load("sectors")
     if listing is None or listing.empty or ohlcv is None or ohlcv.empty:
         sys.exit("종목 목록·일봉이 없습니다 — 먼저 4_daily.bat 로 데이터를 받아 두세요")
     sb = Supabase() if enabled() and not args.dry_run else None
@@ -169,8 +193,12 @@ def main():
                 pass
     job(status="running", started=_now().strftime("%H:%M"))
     kc = cfg.get("kis", {})
-    kis = KISClient(kc.get("env", "prod"), data_dir(cfg) / ".kis_token.json", kc.get("calls_per_sec", 15))
-    run = Runner(sb, kis, listing, ohlcv, store.load("sectors"), args.top)
+    try:
+        kis = KISClient(kc.get("env", "prod"), data_dir(cfg) / ".kis_token.json", kc.get("calls_per_sec", 15))
+        run = Runner(sb, kis, listing, ohlcv, sectors, args.top, runner="github" if args.once else "pc")
+    except Exception as e:  # noqa: BLE001 — 앱 [종목찾기] 에 실패 이유를 보여줌
+        job(status="failed", finished=_now().strftime("%H:%M"), error=str(e)[:200])
+        raise
     while _now().strftime("%H:%M") < "14:50" and not args.once:
         print(f"{_now():%H:%M:%S} 14:50 대기..."); time.sleep(30)
     p = None

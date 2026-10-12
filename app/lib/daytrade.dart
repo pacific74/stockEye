@@ -7,7 +7,7 @@ import 'format.dart';
 import 'screens/stock_detail_screen.dart';
 import 'widgets/common.dart';
 
-/// 당일단타 (DT-0.1) — PC 가 평일 09:00~10:30 1분마다 올리는 후보 (system_status 'daytrade')
+/// 당일단타 (DT-0.1) — PC 가 평일 09:00~10:00 1분마다 올리는 후보 (system_status 'daytrade')
 ///   상태: 진입 조건 충족(80↑+신호) / 진입 대기(80↑) / 관찰(70↑) / 진입 금지(필수 제외)
 ///   주문은 하지 않음 — 알림·관찰용
 
@@ -154,7 +154,7 @@ class _DaytradeTabState extends State<DaytradeTab> with AutomaticKeepAliveClient
               today
                   ? '${d['time']} 기준${d['closed'] == true ? ' (오늘 탐색 끝)' : ' · 1분마다 갱신'} · 후보 ${d['scanned'] ?? 0} · '
                       '충족 ${c['진입 조건 충족'] ?? 0} · 대기 ${c['진입 대기'] ?? 0} · 관찰 ${c['관찰'] ?? 0}'
-                  : '오늘 당일단타 결과가 아직 없어요. 평일 아침 PC 에서 14_daytrade.bat 을 켜 두면 09:00~10:30 동안 1분마다 올라와요.'
+                  : '오늘 당일단타 결과가 아직 없어요. 평일 아침 PC 에서 14_daytrade.bat 을 켜 두면 09:00~10:00 동안 1분마다 올라와요. PC 가 꺼진 날은 관리자 [종목찾기].'
                       '${d['date'] != null ? ' (아래는 ${d['date']} ${d['time']} 결과)' : ''}',
               style: t.bodySmall),
         ),
@@ -197,12 +197,35 @@ class DaytradeFindButton extends StatefulWidget {
 
 class _DaytradeFindButtonState extends State<DaytradeFindButton> {
   bool _busy = false;
+  bool _pcLive = false; // PC 가 지금 1분마다 올리는 중이면 버튼 숨김
   Timer? _poll;
+  Timer? _watch;
+
+  @override
+  void initState() {
+    super.initState();
+    if (useCloud && isAdminUser) {
+      _checkPc();
+      _watch = Timer.periodic(const Duration(seconds: 60), (_) => _checkPc());
+    }
+  }
 
   @override
   void dispose() {
     _poll?.cancel();
+    _watch?.cancel();
     super.dispose();
+  }
+
+  /// PC 실행 중 = 최근 결과가 PC 것이고 3분 안에 갱신됐고 아직 끝나지 않음
+  Future<void> _checkPc() async {
+    final d = await (widget.closing ? Api.closingbet() : Api.daytrade());
+    final at = DateTime.tryParse('${d['updated_at'] ?? ''}');
+    final live = d['runner'] == 'pc' &&
+        d['closed'] != true &&
+        at != null &&
+        DateTime.now().difference(at.toLocal()).inMinutes < 3;
+    if (mounted && live != _pcLive) setState(() => _pcLive = live);
   }
 
   void _snack(String m) {
@@ -224,7 +247,7 @@ class _DaytradeFindButtonState extends State<DaytradeFindButton> {
     _poll = Timer.periodic(const Duration(seconds: 10), (_) async {
       final j = await (widget.closing ? Api.closingbetJob() : Api.daytradeJob());
       final st = '${j['status'] ?? ''}';
-      final late = DateTime.now().difference(t0).inMinutes >= 8;
+      final late = DateTime.now().difference(t0).inMinutes >= 6;
       if (st == 'done' || st == 'failed' || late) {
         _poll?.cancel();
         if (!mounted) return;
@@ -232,7 +255,7 @@ class _DaytradeFindButtonState extends State<DaytradeFindButton> {
         _snack(st == 'done'
             ? '종목찾기 끝 · ${j['found'] ?? 0}개'
             : st == 'failed'
-                ? '종목찾기 실패 — GitHub Actions 기록을 확인하세요'
+                ? '종목찾기 실패${j['error'] != null ? ': ${j['error']}' : ' — GitHub Actions 기록을 확인하세요'}'
                 : '아직 끝나지 않았어요 — 잠시 뒤 당겨서 새로고침');
         widget.onDone?.call();
       }
@@ -241,7 +264,7 @@ class _DaytradeFindButtonState extends State<DaytradeFindButton> {
 
   @override
   Widget build(BuildContext context) {
-    if (!useCloud || !isAdminUser) return const SizedBox.shrink();
+    if (!useCloud || !isAdminUser || (_pcLive && !_busy)) return const SizedBox.shrink();
     return TextButton.icon(
       onPressed: _busy ? null : _find,
       icon: _busy

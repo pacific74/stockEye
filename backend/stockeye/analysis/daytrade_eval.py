@@ -2,7 +2,7 @@
 
   실전 기록(forward)  PC 가 아침에 남긴 신호(Storage daytrade/signals/날짜.json) → 그날 1분봉으로 결과
                       (저녁 배치 cloud_daily 가 매일) → daytrade/results.json 에 누적
-  되돌려 보기(backtest) 과거 날짜 1분봉(KIS 일별분봉)으로 09:05~10:30 을 1분씩 다시 계산 → 첫 '진입 조건 충족' 에서 진입
+  되돌려 보기(backtest) 과거 날짜 1분봉(KIS 일별분봉)으로 09:05~10:00 을 1분씩 다시 계산 → 첫 '진입 조건 충족' 에서 진입
                       (scripts.daytrade_backtest — PC 에서 가끔)
   결과   2차 익절(t2) · 1차 익절 뒤 본전/마감(t1) · 손절(stop) · 장 마감 청산(close), 손익은 비용 0.2% 뺀 %
   ⚠ 되돌려 보기에는 호가(스프레드)·뉴스·지수가 없어 그 몫을 빼고 환산 → 실전 기록과 다를 수 있음
@@ -109,7 +109,7 @@ def evaluate_day(sb, kis, day: str) -> int:
     return len(new)
 
 
-def replay_day(bars: pd.DataFrame, prev_close: float | None, start: str = "09:05", end: str = "10:30",
+def replay_day(bars: pd.DataFrame, prev_close: float | None, start: str = "09:05", end: str = "10:00",
                adr: float | None = None) -> dict | None:
     """과거 하루: start~end 를 1분씩 다시 계산 → 첫 '진입 조건 충족' 신호 (없으면 None).
     호가·뉴스·지수는 없어 그 몫(21점)을 빼고 나머지 79점 만점을 100점으로 환산. 거래대금은 1분봉 누적값"""

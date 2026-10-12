@@ -83,7 +83,7 @@ def test_runner_step(monkeypatch):
     lst = pd.DataFrame({"code": ["000010", "000020"], "name": ["가", "나"], "market": ["KOSPI", "KOSDAQ"]})
     run = sd.Runner(None, K(), lst, top=10)
     p = run.step()
-    assert p["items"][0]["code"] == "000010" and p["items"][0]["type"] == "돌파" and p["scanned"] == 2
+    assert p["items"][0]["code"] == "000010" and p["items"][0]["type"] == "돌파" and p["scanned"] == 1  # 거래대금 10억 미만은 분봉도 안 받음
     assert p["counts"]["진입 조건 충족"] + p["counts"]["진입 대기"] + p["counts"]["관찰"] >= 1
 
 

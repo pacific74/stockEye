@@ -1,7 +1,7 @@
 # 당일단타 종목찾기 (한 번) → 앱 메인·'관심 > 당일단타'
 #   ① 앱 [종목찾기] 버튼(관리자) → Supabase 가 바로 신호(repository_dispatch daytrade_request)
 #   ② 여기 Actions → Run workflow
-#   python -m scripts.daytrade --once : 지금 시세로 한 번 계산해 system_status 'daytrade' 갱신 (1~3분)
+#   python -m scripts.daytrade --once : 지금 시세로 한 번 계산해 system_status 'daytrade' 갱신 (보통 1~2분: 거래대금 상위 40개만 · 여러 종목 동시에 · 필요한 패키지만 설치)
 #   ⚠ 주문은 하지 않는다. 장중(09:00~15:30)에만 의미 있음
 name: daytrade
 
@@ -34,8 +34,14 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: backend/requirements.txt
-      - run: pip install -r backend/requirements.txt
+          cache-dependency-path: backend/requirements-live.txt
+      - run: pip install -r backend/requirements-live.txt
       - name: 당일단타 종목찾기
         working-directory: backend
-        run: python -m scripts.daytrade --once
+        run: python -m scripts.daytrade --once --top 40
+      - name: 실패하면 앱 버튼에 '실패' 표시 (안 그러면 앱이 계속 '찾는 중')
+        if: failure()
+        working-directory: backend
+        run: >-
+          python -c "from stockeye.cloud.client import Supabase; from stockeye.cloud import publish as pub;
+          pub.publish_status(Supabase(), 'daytrade_job', {'status': 'failed', 'error': 'GitHub 작업 실패 — Actions 기록 확인'})"

@@ -18,10 +18,10 @@ begin
   if coalesce(tok, '') = '' or coalesce(repo, '') = '' then
     raise exception 'GitHub 신호 설정이 없습니다 (app_config github_dispatch_token · github_repo)';
   end if;
-  -- 대기(5분 안)·실행 중(15분 안)이면 다시 보내지 않음
+  -- 대기(5분 안)·실행 중(10분 안)이면 다시 보내지 않음 (실패·멈춤이면 10분 뒤 다시 요청 가능)
   select payload, updated_at into cur, cur_at from public.system_status where key = 'closingbet_job';
   if cur is not null and ((cur->>'status' = 'queued' and cur_at > now() - interval '5 minutes')
-                       or (cur->>'status' = 'running' and cur_at > now() - interval '15 minutes')) then
+                       or (cur->>'status' = 'running' and cur_at > now() - interval '10 minutes')) then
     return jsonb_build_object('ok', false, 'status', cur->>'status', 'message', '이미 찾는 중입니다');
   end if;
   insert into public.system_status (key, payload, updated_at)

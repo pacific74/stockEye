@@ -38,6 +38,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _liveBusy = false;
   DateTime? _liveAt; // 마지막으로 시세를 받은 기기 시각
   Timer? _timer;
+  Timer? _intraTimer; // 당일단타·종가배팅 1분 새로고침 (그 시간대만)
+  final Map<String, Json> _intraMeta = {}; // 'daytrade'/'closingbet' → {date,time} 계산 시각
+  final Map<String, DateTime> _intraAt = {}; // 앱이 읽은 시각
   int _lastTap = tabTap.value;
 
   @override
@@ -45,11 +48,16 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _load();
     tabTap.addListener(_onTab);
+    _intraTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (liveWindow()) _reloadDaytrade();
+      if (liveWindow(closing: true)) _reloadClosingbet();
+    });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _intraTimer?.cancel();
     tabTap.removeListener(_onTab);
     super.dispose();
   }
@@ -72,14 +80,22 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _reloadClosingbet() async {
     final d = await Api.closingbet();
     if (!mounted) return;
-    setState(() => _picks = {..._picks, 'closingbet': dtIsToday(d) ? asList(d['items']).take(3).toList() : <Json>[]});
+    setState(() {
+      _picks = {..._picks, 'closingbet': dtIsToday(d) ? asList(d['items']).take(3).toList() : <Json>[]};
+      _intraMeta['closingbet'] = d;
+      _intraAt['closingbet'] = DateTime.now();
+    });
   }
 
   /// 당일단타 [종목찾기] 끝 → 당일단타 3개만 다시 읽기
   Future<void> _reloadDaytrade() async {
     final d = await Api.daytrade();
     if (!mounted) return;
-    setState(() => _picks = {..._picks, 'daytrade': dtIsToday(d) ? asList(d['items']).take(3).toList() : <Json>[]});
+    setState(() {
+      _picks = {..._picks, 'daytrade': dtIsToday(d) ? asList(d['items']).take(3).toList() : <Json>[]};
+      _intraMeta['daytrade'] = d;
+      _intraAt['daytrade'] = DateTime.now();
+    });
   }
 
   Future<void> _afterReport(Json d) async {
@@ -101,8 +117,11 @@ class _HomeScreenState extends State<HomeScreen> {
     const keys = CandidateListScreen.keys;
     final lists = await Future.wait(keys.map((k) => k == 'daytrade' || k == 'closingbet'
         // 당일단타·종가배팅: PC 가 올린 오늘 후보 상위 3 (오늘 것이 아니면 비움)
-        ? (k == 'daytrade' ? Api.daytrade() : Api.closingbet())
-            .then((d) => dtIsToday(d) ? asList(d['items']).take(3).toList() : <Json>[], onError: (_) => <Json>[])
+        ? (k == 'daytrade' ? Api.daytrade() : Api.closingbet()).then((d) {
+            _intraMeta[k] = d;
+            _intraAt[k] = DateTime.now();
+            return dtIsToday(d) ? asList(d['items']).take(3).toList() : <Json>[];
+          }, onError: (_) => <Json>[])
         : Api.candidates(k)
         .then((d) => sortByScore(asList(d['candidates'])).take(3).toList(), onError: (_) => <Json>[])));
     _picks = {for (var i = 0; i < keys.length; i++) keys[i]: lists[i]};
@@ -223,6 +242,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.fromLTRB(4, 8, 0, 0),
                     child: Row(children: [
                       Text(strategyLabels[k] ?? k, style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                      if ((k == 'daytrade' || k == 'closingbet') && _intraMeta[k] != null) ...[
+                        const SizedBox(width: 6),
+                        Flexible(
+                            child: Text(lookupLabel(_intraMeta[k]!, _intraAt[k]),
+                                overflow: TextOverflow.ellipsis, style: t.bodySmall?.copyWith(color: Colors.grey))),
+                      ],
                       const Spacer(),
                       if (k == 'daytrade') DaytradeFindButton(onDone: _reloadDaytrade),
                       if (k == 'closingbet') DaytradeFindButton(closing: true, onDone: _reloadClosingbet),

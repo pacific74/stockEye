@@ -18,6 +18,28 @@ Color dtStatusColor(String? s) => switch (s) {
       _ => Colors.grey,
     };
 
+/// 1분 자동 새로고침 시간대 (평일): 당일단타 09:00~10:05 · 종가배팅 14:50~15:25 — 그 밖엔 새로 읽지 않음 (서버 부하 없음)
+bool liveWindow({bool closing = false}) {
+  final n = DateTime.now();
+  if (n.weekday > 5) return false;
+  final m = n.hour * 60 + n.minute;
+  return closing ? (m >= 14 * 60 + 50 && m <= 15 * 60 + 25) : (m >= 9 * 60 && m <= 10 * 60 + 5);
+}
+
+String _hm2(DateTime t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+/// '10:01 계산 · 10:02 조회' (오늘 것이 아니면 계산 날짜도 '10/09 15:20 계산')
+String lookupLabel(Json d, DateTime? fetchedAt) {
+  final parts = <String>[];
+  if (d['time'] != null) {
+    final date = '${d['date'] ?? ''}';
+    final day = !dtIsToday(d) && date.length >= 10 ? '${date.substring(5, 7)}/${date.substring(8, 10)} ' : '';
+    parts.add('$day${d['time']} 계산');
+  }
+  if (fetchedAt != null) parts.add('${_hm2(fetchedAt)} 조회');
+  return parts.join(' · ');
+}
+
 /// 오늘 데이터인지 (어제 것이면 '오늘 아직 없음')
 bool dtIsToday(Json d) {
   final now = DateTime.now();
@@ -107,6 +129,7 @@ class DaytradeTab extends StatefulWidget {
 
 class _DaytradeTabState extends State<DaytradeTab> with AutomaticKeepAliveClientMixin {
   Json? _d;
+  DateTime? _at;
   Timer? _t;
 
   @override
@@ -116,7 +139,9 @@ class _DaytradeTabState extends State<DaytradeTab> with AutomaticKeepAliveClient
   void initState() {
     super.initState();
     _load();
-    _t = Timer.periodic(const Duration(seconds: 60), (_) => _load());
+    _t = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (liveWindow()) _load(); // 09:00~10:05 에만 1분마다
+    });
   }
 
   @override
@@ -127,7 +152,12 @@ class _DaytradeTabState extends State<DaytradeTab> with AutomaticKeepAliveClient
 
   Future<void> _load() async {
     final d = await Api.daytrade();
-    if (mounted) setState(() => _d = d);
+    if (mounted) {
+      setState(() {
+        _d = d;
+        _at = DateTime.now();
+      });
+    }
   }
 
   @override
@@ -152,7 +182,7 @@ class _DaytradeTabState extends State<DaytradeTab> with AutomaticKeepAliveClient
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
           child: Text(
               today
-                  ? '${d['time']} 기준${d['closed'] == true ? ' (오늘 탐색 끝)' : ' · 1분마다 갱신'} · 후보 ${d['scanned'] ?? 0} · '
+                  ? '${lookupLabel(d, _at)}${d['closed'] == true ? ' (오늘 탐색 끝)' : liveWindow() ? ' · 1분마다 갱신' : ''} · 후보 ${d['scanned'] ?? 0} · '
                       '충족 ${c['진입 조건 충족'] ?? 0} · 대기 ${c['진입 대기'] ?? 0} · 관찰 ${c['관찰'] ?? 0}'
                   : '오늘 당일단타 결과가 아직 없어요. 평일 아침 PC 에서 14_daytrade.bat 을 켜 두면 09:00~10:00 동안 1분마다 올라와요. PC 가 꺼진 날은 관리자 [종목찾기].'
                       '${d['date'] != null ? ' (아래는 ${d['date']} ${d['time']} 결과)' : ''}',

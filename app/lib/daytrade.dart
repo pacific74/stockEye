@@ -50,7 +50,8 @@ class DaytradeTile extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${r['code']}', name: '${r['name']}'))),
+            MaterialPageRoute(builder: (_) => StockDetailScreen(
+                code: '${r['code']}', name: '${r['name']}', source: 'daytrade', intraday: r))),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -81,8 +82,9 @@ class DaytradeTile extends StatelessWidget {
                   InfoBox('진입 ${num0(r['entry'] as num?)}', bold: true),
                   InfoBox('손절 ${num0(r['stop'] as num?)}${r['risk_pct'] is num ? ' (−${(r['risk_pct'] as num).toStringAsFixed(1)}%)' : ''}',
                       color: downColor),
-                  InfoBox('1차 ${num0(r['t1'] as num?)}', color: upColor),
-                  InfoBox('2차 ${num0(r['t2'] as num?)}', color: upColor),
+                  InfoBox('1차 ${num0(r['t1'] as num?)}${r['t1_pct'] is num ? ' (+${r['t1_pct']}%)' : ''}', color: upColor),
+                  InfoBox('2차 ${num0(r['t2'] as num?)}${r['t2_pct'] is num ? ' (+${r['t2_pct']}%)' : ''}', color: upColor),
+                  if (r['adr_pct'] is num) InfoBox('평소 하루 폭 ${r['adr_pct']}%'),
                 ]),
                 for (final x in ex) Text('⛔ $x', style: t.bodySmall?.copyWith(color: Colors.red)),
                 for (final x in warns) Text('⚠ $x', style: t.bodySmall?.copyWith(color: Colors.orange)),
@@ -158,8 +160,8 @@ class _DaytradeTabState extends State<DaytradeTab> with AutomaticKeepAliveClient
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
-          child: Text('점수가 높아도 진입 신호(돌파·눌림목)가 없으면 사지 않아요. 손절은 진입가 −1.5% 이내, 목표는 비용 뺀 손익비 1.5·2.0, '
-              '장 마감 전 청산. 주문은 하지 않는 알림용이에요.',
+          child: Text('점수가 높아도 진입 신호(돌파·눌림목)가 없으면 사지 않아요. 손절은 진입가 −1.5% 이내, 목표는 1차 +3% 이상(절반)·2차 +5% 이상, '
+              '평소 하루 5% 넘게 움직이는 종목만. 장 마감 전 청산. 주문은 하지 않는 알림용이에요.',
               style: t.bodySmall?.copyWith(color: Colors.grey)),
         ),
         if (items.isEmpty)

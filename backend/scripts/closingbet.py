@@ -145,6 +145,9 @@ def main():
     from stockeye.cloud.client import Supabase, enabled
     if _now().weekday() >= 5 or naver_live.is_trading_day() is False:
         print("오늘은 장이 열리지 않음 → 종료"); return
+    if not args.once and _now().strftime("%H:%M") >= "15:40":
+        # 작업 스케줄러가 놓친 실행을 늦게 돌린 경우 → 아무것도 안 함 (15:20~15:40 에 켜지면 한 번 계산하고 저장)
+        print("이미 장이 끝나 오늘 종가배팅은 끝 → 종료"); return
     cfg = load_config()
     store = DataStore(data_dir(cfg))
     if args.cloud:

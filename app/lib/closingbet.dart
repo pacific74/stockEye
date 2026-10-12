@@ -56,7 +56,8 @@ class ClosingbetTile extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${r['code']}', name: '${r['name']}'))),
+            MaterialPageRoute(builder: (_) => StockDetailScreen(
+                code: '${r['code']}', name: '${r['name']}', source: 'closingbet', intraday: r))),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

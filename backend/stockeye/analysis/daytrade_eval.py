@@ -109,7 +109,8 @@ def evaluate_day(sb, kis, day: str) -> int:
     return len(new)
 
 
-def replay_day(bars: pd.DataFrame, prev_close: float | None, start: str = "09:05", end: str = "10:30") -> dict | None:
+def replay_day(bars: pd.DataFrame, prev_close: float | None, start: str = "09:05", end: str = "10:30",
+               adr: float | None = None) -> dict | None:
     """과거 하루: start~end 를 1분씩 다시 계산 → 첫 '진입 조건 충족' 신호 (없으면 None).
     호가·뉴스·지수는 없어 그 몫(21점)을 빼고 나머지 79점 만점을 100점으로 환산. 거래대금은 1분봉 누적값"""
     if bars is None or len(bars) < 10:
@@ -123,7 +124,7 @@ def replay_day(bars: pd.DataFrame, prev_close: float | None, start: str = "09:05
         b = bars.iloc[:i + 1]
         val = float(b["value"].iloc[-1]) if "value" in b and b["value"].iloc[-1] > 0 else None
         r = dt.evaluate(b, {"prev_close": prev_close, "now": b["time"].iloc[-1], "value": val, "idx_chg": None,
-                            "rescale_missing": True})
+                            "adr": adr, "rescale_missing": True})
         if r["status"] == "진입 조건 충족":
             return {k: r.get(k) for k in ("time", "type", "score", "entry", "stop", "t1", "t2", "parts")}
     return None

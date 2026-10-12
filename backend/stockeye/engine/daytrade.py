@@ -27,11 +27,15 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-VERSION = "DT-0.1"
+VERSION = "DT-0.2"   # 0.2: 1차 목표 +3%↑ · 2차 +5%↑ · 평소 하루 변동폭 5% 미만 제외
 COST = 0.002                 # 왕복 수수료·세금 (비율)
 MIN_VALUE = 10e8             # 오전 누적 거래대금 10억
 MAX_SPREAD = 0.003           # 0.3%
 MAX_STOP = 0.015             # 손절 거리 1.5%
+MIN_T1 = 0.03               # 1차 목표 최소 +3% (작게 먹고 위험만 지는 자리 제외)
+MIN_T2 = 0.05               # 2차 목표 최소 +5%
+MIN_ADR = 0.05              # 최근 20일 평균 하루 변동폭(고가-저가)/전일종가 5% 미만 → 3% 먹기 어려움
+LIMIT_UP = 0.30             # 상한가
 VWAP_CHASE = 0.03            # VWAP 대비 3%
 WARMUP = "09:05"             # 이 전에는 신규 진입 신호 없음
 WATCH, PRIORITY = 70.0, 80.0
@@ -69,11 +73,25 @@ def vwap(b: pd.DataFrame) -> float:
 
 
 def plan(entry: float, stop: float) -> dict:
-    """비용을 뺀 손익비가 1.5 / 2.0 이 되는 목표가"""
+    """목표가: 비용 뺀 손익비 1.5 / 2.0 과 최소 +3% / +5% 중 큰 쪽"""
     c = entry * COST
     r = entry - stop
-    return {"entry": rt(entry), "stop": rt(stop, "down"), "t1": rt(entry + 1.5 * (r + c) + c, "up"),
-            "t2": rt(entry + 2.0 * (r + c) + c, "up"), "risk_pct": round(r / entry * 100, 2)}
+    t1 = max(entry + 1.5 * (r + c) + c, entry * (1 + MIN_T1))
+    t2 = max(entry + 2.0 * (r + c) + c, entry * (1 + MIN_T2))
+    return {"entry": rt(entry), "stop": rt(stop, "down"), "t1": rt(t1, "up"), "t2": rt(t2, "up"),
+            "risk_pct": round(r / entry * 100, 2), "t1_pct": round((t1 / entry - 1) * 100, 1),
+            "t2_pct": round((t2 / entry - 1) * 100, 1)}
+
+
+def adr(daily: pd.DataFrame, n: int = 20) -> float | None:
+    """최근 n일 평균 하루 변동폭 (고가-저가)/전일 종가 — daily: date·high·low·close (오늘 제외)"""
+    if daily is None or len(daily) < 6:
+        return None
+    d = daily.sort_values("date").tail(n + 1)
+    pc = d["close"].shift(1)
+    r = ((d["high"] - d["low"]) / pc).dropna()
+    r = r[(r >= 0) & (r < 0.6)]
+    return float(r.mean()) if len(r) else None
 
 
 def breakout(b: pd.DataFrame) -> dict:
@@ -170,6 +188,11 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
         ex.append("심각 악재 뉴스")
     if (now - pd.Timestamp(last["time"])).total_seconds() > 180:
         ex.append("시세 지연 (마지막 봉 3분 넘게 지남)")
+    a = ctx.get("adr")
+    if a is not None and a < MIN_ADR:
+        ex.append(f"평소 하루 변동폭 {a * 100:.1f}% (5% 미만 — +3% 먹기 어려움)")
+    if prev > 0 and p * (1 + MIN_T1) > prev * (1 + LIMIT_UP) * 0.995:
+        ex.append("상한가까지 +3% 여유 없음")
 
     # ---- 패턴 ----
     A = breakout(b)
@@ -238,7 +261,7 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
     r.append(f"VWAP {rt(vw):,.0f}원 {'위' if p > vw else '아래'} · 오전 거래대금 {value / 1e8:,.0f}억")
     out.update({"status": status, "score": score, "parts": parts, "type": typ, "signal": sig,
                 "price": p, "chg_pct": round(chg, 2), "vwap": rt(vw), "vwap_gap_pct": round(gap * 100, 2),
-                "value": round(value), "spread_pct": None if spread is None else round(spread * 100, 3),
+                "value": round(value), "adr_pct": None if a is None else round(a * 100, 1), "spread_pct": None if spread is None else round(spread * 100, 3),
                 "or_high": rt(or_high), "level": rt(use.get("level") or p), **pl,
                 "labels": {k: v for k, (v, _) in PARTS.items()}, "maxes": {k: m for k, (_, m) in PARTS.items()}})
     return out

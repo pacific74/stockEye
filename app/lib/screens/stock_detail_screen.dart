@@ -26,9 +26,11 @@ const _labels = {
 };
 
 class StockDetailScreen extends StatefulWidget {
-  const StockDetailScreen({super.key, required this.code, required this.name, this.source});
+  const StockDetailScreen({super.key, required this.code, required this.name, this.source, this.intraday});
   final String code;
   final String name;
+  /// 당일단타·종가배팅 카드에서 열면 그 계획 (진입·손절·1·2차) → 매매 계획·차트 선을 이걸로 (source = daytrade/closingbet)
+  final Json? intraday;
   /// 어느 후보 탭에서 열었는지 (nextday·early·reversal·v3) → 맨 위에 그 탭 점수를 보여줌 (목록 점수와 같게)
   final String? source;
 
@@ -117,6 +119,8 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                   ? strs(asMap(upl['watch'])['lines'])
                   : <String>[];
           num? pv(String k) => p[k] as num?;
+          final ip = widget.intraday;
+          num? iv(String k) => ip?[k] as num?;
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
@@ -147,7 +151,10 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 ...selW.map((w) => _bullet('⚠', _clean(w), Colors.orange)),
               ],
 
-              // ---- 매매 계획 ----
+              // ---- 매매 계획 ---- (당일단타·종가배팅에서 열면 그 계획, 아니면 며칠 보유 기준 계획)
+              if (ip != null)
+                _IntradayPlan(r: ip, closing: widget.source == 'closingbet', q: q)
+              else
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -218,7 +225,15 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                       ZoomableChart(
                         height: 300,
                         bars: chart,
-                        levels: [
+                        levels: ip != null
+                            ? [
+                                if (iv('t2') != null) PriceLevel('2차 목표', iv('t2')!.toDouble(), upColor.withValues(alpha: 0.6)),
+                                if (iv('t1') != null) PriceLevel('1차 목표', iv('t1')!.toDouble(), upColor),
+                                if (iv('entry') != null)
+                                  PriceLevel(widget.source == 'closingbet' ? '매수' : '진입', iv('entry')!.toDouble(), Colors.grey),
+                                if (iv('stop') != null) PriceLevel('손절', iv('stop')!.toDouble(), downColor),
+                              ]
+                            : [
                           if (pv('target1') != null) PriceLevel('1차 목표', pv('target1')!.toDouble(), upColor),
                           if (q?.price != null || p['price'] != null)
                             PriceLevel('현재', q?.price ?? (p['price'] as num).toDouble(), Colors.grey),
@@ -251,7 +266,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                     onPressed: () => showAddHoldingDialog(context,
                         code: widget.code,
                         name: widget.name,
-                        price: (q?.price ?? (p['price'] as num?)?.toDouble()),
+                        price: (q?.price ?? (iv('entry') ?? p['price'] as num?)?.toDouble()),
                         strategy: c['strategy'] as String?),
                   ),
                 ),
@@ -664,4 +679,69 @@ TextSpan boldSpans(String text, Color accent) {
             text: parts[i],
             style: i.isOdd ? TextStyle(fontWeight: FontWeight.bold, color: accent) : null),
   ]);
+}
+
+/// 당일단타·종가배팅에서 열었을 때의 매매 계획 (목록 카드와 같은 숫자)
+class _IntradayPlan extends StatelessWidget {
+  const _IntradayPlan({required this.r, required this.closing, this.q});
+  final Json r;
+  final bool closing;
+  final LiveQuote? q;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    num? v(String k) => r[k] as num?;
+    final e = v('entry');
+    String rel(num? x) => (x == null || e == null || e == 0) ? '' : pct((x / e - 1) * 100);
+    Widget row(String label, String value, {String sub = '', Color? color}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(children: [
+            Expanded(child: Text(label)),
+            Text(value, style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+            if (sub.isNotEmpty) ...[const SizedBox(width: 8), Text(sub, style: t.bodySmall?.copyWith(color: color))],
+          ]),
+        );
+    final quote = q;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text(closing ? '종가배팅 계획' : '당일단타 계획', style: const TextStyle(fontWeight: FontWeight.bold)),
+            const Spacer(),
+            if (quote != null) ...[
+              Text('현재가 ', style: t.bodyMedium),
+              Text(won(quote.price), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(width: 6),
+              Text(pct(quote.ratio),
+                  style: TextStyle(color: quote.ratio >= 0 ? upColor : downColor, fontWeight: FontWeight.bold)),
+            ],
+          ]),
+          Text(
+              closing
+                  ? '${r['status'] ?? ''} · 종가 근처 매수 → 다음 날 오전 ${r['exit_time'] ?? '10:30'} 까지 매도'
+                  : '${r['status'] ?? ''} · ${r['type'] ?? ''}형 · 오늘 안에 청산 (며칠 보유 계획과 다름)',
+              style: t.bodySmall?.copyWith(color: Colors.grey)),
+          const SizedBox(height: 8),
+          if (closing && r['buy_lo'] != null)
+            row('매수 범위', '${num0(v('buy_lo'))} ~ ${won(v('buy_hi'))}')
+          else
+            row('진입가', won(e)),
+          const Divider(),
+          row('1차 목표 (절반)', won(v('t1')), sub: rel(v('t1')), color: upColor),
+          row('2차 목표 (나머지)', won(v('t2')), sub: rel(v('t2')), color: upColor),
+          row('손절가', won(v('stop')), sub: rel(v('stop')), color: downColor),
+          if (closing)
+            for (final x in (r['exit_rules'] as List? ?? const []).asMap().entries)
+              Text('${x.key + 1}. ${x.value}', style: t.bodySmall)
+          else
+            Text('1차 도달 후엔 손절을 진입가로 올림 · 장 마감 전 남은 몫 청산', style: t.bodySmall?.copyWith(color: Colors.grey)),
+          const SizedBox(height: 4),
+          Text('아래 차트 선도 이 계획 기준이에요. 며칠 보유 기준 매수구간·목표는 다른 관심 탭에서 열면 나와요.',
+              style: t.bodySmall?.copyWith(color: Colors.grey)),
+        ]),
+      ),
+    );
+  }
 }

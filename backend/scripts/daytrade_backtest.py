@@ -61,6 +61,8 @@ def main():
         val = p["value"] if "value" in p else p["close"] * p["volume"]
         top = p.assign(_v=val).sort_values("_v", ascending=False).head(args.top)
         prev_close = dict(zip(top["code"], top["close"]))
+        hist = oh[(oh["date"] <= prev) & (oh["date"] > prev - pd.Timedelta(days=45)) & oh["code"].isin(top["code"])]
+        adrs = {c: dt.adr(g) for c, g in hist.groupby("code")}
         ds = day.strftime("%Y%m%d")
         n_sig = 0
         for code in top["code"]:
@@ -71,7 +73,7 @@ def main():
                 continue
             if bars.empty:
                 continue
-            s = de.replay_day(bars, prev_close.get(code))
+            s = de.replay_day(bars, prev_close.get(code), adr=adrs.get(code))
             if not s:
                 continue
             s.update({"date": day.strftime("%Y-%m-%d"), "code": code, "name": nm.get(code, code)})

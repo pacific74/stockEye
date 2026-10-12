@@ -69,6 +69,7 @@ class Runner:
         self.bars: dict[str, pd.DataFrame] = {}
         self.news: dict[str, str | None] = {}
         self.spread: dict[str, tuple[float, float | None]] = {}     # code → (받은 시각, 스프레드)
+        self.adr: dict[str, float | None] = {}                       # code → 평소 하루 변동폭 (하루 한 번)
         self.signals: dict[tuple, dict] = {}
         self.day = _now().strftime("%Y-%m-%d")
 
@@ -78,6 +79,18 @@ class Runner:
             from stockeye.analysis.news_flags import judge
             self.news[code] = judge(naver_news.fetch(self.names.get(code, code), days=2))["level"] if naver_news.enabled() else None
         return self.news[code]
+
+    def _adr(self, code: str) -> float | None:
+        if code not in self.adr:
+            from stockeye.engine import daytrade as dt
+            try:
+                d = self.kis.daily(code)
+                d = d[d["date"] < pd.Timestamp(self.day)]                 # 오늘(장중) 봉 제외
+                self.adr[code] = dt.adr(d)
+            except Exception as e:  # noqa: BLE001
+                log.debug("일봉 실패 %s: %s", code, e)
+                self.adr[code] = None
+        return self.adr[code]
 
     def _bars(self, code: str, hhmmss: str) -> pd.DataFrame:
         old = self.bars.get(code)
@@ -127,7 +140,7 @@ class Runner:
                     except Exception:  # noqa: BLE001
                         sp = None
                     self.spread[code] = (time.time(), sp)
-                ctx.update({"spread": sp, "news_level": self._news(code)})
+                ctx.update({"spread": sp, "news_level": self._news(code), "adr": self._adr(code)})
                 r = dt.evaluate(b, ctx)
             r.update({"code": code, "name": self.names.get(code, code)})
             res.append(r)
@@ -135,7 +148,7 @@ class Runner:
                 key = (code, r["type"])
                 if key not in self.signals:
                     self.signals[key] = {k: r.get(k) for k in ("code", "name", "type", "time", "score", "entry", "stop",
-                                                              "t1", "t2", "risk_pct", "vwap", "level", "parts")}
+                                                              "t1", "t2", "risk_pct", "t1_pct", "adr_pct", "vwap", "level", "parts")}
                     self.signals[key]["date"] = self.day
                     log.info("★ 진입 조건 충족 %s %s %s %s원 (손절 %s · 1차 %s)", r["time"], r["name"], r["type"],
                              f"{r['entry']:,.0f}", f"{r['stop']:,.0f}", f"{r['t1']:,.0f}")
@@ -190,6 +203,9 @@ def main():
     now = _now()
     if now.weekday() >= 5 or naver_live.is_trading_day() is False:
         print("오늘은 장이 열리지 않음 → 종료"); return
+    if not args.once and now.strftime("%H:%M") >= args.until:
+        # 작업 스케줄러가 놓친 실행을 늦게 돌린 경우 (PC 를 10:30 넘어 켬) → 아무것도 안 함
+        print(f"이미 {args.until} 이 지나 오늘 당일단타는 끝 → 종료"); return
     cfg = load_config()
     sb = Supabase() if enabled() and not args.dry_run else None
     try:
@@ -228,7 +244,7 @@ def main():
                   f" · 관찰 {p['counts']['관찰']} ({time.time() - t0:.0f}초)")
             for r in p["items"][:5]:
                 print(f"   {r['rank']:>2}. {r['name']:<12} {r['score']:5.1f}점 {r['type']:<3} {r['status']:<8}"
-                      f" 현재 {r['price']:>9,.0f} 손절 {r['stop']:>9,.0f} 1차 {r['t1']:>9,.0f}")
+                      f" 현재 {r['price']:>9,.0f} 손절 {r['stop']:>9,.0f} 1차 {r['t1']:>9,.0f} (+{r.get('t1_pct', 0)}%)")
         except Exception as e:  # noqa: BLE001
             print(f"⚠ 이번 회차 실패: {e}")
         if args.once or _now().strftime("%H:%M") >= args.until:

@@ -162,6 +162,20 @@ class KISClient:
         hm = out["time"].dt.strftime("%H%M%S")
         return out[(hm >= start) & (hm <= end)].reset_index(drop=True)
 
+    def daily(self, code: str) -> pd.DataFrame:
+        """최근 30거래일 일봉 (수정주가) — 주식현재가 일자별 FHKST01010400. 오늘(장중) 포함될 수 있음"""
+        js = self._get("/uapi/domestic-stock/v1/quotations/inquire-daily-price", "FHKST01010400",
+                       {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code, "FID_PERIOD_DIV_CODE": "D",
+                        "FID_ORG_ADJ_PRC": "0"})
+        df = pd.DataFrame(js.get("output") or [])
+        if df.empty or "stck_bsop_date" not in df:
+            return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
+        f = lambda c: pd.to_numeric(df.get(c), errors="coerce")  # noqa: E731
+        out = pd.DataFrame({"date": pd.to_datetime(df["stck_bsop_date"], format="%Y%m%d", errors="coerce"),
+                            "open": f("stck_oprc"), "high": f("stck_hgpr"), "low": f("stck_lwpr"),
+                            "close": f("stck_clpr"), "volume": f("acml_vol")})
+        return out.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+
     def asking(self, code: str) -> dict:
         """1호가 매도·매수 → 스프레드 (주식현재가 호가 FHKST01010200)"""
         js = self._get("/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn", "FHKST01010200",

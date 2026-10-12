@@ -92,7 +92,7 @@ def test_eval_grade_replay_and_accumulate():
     from stockeye.analysis import daytrade_eval as de
     rows = [(10000, 10040, 9990, 10030, 1000)] * 3 + [(10030, 10050, 10000, 10020, 800)] * 12
     rows += [(10020, 10045, 10010, 10040, 900)] * 3 + [(10040, 10110, 10040, 10100, 3000)]
-    rows += [(10100, 10300, 10090, 10280, 2000)] * 5                       # 진입 뒤 상승 → 2차 익절
+    rows += [(10100, 10650, 10090, 10600, 2000)] * 5                       # 진입 뒤 상승 → 2차 익절
     b = _bars(rows)
     b["value"] = 50e8
     s = de.replay_day(b, 9800)
@@ -126,3 +126,12 @@ def test_eval_grade_replay_and_accumulate():
     assert de.evaluate_day(sb, K(), "2026-10-12") == 1 and de.evaluate_day(sb, K(), "2026-10-12") == 0   # 두 번째는 중복 없음
     hist = json.loads(sb.files["daytrade/results.json"])
     assert len(hist) == 1 and de.report(hist)["by_type"]["돌파"]["n"] == 1
+
+
+def test_min_target_and_adr_exclusion():
+    """DT-0.2: 손절이 가까워도 1차 목표는 +3%↑ · 2차 +5%↑ · 평소 하루 변동폭 5% 미만이면 제외"""
+    p = dt.plan(10000, 9950)
+    assert p["t1"] >= 10300 and p["t2"] >= 10500 and p["t1_pct"] >= 3.0
+    d = pd.DataFrame({"date": pd.date_range("2026-09-01", periods=21, freq="B"),
+                      "high": [102.0] * 21, "low": [99.0] * 21, "close": [100.0] * 21})
+    assert abs(dt.adr(d) - 0.03) < 1e-9

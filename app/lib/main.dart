@@ -57,7 +57,7 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  // 탭을 누를 때마다 보유·일지는 새로 만들어서 최신 데이터를 다시 불러온다
+  // 탭을 누를 때마다 그 탭 화면을 새로 만들어서 최신 데이터를 다시 불러온다 (메인·관심·보유·일지·검증 모두)
   final _gen = List<int>.filled(5, 0);
   int _lastTap = 0;
 
@@ -89,18 +89,18 @@ class _HomeShellState extends State<HomeShell> {
     _lastTap = tabTap.value;
     setState(() {
       final i = tabIndex.value;
-      if (i == 2 || i == 3) _gen[i]++; // 보유 / 일지: 항상 새로고침
+      if (i >= 0 && i < _gen.length) _gen[i]++; // 모든 탭: 누를 때마다 새로 만들어 최신 데이터를 다시 불러옴 (보유 매도 → 메인 반영 등)
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      const HomeScreen(),
-      CandidateListScreen(key: ValueKey('c${candidateListKey.value}'), list: candidateListKey.value),
+      HomeScreen(key: ValueKey('h${_gen[0]}')),
+      CandidateListScreen(key: ValueKey('c${candidateListKey.value}-${_gen[1]}'), list: candidateListKey.value),
       PortfolioScreen(key: ValueKey('p${_gen[2]}')),
       JournalScreen(key: ValueKey('j${_gen[3]}')),
-      if (canSeeBacktest) const BacktestScreen(), // 관리자만
+      if (canSeeBacktest) BacktestScreen(key: ValueKey('b${_gen[4]}')), // 관리자만
     ];
     return Scaffold(
       body: IndexedStack(index: tabIndex.value < pages.length ? tabIndex.value : 0, children: pages),

@@ -27,7 +27,7 @@ import pandas as pd
 log = logging.getLogger("stockeye.daytrade")
 
 BANNER = """==============================================================
- StockEye [당일단타]  (14_daytrade.bat · 작업 스케줄러 월~금 08:50)
+ StockEye [당일단타 단독]  (14_daytrade.bat · 매일 자동은 22_intraday.bat 통합 실행)
   09:00~10:00  1분마다 새 종목 찾기 → 앱 하단 '당일매매'
   '진입 조건 충족' 종목은 그 시각 계획으로 고정 → 15:20 까지 목표·손절 추적
   결과는 관리자 매매일지(당일매매 자동)에 기록 · 주문은 하지 않음
@@ -87,6 +87,33 @@ class Runner:
         self.track = Tracker(sb, "daytrade", self.day)               # 당일매매: 충족 종목 고정 → 상태·결과 추적 → 매매일지
         self.last_items: list[dict] = []
 
+    def discover(self) -> pd.DataFrame:
+        """후보 찾기 (2026-10-13): KIS 거래대금 순위 코스피·코스닥 상위 30씩 + 관심 탭 종목만 네이버 시세
+        → 실패하면 네이버 전 종목 (5분에 한 번만). 전 종목 시세를 1분마다 받지 않음"""
+        from stockeye.data.sources import naver_live
+        parts = []
+        for mk in ("0001", "1001"):
+            try:
+                parts.append(self.kis.value_rank(mk))
+            except Exception as e:  # noqa: BLE001
+                log.warning("KIS 거래대금 순위(%s) 실패: %s", mk, e)
+        rank = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+        if len(rank):
+            rank = rank[rank["code"].isin(set(self.codes))]
+            extra = [c for c in self.watch | set(self.track.codes()) if c not in set(rank["code"])]
+            if extra:
+                try:
+                    rank = pd.concat([rank, naver_live.stocks(extra)], ignore_index=True)
+                except Exception:  # noqa: BLE001
+                    pass
+            return rank.drop_duplicates("code").set_index("code")
+        if getattr(self, "_snap", None) is None or time.time() - getattr(self, "_snap_at", 0) > 300:
+            snap = naver_live.stocks(self.codes)
+            if snap.empty:
+                raise RuntimeError("거래대금 순위·네이버 시세 모두 받지 못함")
+            self._snap, self._snap_at = snap.set_index("code"), time.time()
+        return self._snap
+
     def _news(self, code: str) -> str | None:
         if code not in self.news:
             from stockeye.data import naver_news
@@ -138,10 +165,7 @@ class Runner:
         from stockeye.engine import daytrade as dt
         now = _now()
         hhmmss = now.strftime("%H%M%S")
-        snap = naver_live.stocks(self.codes)
-        if snap.empty:
-            raise RuntimeError("네이버 시세를 받지 못함")
-        snap = snap.set_index("code")
+        snap = self.discover()
         idx = naver_live.indices()
         idx_chg = {r["code"]: float(r["chg_pct"]) for _, r in idx.iterrows()} if not idx.empty else {}
         from concurrent.futures import ThreadPoolExecutor

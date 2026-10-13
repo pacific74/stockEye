@@ -11,6 +11,7 @@
   - 종목별 프로그램매매추이(일별)  FHPPG04650201  /uapi/domestic-stock/v1/quotations/program-trade-by-stock-daily
   - 당일 1분봉     FHKST03010200  /uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice   (당일단타)
   - 과거 1분봉     FHKST03010230  /uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice  (당일단타 검증)
+  - 거래대금 순위  FHPST01710000  /uapi/domestic-stock/v1/quotations/volume-rank  (당일단타 후보 찾기)
   - 등락률 순위    FHPST01700000  /uapi/domestic-stock/v1/ranking/fluctuation  (상한가포착 후보 찾기)
   - 호가           FHKST01010200  /uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn  (스프레드 · 상한가 매수잔량)
 
@@ -232,6 +233,23 @@ class KISClient:
                             "close": f("stck_prpr"), "chg_pct": f("prdy_ctrt"), "volume": f("acml_vol")})
         out["value"] = out["close"] * out["volume"]
         return out.dropna(subset=["close", "chg_pct"]).reset_index(drop=True)
+
+    def value_rank(self, market: str = "0000") -> pd.DataFrame:
+        """거래대금 순위 상위 30 (거래량순위 FHPST01710000, 거래금액순 · 보통주) — 당일단타 후보 찾기 (전 종목 시세 대신)
+        market: 0000 전체 · 0001 코스피 · 1001 코스닥. 반환 code·name·close·chg_pct·volume·value"""
+        js = self._get("/uapi/domestic-stock/v1/quotations/volume-rank", "FHPST01710000",
+                       {"FID_COND_MRKT_DIV_CODE": "J", "FID_COND_SCR_DIV_CODE": "20171", "FID_INPUT_ISCD": market,
+                        "FID_DIV_CLS_CODE": "1", "FID_BLNG_CLS_CODE": "3", "FID_TRGT_CLS_CODE": "111111111",
+                        "FID_TRGT_EXLS_CLS_CODE": "0000000000", "FID_INPUT_PRICE_1": "", "FID_INPUT_PRICE_2": "",
+                        "FID_VOL_CNT": "", "FID_INPUT_DATE_1": ""})
+        df = pd.DataFrame(js.get("output") or [])
+        if df.empty or "mksc_shrn_iscd" not in df:
+            return pd.DataFrame(columns=["code", "name", "close", "chg_pct", "volume", "value"])
+        f = lambda c: pd.to_numeric(df.get(c), errors="coerce")  # noqa: E731
+        out = pd.DataFrame({"code": df["mksc_shrn_iscd"].astype(str).str.zfill(6), "name": df.get("hts_kor_isnm"),
+                            "close": f("stck_prpr"), "chg_pct": f("prdy_ctrt"), "volume": f("acml_vol"),
+                            "value": f("acml_tr_pbmn")})
+        return out.dropna(subset=["close"]).reset_index(drop=True)
 
     def program_daily(self, code: str) -> pd.DataFrame:
         """종목별 프로그램 순매수 금액(일별, 최근 약 30영업일)."""

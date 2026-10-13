@@ -209,6 +209,15 @@ def main():
             return lc_prev(sb, kis, report["date"], row_of)
         step("상한가포착 결과 매기기", _limitcatch, errors)
 
+        # 당일매매 추적 마무리: PC(실시간)가 꺼졌거나 멈춰 결과가 안 난 고정 종목을 오늘 1분봉으로 마무리 → 관리자 매매일지
+        def _intraday_finish():
+            from stockeye.trading.intraday_track import finish_day
+            from stockeye.data.sources.kis_source import KISClient
+            kc = cfg.get("kis", {})
+            kis = KISClient(kc.get("env", "prod"), data_dir(cfg) / ".kis_token.json", kc.get("calls_per_sec", 15))
+            return finish_day(sb, kis, report["date"])
+        step("당일매매 추적 마무리 (PC 꺼짐 대비)", _intraday_finish, errors)
+
     # 추천주 검증: recommendations 결과 칸 채우기(관심 탭 20거래일 · 장중 탭은 위 실전 기록) + 통계 → 앱 '검증 > 추천주'
     if not args.as_of:
         from stockeye.analysis.rec_eval import run as rec_run

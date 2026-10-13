@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'api.dart';
 import 'daytrade.dart' show DaytradeTile, DaytradeFindButton, dtIsToday, lookupLabel;
 import 'format.dart';
 import 'limitcatch.dart' show LimitcatchTile;
+import 'live.dart';
 import 'screens/stock_detail_screen.dart';
 import 'voice.dart';
 import 'widgets/common.dart';
@@ -16,6 +18,8 @@ import 'widgets/top_actions.dart';
 ///   진입조건충족 : 처음 충족된 시각 순으로 고정 (그때 계획·카드 그대로) → 1분마다 상태·시각 → 매매 결과. 관리자 매매일지에 자동 기록
 ///   진입대기 · 관찰 : 조건에 따라 1분마다 바뀜 (매매일지 저장 안 함)
 ///   상한가포착은 진입조건충족 = '매수 검토', 진입대기 = '강세 후보', 관찰 = '관찰'
+/// 실시간 (2026-10-13): PC 22_intraday.bat 이 KIS 실시간 체결로 고정 종목을 판단 → intraday_live 행 → 여기서 바로 반영(Realtime)
+/// PC 가 꺼졌거나 멈춤(3분 넘게 갱신 없음): 고정 종목 지금가만 1분마다 네이버 시세로 보여 주고 목표·손절 위치 표시 → 결과는 저녁 배치가 1분봉으로 확정
 class IntradayScreen extends StatefulWidget {
   const IntradayScreen({super.key});
   @override
@@ -34,11 +38,16 @@ class _IntradayScreenState extends State<IntradayScreen> {
   DateTime? _at;
   Timer? _t;
   Set<String>? _buySeen, _sellSeen; // 이미 알린 매수(고정)·매도신호 — 처음 읽을 때는 알리지 않고 기억만
+  RealtimeChannel? _ch;
+  final Map<String, Json> _live = {}; // 실시간으로 받은 최신 추적 상태 ('종류:날짜:종목')
+  DateTime? _rtAt; // 마지막 실시간 수신
+  Map<String, double> _quotes = {}; // PC 꺼짐 대비: 고정 종목 지금가
 
   @override
   void initState() {
     super.initState();
     _load();
+    _subscribe();
     _t = Timer.periodic(const Duration(seconds: 60), (_) {
       if (_marketWindow()) _load();
     });
@@ -47,39 +56,91 @@ class _IntradayScreenState extends State<IntradayScreen> {
   @override
   void dispose() {
     _t?.cancel();
+    if (_ch != null) Supabase.instance.client.removeChannel(_ch!);
     super.dispose();
+  }
+
+  void _subscribe() {
+    if (!useCloud) return;
+    try {
+      _ch = Supabase.instance.client
+          .channel('intraday_live')
+          .onPostgresChanges(
+              event: PostgresChangeEvent.all,
+              schema: 'public',
+              table: 'intraday_live',
+              callback: (p) {
+                final r = p.newRecord;
+                if (r.isEmpty || !mounted) return;
+                final pl = asMap(r['payload']);
+                if (pl['code'] == null) return;
+                _live['${r['kind']}:${pl['date']}:${pl['code']}'] = {...pl, 'kind': r['kind']};
+                _rtAt = DateTime.now();
+                _applyLive();
+                _announce([...asList(_dt?['tracked']), ...asList(_lc?['tracked'])]);
+                setState(() {});
+              })
+          .subscribe();
+    } catch (_) {}
+  }
+
+  /// 실시간 상태를 1분 갱신본 위에 덮기 (상태가 같거나 더 나아간 것만 — 늦게 온 1분 갱신본이 되돌리지 않게)
+  void _applyLive() {
+    for (final (kind, d) in [('daytrade', _dt), ('limitcatch', _lc)]) {
+      if (d == null) continue;
+      final list = [...asList(d['tracked'])];
+      for (final e in _live.entries.where((e) => e.key.startsWith('$kind:'))) {
+        final pl = e.value;
+        final i = list.indexWhere((x) => '${x['code']}' == '${pl['code']}' && '${x['date']}' == '${pl['date']}');
+        if (i < 0) {
+          if (dtIsToday({'date': pl['date']}) || pl['done'] != true) list.add(pl);
+        } else if (asList(pl['events']).length >= asList(list[i]['events']).length &&
+            !(list[i]['done'] == true && pl['done'] != true)) {
+          list[i] = {...list[i], ...pl}; // 카드(기존 상태설명)는 1분 갱신본 것 유지
+        }
+      }
+      list.sort((a, b) => '${a['date']} ${a['time']}'.compareTo('${b['date']} ${b['time']}'));
+      d['tracked'] = list;
+    }
+  }
+
+  /// PC 실시간이 멈췄는지: 장중(09:07 뒤)인데 3분 넘게 갱신·실시간 수신이 없고 진행 중인 고정 종목이 있음
+  bool _stale(Json? d) {
+    if (d == null || !_marketWindow()) return false;
+    final n = DateTime.now();
+    if (n.hour * 60 + n.minute < 9 * 60 + 7) return false;
+    if (!asList(d['tracked']).any((x) => x['done'] != true)) return false;
+    if (_rtAt != null && n.difference(_rtAt!).inMinutes < 3) return false;
+    final up = DateTime.tryParse('${d['updated_at'] ?? ''}');
+    return up == null || n.toUtc().difference(up.toUtc()).inMinutes >= 3;
   }
 
   Future<void> _load() async {
     final r = await Future.wait([Api.daytrade(), Api.limitcatch()]);
     if (!mounted) return;
-    _announce([...asList(r[0]['tracked']), ...asList(r[1]['tracked'])]);
+    _dt = r[0];
+    _lc = r[1];
+    _applyLive();
+    // PC 꺼짐 대비: 진행 중인 고정 종목 지금가 (그 종목만 · 1분에 한 번)
+    final open = <String>{
+      for (final d in [_dt, _lc])
+        if (_stale(d))
+          for (final x in asList(d!['tracked']))
+            if (x['done'] != true) '${x['code']}'
+    };
+    var q = <String, double>{};
+    if (open.isNotEmpty) {
+      try {
+        final res = await Live.stocks(open.toList());
+        q = {for (final e in res.quotes.entries) e.key: e.value.price};
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    _announce([...asList(_dt!['tracked']), ...asList(_lc!['tracked'])]);
     setState(() {
-      _dt = r[0];
-      _lc = r[1];
+      _quotes = q;
       _at = DateTime.now();
     });
-  }
-
-  /// 새로 고정된 종목 → "매수발생"(여성) · 새 매도신호포착 → "매도발생"(남성)
-  void _announce(List<Json> tracked) {
-    final now = DateTime.now();
-    final today = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    final buy = <String>{}, sell = <String>{};
-    for (final t in tracked) {
-      final key = '${t['kind']}:${t['code']}:${t['date']}';
-      if (t['date'] == today) buy.add(key);
-      if (asList(t['events']).any((e) => e['state'] == '매도신호포착')) sell.add(key);
-    }
-    final first = _buySeen == null;
-    final newBuy = first ? <String>{} : buy.difference(_buySeen!);
-    final newSell = first ? <String>{} : sell.difference(_sellSeen!);
-    _buySeen = {...?_buySeen, ...buy};
-    _sellSeen = {...?_sellSeen, ...sell};
-    () async {
-      if (newBuy.isNotEmpty) await VoiceAlert.buy();
-      if (newSell.isNotEmpty) await VoiceAlert.sell();
-    }();
   }
 
   @override
@@ -94,9 +155,9 @@ class _IntradayScreenState extends State<IntradayScreen> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 32),
                 children: [
-                  _Section(kind: 'daytrade', d: _dt!, at: _at, onDone: _load),
+                  _Section(kind: 'daytrade', d: _dt!, at: _at, onDone: _load, stale: _stale(_dt), quotes: _quotes, rtAt: _rtAt),
                   const SizedBox(height: 18),
-                  _Section(kind: 'limitcatch', d: _lc!, at: _at, onDone: _load),
+                  _Section(kind: 'limitcatch', d: _lc!, at: _at, onDone: _load, stale: _stale(_lc), quotes: _quotes, rtAt: _rtAt),
                   const SizedBox(height: 12),
                   Text('진입조건충족 종목은 처음 충족된 시각의 진입가·손절·목표로 고정하고, 그 시각에 산 것으로 보고 결과를 매겨요 (모의 · 주문 없음). '
                       '결과가 나오면 매매일지(구분: 당일매매 자동)에 기록돼요. 진입대기·관찰은 조건에 따라 바뀌고 기록하지 않아요.',
@@ -109,11 +170,21 @@ class _IntradayScreenState extends State<IntradayScreen> {
 }
 
 class _Section extends StatelessWidget {
-  const _Section({required this.kind, required this.d, required this.at, required this.onDone});
+  const _Section(
+      {required this.kind,
+      required this.d,
+      required this.at,
+      required this.onDone,
+      this.stale = false,
+      this.quotes = const {},
+      this.rtAt});
   final String kind;
   final Json d;
   final DateTime? at;
   final VoidCallback onDone;
+  final bool stale; // PC 실시간이 멈춤 → 지금가만 표시
+  final Map<String, double> quotes;
+  final DateTime? rtAt;
 
   bool get _lc => kind == 'limitcatch';
 
@@ -127,6 +198,8 @@ class _Section extends StatelessWidget {
     final waitKey = _lc ? '강세 후보' : '진입 대기';
     final wait = items.where((r) => r['status'] == waitKey).toList();
     final watch = items.where((r) => r['status'] == '관찰').toList();
+    // 기준 미달 (당일단타 대상 아님·진입 금지 / 상한가포착 조건 무효·제외) — [종목찾기] 'N개' 에 들어가지만 위 구분엔 안 맞는 것
+    final rest = items.where((r) => !{waitKey, '관찰', '진입 조건 충족', '매수 검토'}.contains(r['status'])).toList();
     Widget sub(String title, int n, String note) => Padding(
           padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
           child: Text.rich(TextSpan(children: [
@@ -148,13 +221,36 @@ class _Section extends StatelessWidget {
       ]),
       if (d['scan_closed'] == true)
         Text('새 종목 찾기는 끝났고 고정 종목만 추적 중이에요', style: t.bodySmall?.copyWith(color: Colors.teal)),
+      if (stale)
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text('⚠ PC 실시간이 멈춰 있어요 (PC 꺼짐·창 닫힘). 고정 종목의 지금가만 1분마다 보여 주고, 목표·손절 결과는 저녁 배치가 1분봉으로 확정해요.',
+              style: t.bodySmall?.copyWith(color: Colors.orange)),
+        )
+      else if (rtAt != null && DateTime.now().difference(rtAt!).inMinutes < 3 && tracked.any((x) => x['done'] != true))
+        Text('● 실시간 (체결 때마다 목표·손절 판단)', style: t.bodySmall?.copyWith(color: Colors.green)),
       sub('진입조건충족', tracked.length, '충족된 시간 순 · 고정'),
       if (tracked.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('아직 없어요', style: t.bodySmall)),
-      for (final x in tracked) _TrackCard(t: x, lc: _lc),
+      for (final x in tracked)
+        _TrackCard(t: x, lc: _lc, quote: stale && x['done'] != true ? quotes['${x['code']}'] : null),
       sub('진입대기', wait.length, _lc ? '+20%↑ · 100억↑ · 75점↑ (바뀔 수 있음)' : '80점↑ · 진입 신호 전 (바뀔 수 있음)'),
       for (final (i, r) in wait.indexed) tile(r, i),
       sub('관찰', watch.length, '바뀔 수 있음'),
       for (final (i, r) in watch.take(10).indexed) tile(r, i),
+      if (rest.isNotEmpty)
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+            title: Text.rich(TextSpan(children: [
+              TextSpan(text: '기준 미달 ${rest.length}', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+              TextSpan(
+                  text: _lc ? '  조건 무효·제외 (참고)' : '  70점 미만·진입 금지 (참고)',
+                  style: t.bodySmall?.copyWith(color: Colors.grey)),
+            ])),
+            children: [for (final (i, r) in rest.take(10).indexed) tile(r, i)],
+          ),
+        ),
     ]);
   }
 }
@@ -170,16 +266,30 @@ Color _resultColor(String? r) => switch (r) {
 
 /// 진입조건충족 한 종목: 종목명·점수·현재가 / 기존 상태설명(고정 카드) / 상태별 시각 / 매매 결과
 class _TrackCard extends StatelessWidget {
-  const _TrackCard({required this.t, required this.lc});
+  const _TrackCard({required this.t, required this.lc, this.quote});
   final Json t;
   final bool lc;
+  final double? quote; // PC 꺼짐 대비 지금가 (있으면 이걸로 표시 · 결과는 저녁 확정)
+
+  /// 지금가가 목표·손절의 어디쯤인지 (확정 아님)
+  String? _where(double p) {
+    double? n(String k) => (t[k] as num?)?.toDouble();
+    final stop = t['be'] == true ? n('entry') : n('stop');
+    if (stop != null && p <= stop) return t['be'] == true ? '본전 아래' : '손절가 아래';
+    for (final k in ['t3', 't2', 't1']) {
+      final v = n(k);
+      if (v != null && p >= v) return '${k.substring(1)}차 목표 위';
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
     final tx = Theme.of(context).textTheme;
     final entry = (t['entry'] as num?)?.toDouble() ?? 0;
-    final last = (t['last'] as num?)?.toDouble();
+    final last = quote ?? (t['last'] as num?)?.toDouble();
     final done = t['done'] == true;
+    final where = quote == null ? null : _where(quote!);
     final pnl = done ? (t['pnl'] as num?)?.toDouble() : (last != null && entry > 0 ? (last / entry - 1) * 100 : null);
     final events = asList(t['events']);
     String? timeOf(String s) {
@@ -282,6 +392,9 @@ class _TrackCard extends StatelessWidget {
                   Text('진행중', style: tx.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                   Blink(on: blink, child: Text(cur, style: tx.bodySmall?.copyWith(fontWeight: blink ? FontWeight.bold : null))),
                   Text(lc ? '다음 날 09:30 까지' : '15:20 까지', style: tx.bodySmall?.copyWith(color: Colors.grey)),
+                  if (quote != null)
+                    Text('지금가 기준${where == null ? '' : ' $where'} · 저녁 확정',
+                        style: tx.bodySmall?.copyWith(color: Colors.orange)),
                 ],
               ]),
             ),

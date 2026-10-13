@@ -644,3 +644,28 @@ alter table public.recommendations
   add column if not exists res_last     numeric,      -- 마지막 종가
   add column if not exists res_updated  timestamptz;
 create index if not exists recommendations_open on public.recommendations (rec_date) where res_done is not true;
+
+-- ---------------- 당일매매 실시간 (2026-10-13)
+create table if not exists public.intraday_live (
+  key        text primary key,
+  kind       text not null,
+  date       date not null,
+  code       text not null,
+  payload    jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+create index if not exists intraday_live_date on public.intraday_live (date);
+
+alter table public.intraday_live enable row level security;
+drop policy if exists intraday_live_admin_read on public.intraday_live;
+create policy intraday_live_admin_read on public.intraday_live
+  for select to authenticated using (public.is_admin());
+
+-- Realtime 으로 변경 전달 (이미 들어 있으면 건너뜀)
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables
+                 where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'intraday_live') then
+    alter publication supabase_realtime add table public.intraday_live;
+  end if;
+end $$;

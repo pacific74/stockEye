@@ -184,7 +184,7 @@ class _DaytradeTabState extends State<DaytradeTab> with AutomaticKeepAliveClient
               today
                   ? '${lookupLabel(d, _at)}${d['closed'] == true ? ' (오늘 탐색 끝)' : liveWindow() ? ' · 1분마다 갱신' : ''} · 후보 ${d['scanned'] ?? 0} · '
                       '충족 ${c['진입 조건 충족'] ?? 0} · 대기 ${c['진입 대기'] ?? 0} · 관찰 ${c['관찰'] ?? 0}'
-                  : '오늘 당일단타 결과가 아직 없어요. 평일 아침 PC 에서 14_daytrade.bat 을 켜 두면 09:00~10:00 동안 1분마다 올라와요. PC 가 꺼진 날은 관리자 [종목찾기].'
+                  : '오늘 당일단타 결과가 아직 없어요. 평일 PC 에서 22_intraday.bat(당일매매 통합)을 켜 두면 09:00~10:00 동안 1분마다 올라와요. PC 가 꺼진 날은 관리자 [종목찾기].'
                       '${d['date'] != null ? ' (아래는 ${d['date']} ${d['time']} 결과)' : ''}',
               style: t.bodySmall),
         ),

@@ -11,3 +11,4 @@ uvicorn[standard]>=0.29
 pytest>=8
 httpx>=0.27
 anthropic>=0.40
+websocket-client>=1.7   # 당일매매 실시간 체결 (KIS 웹소켓, PC 22_intraday.bat)

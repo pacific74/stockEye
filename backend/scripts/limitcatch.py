@@ -33,7 +33,7 @@ import pandas as pd
 log = logging.getLogger("stockeye.limitcatch")
 
 BANNER = """==============================================================
- StockEye [상한가포착]  (19_limitcatch.bat · 작업 스케줄러 월~금 08:55)
+ StockEye [상한가포착 단독]  (19_limitcatch.bat · 매일 자동은 22_intraday.bat 통합 실행)
   09:05~15:20  1분마다 +20% 이상 종목의 상한가 잠김·풀림·잔량 계산 → 앱 하단 '당일매매'
   '매수 검토' 종목은 고정 → 다음 날 09:30 까지 목표·손절 추적 (전날 종목도 이어서)
   1분 호가 기록을 남기고 장 마감 뒤 올림 · 주문은 하지 않음

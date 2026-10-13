@@ -4,7 +4,7 @@ chcp 65001 >nul
 cd /d %~dp0..\backend
 call .venv\Scripts\activate
 rem [limitcatch] weekdays 09:05-15:20, every minute. Details: backend\scripts\limitcatch.py
-rem   auto start: run 18_auto_schedule.bat once (Mon-Fri 08:55)
+rem   daily auto start now uses 22_intraday.bat (daytrade + limitcatch together). Run this only for a manual single run.
 rem   (comments are ASCII only: Korean text after chcp 65001 can break cmd parsing)
 if /i "%~1"=="auto" goto auto
 python -m scripts.limitcatch %*

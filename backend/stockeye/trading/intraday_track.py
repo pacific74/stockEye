@@ -100,8 +100,9 @@ def _sell_signal(bars: pd.DataFrame, i: int) -> bool:
 
 
 def step(t: dict, bars: pd.DataFrame | None, price: float | None, score_now: float | None, now: pd.Timestamp,
-         cfg: dict) -> bool:
-    """새 1분봉·지금 가격으로 상태 갱신. 결과가 나오면 True"""
+         cfg: dict, ticks: bool = False) -> bool:
+    """새 1분봉·지금 가격으로 상태 갱신. 결과가 나오면 True
+    ticks=True: 실시간 체결로 목표·손절을 이미 보고 있음 → 1분봉으로는 매도신호(거래량)·고가/저가만 봄 (같은 분 순서 모름 → 이중 판단 방지)"""
     if t["done"]:
         return False
     e, stop = t["entry"], t["stop"]
@@ -116,11 +117,13 @@ def step(t: dict, bars: pd.DataFrame | None, price: float | None, score_now: flo
             lo, hi, cl = float(r["low"]), float(r["high"]), float(r["close"])
             t["high"], t["low"] = max(t["high"], hi), min(t["low"], lo)
             st = e if t["be"] else stop
-            if st and lo <= st:                                        # 손절 (1차 뒤엔 본전)
+            if ticks:
+                pass
+            elif st and lo <= st:                                      # 손절 (1차 뒤엔 본전)
                 _sell(t, st, t["rest"])
                 _event(t, "손절" if not t["be"] else "본전 매도", hm)
                 return _finish(t, hm, now)
-            for k, tp in enumerate(tg):
+            for k, tp in enumerate(tg if not ticks else []):
                 key = f"t{k + 1}"
                 if tp and key not in t["hits"] and hi >= tp:
                     t["hits"][key] = hm
@@ -157,6 +160,37 @@ def step(t: dict, bars: pd.DataFrame | None, price: float | None, score_now: flo
     return False
 
 
+def tick(t: dict, price: float, now: pd.Timestamp) -> bool:
+    """실시간 체결 하나: 손절(1차 뒤 본전)·1·2·3차 목표를 바로 판단. 상태가 바뀌면 True (결과가 나오면 t['done'])"""
+    if t["done"] or not price:
+        return False
+    hm = now.strftime("%H:%M")
+    n0 = len(t["events"])
+    t["last"] = price
+    t["high"], t["low"] = max(t["high"], price), min(t["low"], price)
+    st = t["entry"] if t["be"] else t["stop"]
+    if st and price <= st:
+        _sell(t, price, t["rest"])                                       # 실제 체결가 (손절가보다 낮을 수 있음)
+        _event(t, "손절" if not t["be"] else "본전 매도", hm)
+        _finish(t, hm, now)
+        return True
+    for k, tp in enumerate([t.get("t1"), t.get("t2"), t.get("t3")]):
+        key = f"t{k + 1}"
+        if tp and key not in t["hits"] and price >= tp:
+            t["hits"][key] = hm
+            _sell(t, tp, SELL[k] if k < 2 else t["rest"])
+            _event(t, f"{k + 1}차목표달성", hm)
+            t["be"] = True
+    if t["rest"] <= 1e-9:
+        _finish(t, hm, now)
+        return True
+    inzone = t["buy_lo"] <= price <= t["buy_hi"]
+    if inzone and not t.get("inzone", True) and not t["hits"]:
+        _event(t, "매수구간", hm)
+    t["inzone"] = inzone
+    return len(t["events"]) != n0
+
+
 def _sell(t: dict, px: float, frac: float) -> None:
     frac = min(frac, t["rest"])
     if frac > 0:
@@ -189,6 +223,10 @@ class Tracker:
         self.amount = amount
         self.tracks: dict[str, dict] = {}
         self.carry: dict[str, dict] = {}            # 상한가포착: 전날 잡혀 오늘 아침까지 추적하는 종목
+        import threading
+        self.lock = threading.RLock()               # 1분 갱신(본 스레드)과 실시간 체결(웹소켓 스레드)이 같이 씀
+        self.on_event = None                        # (track, 상태) → 알림·실시간 행 (통합 프로세스가 연결)
+        self.realtime: set[str] = set()             # 실시간 체결을 받는 종목 (1분봉으로는 목표·손절을 다시 안 봄)
         self.load()
 
     # ------------------------------------------------ 저장
@@ -218,6 +256,10 @@ class Tracker:
     def save(self) -> None:
         if not self.sb:
             return
+        with self.lock:
+            self._save()
+
+    def _save(self) -> None:
         try:
             self.sb.upload(self._key(self.day), json.dumps({"tracks": self.tracks}, ensure_ascii=False, default=str).encode(),
                            "application/json")
@@ -278,28 +320,107 @@ class Tracker:
             if not (_f(r.get("entry")) or _f(r.get("price"))) or not _f(r.get("stop")):
                 continue
             t = Track.new(self.kind, self.day, r, now)
-            self.tracks[r["code"]] = t
-            self._open_position(t)
+            with self.lock:
+                self.tracks[r["code"]] = t
+                self._open_position(t)
             new.append(r["code"])
+            self._emit(t, "매수발생")
             log.info("★ 추적 시작 %s %s %s %s원", t["time"], t["name"], self.cfg["trigger"], f"{t['entry']:,.0f}")
         return new
 
     def codes(self) -> list[str]:
-        return [c for c, t in {**self.carry, **self.tracks}.items() if not t["done"]]
+        with self.lock:
+            return [c for c, t in {**self.carry, **self.tracks}.items() if not t["done"]]
+
+    def _emit(self, t: dict, state: str) -> None:
+        if self.on_event:
+            try:
+                self.on_event(self, t, state)
+            except Exception as e:  # noqa: BLE001
+                log.warning("알림 실패: %s", e)
+
+    def _after(self, t: dict, n0: int) -> None:
+        for ev in t["events"][n0:]:
+            self._emit(t, ev["state"])
+        if t["done"]:
+            self._close_position(t)
+            log.info("■ 결과 %s %s %s %+.2f%%", t["exit_time"], t["name"], t["result"], t["pnl"])
+            self._emit(t, "결과")
 
     def update(self, code: str, bars: pd.DataFrame | None, price: float | None, score_now: float | None,
                now: pd.Timestamp) -> None:
-        t = self.tracks.get(code) or self.carry.get(code)
-        if not t or t["done"]:
-            return
-        if step(t, bars, price, score_now, now, self.cfg):
-            self._close_position(t)
-            log.info("■ 결과 %s %s %s %+.2f%%", t["exit_time"], t["name"], t["result"], t["pnl"])
+        with self.lock:
+            t = self.tracks.get(code) or self.carry.get(code)
+            if not t or t["done"]:
+                return
+            n0 = len(t["events"])
+            ticks = code in self.realtime
+            step(t, bars, None if ticks else price, score_now, now, self.cfg, ticks=ticks)
+            self._after(t, n0)
+
+    def on_tick(self, code: str, price: float, now: pd.Timestamp) -> bool:
+        """실시간 체결 (웹소켓 스레드) → 상태가 바뀌면 True"""
+        with self.lock:
+            t = self.tracks.get(code) or self.carry.get(code)
+            if not t or t["done"]:
+                return False
+            n0 = len(t["events"])
+            changed = tick(t, price, now)
+            if changed:
+                self._after(t, n0)
+            return changed
+
+    def live_row(self, t: dict) -> dict:
+        """앱 실시간(intraday_live)용 작은 행 — 카드(기존 상태설명)는 빼고"""
+        with self.lock:                                 # 실시간 스레드가 바꾸는 중일 수 있어 복사본으로
+            pl = json.loads(json.dumps({k: v for k, v in t.items() if k not in ("card", "sold")}, default=str))
+        return {"key": f"{self.kind}:{t['date']}:{t['code']}", "kind": self.kind, "date": t["date"], "code": t["code"],
+                "payload": pl}
 
     def view(self) -> list[dict]:
         """앱: 신호 시각 순 (먼저 잡힌 것 위). 전날에서 이어진 것 먼저"""
-        rows = list(self.carry.values()) + list(self.tracks.values())
+        with self.lock:                                 # 실시간 스레드가 바꾸는 중일 수 있어 복사본으로
+            rows = json.loads(json.dumps(list(self.carry.values()) + list(self.tracks.values()), default=str))
         return sorted(rows, key=lambda t: (t["date"], t["time"]))
 
     def any_open(self) -> bool:
         return bool(self.codes())
+
+
+def finish_day(sb, kis, day: str, kinds=("daytrade", "limitcatch")) -> dict:
+    """저녁 배치: PC 가 꺼졌거나 중간에 멈춰 결과가 안 난 추적을 그날 1분봉으로 마무리 (PC 실시간이 없을 때의 대비)
+      당일단타    오늘 추적 → 09:00~15:30 1분봉 → 15:20 마감 청산까지
+      상한가포착  전날에서 이어진 추적 → 오늘 09:00~09:30 1분봉 → 09:30 청산 · 오늘 잡힌 추적 → 오늘 1분봉까지 반영(내일 09:30 마감)
+    결과가 나오면 관리자 매매일지도 매도 기록. 7일 지난 intraday_live 행 정리"""
+    out = {}
+    day = pd.Timestamp(day).strftime("%Y-%m-%d")
+    end = pd.Timestamp(f"{day} 15:30")
+    for kind in kinds:
+        tr = Tracker(sb, kind, day)
+        n_done = 0
+        groups = [(tr.carry, "093000", pd.Timestamp(f"{day} 09:30"))] if tr.carry else []
+        groups.append((tr.tracks, "153000", end))
+        for tracks, until, now in groups:
+            for code, t in list(tracks.items()):
+                if t["done"]:
+                    continue
+                try:
+                    bars = kis.minute_bars_day(code, "090000", until)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("1분봉 실패 %s: %s", code, e)
+                    continue
+                if bars is None or bars.empty:
+                    continue
+                bars = bars[bars["time"].dt.strftime("%Y-%m-%d") == day]
+                last = float(bars["close"].iloc[-1]) if len(bars) else None
+                tr.update(code, bars, last, None, now)
+                n_done += int(t["done"])
+        tr.save()
+        out[kind] = {"tracked": len(tr.tracks) + len(tr.carry), "finished_now": n_done,
+                     "open": len(tr.codes())}
+    try:
+        cut = (pd.Timestamp(day) - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
+        sb.delete("intraday_live", {"date": f"lt.{cut}"})
+    except Exception as e:  # noqa: BLE001
+        log.debug("intraday_live 정리 실패: %s", e)
+    return out

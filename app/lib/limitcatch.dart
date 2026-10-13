@@ -205,7 +205,7 @@ class _LimitcatchTabState extends State<LimitcatchTab> with AutomaticKeepAliveCl
               today
                   ? '${lookupLabel(d, _at)}${d['final'] == true ? ' (오늘 마지막)' : lcWindow() ? ' · 1분마다 갱신' : ''} · 대상 ${d['scanned'] ?? 0} · '
                       '매수 검토 ${c['매수 검토'] ?? 0} · 강세 후보 ${c['강세 후보'] ?? 0} · 관찰 ${c['관찰'] ?? 0} · 조건 무효 ${c['조건 무효'] ?? 0}'
-                  : '오늘 상한가포착 결과가 아직 없어요. 평일 PC 에서 19_limitcatch.bat 을 켜 두면 09:05~15:20 동안 1분마다 올라와요. '
+                  : '오늘 상한가포착 결과가 아직 없어요. 평일 PC 에서 22_intraday.bat(당일매매 통합)을 켜 두면 09:05~15:20 동안 1분마다 올라와요. '
                       'PC 가 꺼진 날은 관리자 [종목찾기].${d['date'] != null ? ' (아래는 ${d['date']} ${d['time']} 결과)' : ''}',
               style: t.bodySmall),
         ),

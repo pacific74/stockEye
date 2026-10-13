@@ -52,8 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _load();
     tabTap.addListener(_onTab);
     _intraTimer = Timer.periodic(const Duration(seconds: 60), (_) {
-      // 당일단타·상한가포착은 하단 '당일매매'(관리자)로 옮김 (2026-10-13) → 메인은 종가배팅만
-      if (liveWindow(closing: true)) _reloadClosingbet();
+      // 당일단타·상한가포착·종가배팅은 하단 '당일매매'(관리자)로 옮김 (2026-10-13)
     });
   }
 
@@ -134,7 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
     //   관심 목록과 똑같이: 저장 순위(rank)로 30개를 받아 점수순으로 다시 정렬 → 상위 3
     //   (예전엔 rank 순 10개만 받아 정렬해서, rank 11~30 에 점수 높은 종목이 있으면 목록 탭과 달랐음)
     // 당일단타·상한가포착은 메인에서 뺌 → 하단 '당일매매' (관리자)
-    final keys = CandidateListScreen.keys.where((k) => k != 'daytrade' && k != 'limitcatch').toList();
+    final keys = CandidateListScreen.keys.where((k) => !_intraKeys.contains(k)).toList();
     final lists = await Future.wait(keys.map((k) => _intraKeys.contains(k)
         // 당일단타·상한가포착·종가배팅: PC 가 올린 오늘 후보 상위 3 (오늘 것이 아니면 비움)
         ? (switch (k) { 'daytrade' => Api.daytrade(), 'limitcatch' => Api.limitcatch(), _ => Api.closingbet() }).then((d) {

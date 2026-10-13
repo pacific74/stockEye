@@ -166,3 +166,48 @@ def test_news_items_bad_first():
              {"title": "서산 횡령 혐의 피소", "time": "2026-10-12 10:00", "link": "b"}]
     nd = news_detail(items, "severe", "2026-10-13")
     assert [x["link"] for x in nd["items"]] == ["b", "a"] and nd["items"][0]["tone"] < 0
+
+
+CB = {"code": "000030", "name": "다라", "status": "매수 후보", "score": 85, "price": 10000, "entry": 10000,
+      "buy_lo": 9950, "buy_hi": 10050, "stop": 9700, "t1": 10200, "t2": 10400}
+
+
+def test_closingbet_fix_then_buy_in_range_then_next_day_rules():
+    sb = SB()
+    tr = it.Tracker(sb, "closingbet", "2026-10-13", user_id="u1")
+    tr.add([CB], pd.Timestamp("2026-10-13 15:10"))
+    t = tr.tracks["000030"]
+    assert t["state"] == "매수대기" and not t["bought"] and not sb.ins           # 고정만 · 매매일지 아직
+    tr.update("000030", None, 10100, None, pd.Timestamp("2026-10-13 15:12"))   # 범위 밖
+    assert not t["bought"]
+    tr.update("000030", None, 10020, None, pd.Timestamp("2026-10-13 15:15"))   # 범위 안 → 매수
+    assert t["bought"] and t["entry"] == 10020 and t["buy_time"] == "15:15" and sb.ins[0]["entry_time"].endswith("15:15:00")
+    # 산 날 나머지 봉은 목표·손절 안 봄
+    tr.update("000030", _bars([(10020, 10500, 9000, 10000, 100)], start="2026-10-13 15:16"), None, None,
+              pd.Timestamp("2026-10-13 15:30"))
+    assert not t["done"]
+    tr.save()
+    # 다음 날: 22_intraday 가 이월분으로 (갭 상승 시초가 ≥ 1차 → 시초가에 절반, 2차에 나머지)
+    nx = it.Tracker(sb, "closingbet", "2026-10-14", user_id="u1", carry_only=True)
+    t2 = nx.carry["000030"]
+    nx.update("000030", _bars([(10250, 10300, 10240, 10280, 100), (10280, 10450, 10270, 10400, 100)],
+                              start="2026-10-14 09:00"), None, None, pd.Timestamp("2026-10-14 09:02"))
+    assert t2["done"] and t2["result"] == "이익실현" and t2["sold"] == [[10250, 0.5], [10400, 0.5]]
+    nx.save()
+    assert "track/closingbet/2026-10-14.json" not in sb.store                  # 이월만 관리 → 오늘 파일 안 씀
+    view = it.Tracker(sb, "closingbet", "2026-10-14").view()
+    assert view and view[0]["result"] == "이익실현"                             # 전날 내역 (끝난 것도) 화면에
+
+
+def test_closingbet_no_fill_and_gap_down():
+    tr = it.Tracker(None, "closingbet", "2026-10-13", user_id=None)
+    tr.add([CB, {**CB, "code": "000040"}], pd.Timestamp("2026-10-13 15:10"))
+    tr.update("000030", None, 10200, None, pd.Timestamp("2026-10-13 15:31"))
+    t = tr.tracks["000030"]
+    assert t["done"] and t["result"] == "미체결" and t["pnl"] is None
+    t = tr.tracks["000040"]
+    tr.on_tick("000040", 10000, pd.Timestamp("2026-10-13 15:19"))              # 실시간으로 매수
+    assert t["bought"]
+    tr.update("000040", _bars([(9600, 9650, 9500, 9550, 100)], start="2026-10-14 09:00"), None, None,
+              pd.Timestamp("2026-10-14 09:01"))
+    assert t["result"] == "손절" and t["sold"] == [[9600, 1.0]]                 # 시초가가 손절 아래 → 시초가

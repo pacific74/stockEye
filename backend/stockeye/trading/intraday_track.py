@@ -17,6 +17,10 @@
   −7.7% 라 너무 멀어서 바꿈. 엔진 카드의 '조건 무효(+20%)'는 그대로 참고 표시)
 매수는 신호가 뜬 그 시각 진입가에 됐다고 봄 (모의 · 주문 없음). 비용 0.25% 뺀 손익. 매매일지 금액은 1건 100만원 기준
 상태는 Storage track/<kind>/<날짜>.json 에 저장 (PC 를 다시 켜도 · [종목찾기] 버튼으로 돌려도 이어서)
+
+종가배팅 (2026-10-13): '매수 후보' 가 처음 뜨면 고정(매수대기) → 그날 15:30 까지 가격이 매수 범위(종가 ±0.5%)에 들어오면
+그 가격에 매수 (매매일지 기록) · 안 들어오면 미체결(기록 안 함). 산 날은 목표·손절을 보지 않고 다음 날부터:
+시초가가 손절 아래면 시초가 전량 · 1차 목표에 절반 · 2차에 나머지 · 1차 뒤 매수가 이탈 시 나머지 · 10:30 남은 몫 전량
 """
 from __future__ import annotations
 
@@ -34,8 +38,11 @@ SELL = (0.5, 0.3, 0.2)
 CFG = {
     "daytrade": {"name": "당일단타", "trigger": "진입 조건 충족", "hold": 80.0, "end": "15:20", "overnight": False},
     "limitcatch": {"name": "상한가포착", "trigger": "매수 검토", "hold": 75.0, "end": "09:30", "overnight": True},
+    # 종가배팅: 고정 뒤 매수 범위에 들어와야 매수 · 1차 50% → 2차 나머지 · 매도신호(거래량) 안 봄 · 전날 내역도 화면에
+    "closingbet": {"name": "종가배팅", "trigger": "매수 후보", "hold": None, "end": "10:30", "overnight": True,
+                   "wait_buy": True, "buy_until": "15:30", "sell": (0.5, 1.0), "sell_signal": False, "show_prev": True},
 }
-RESULTS = ("이익실현", "매수가매도", "손절")
+RESULTS = ("이익실현", "매수가매도", "손절", "미체결")
 LC_STOP = 0.04                    # 상한가포착 손절 = 매수가 −4%
 
 
@@ -60,6 +67,8 @@ def plan_of(kind: str, r: dict) -> dict:
         from ..engine.daytrade import rt
         stop = rt(e * (1 - LC_STOP), "down")
         t1, t2, t3 = (_tick_round(e * k) for k in (1.03, 1.06, 1.10))
+    elif kind == "closingbet":                                         # 엔진 계획 그대로 (1·2차까지)
+        t1, t2, t3 = _f(r.get("t1")), _f(r.get("t2")), None
     else:
         t1, t2 = _f(r.get("t1")), _f(r.get("t2"))
         t3 = _tick_round(t2 + (t2 - t1)) if t1 and t2 else None
@@ -77,10 +86,12 @@ class Track:
         card = {k: r.get(k) for k in ("status", "score", "type", "group", "price", "chg_pct", "value", "vwap", "entry",
                                        "stop", "t1", "t2", "t1_pct", "risk_pct", "loss_pct", "limit", "reasons",
                                        "excluded", "risks", "parts", "labels", "maxes", "lock", "book", "news_level", "news",
-                                       "fill_warn", "level") if r.get(k) is not None}
+                                       "fill_warn", "level", "news", "gap", "close_pos", "exit_rules", "exit_time",
+                                       "atr") if r.get(k) is not None}
+        first = "매수대기" if CFG[kind].get("wait_buy") else "매수구간"
         return {"kind": kind, "date": day, "code": r["code"], "name": r.get("name"), "time": hm,
-                "score": _f(r.get("score")), **p, "card": card, "events": [{"state": "매수구간", "time": hm}],
-                "state": "매수구간", "hits": {}, "sold": [], "rest": 1.0, "be": False, "result": None, "pnl": None,
+                "score": _f(r.get("score")), **p, "card": card, "events": [{"state": first, "time": hm}],
+                "state": first, "bought": not CFG[kind].get("wait_buy"), "buy_time": None if CFG[kind].get("wait_buy") else hm, "hits": {}, "sold": [], "rest": 1.0, "be": False, "result": None, "pnl": None,
                 "exit_price": None, "exit_time": None, "last": _f(r.get("price")) or p["entry"], "score_now": _f(r.get("score")),
                 "high": p["entry"], "low": p["entry"], "seen": now.strftime("%Y-%m-%d %H:%M"), "pos_id": None, "done": False}
 
@@ -105,34 +116,42 @@ def step(t: dict, bars: pd.DataFrame | None, price: float | None, score_now: flo
     ticks=True: 실시간 체결로 목표·손절을 이미 보고 있음 → 1분봉으로는 매도신호(거래량)·고가/저가만 봄 (같은 분 순서 모름 → 이중 판단 방지)"""
     if t["done"]:
         return False
+    if cfg.get("wait_buy") and not t.get("bought", True):
+        return _wait_buy(t, bars, price, now, cfg)
     e, stop = t["entry"], t["stop"]
     tg = [t.get("t1"), t.get("t2"), t.get("t3")]
+    sells = cfg.get("sell", SELL[:2])
     seen = pd.Timestamp(t["seen"])
     if bars is not None and len(bars):
         b = bars[bars["time"] > seen].sort_values("time").reset_index(drop=True)
         full = bars.sort_values("time").reset_index(drop=True)
         off = len(full) - len(b)
         for i, r in b.iterrows():
-            hm = pd.Timestamp(r["time"]).strftime("%H:%M")
-            lo, hi, cl = float(r["low"]), float(r["high"]), float(r["close"])
+            ts = pd.Timestamp(r["time"])
+            hm = ts.strftime("%H:%M")
+            if cfg.get("wait_buy") and ts.strftime("%Y-%m-%d") <= t["date"]:   # 종가배팅: 산 날은 목표·손절 안 봄
+                t["last"] = float(r["close"])
+                continue
+            op, lo, hi, cl = float(r["open"]), float(r["low"]), float(r["high"]), float(r["close"])
             t["high"], t["low"] = max(t["high"], hi), min(t["low"], lo)
             st = e if t["be"] else stop
             if ticks:
                 pass
-            elif st and lo <= st:                                      # 손절 (1차 뒤엔 본전)
-                _sell(t, st, t["rest"])
+            elif st and lo <= st:                                      # 손절 (1차 뒤엔 본전) · 시초가가 이미 아래면 시초가
+                _sell(t, min(op, st), t["rest"])
                 _event(t, "손절" if not t["be"] else "본전 매도", hm)
                 return _finish(t, hm, now)
             for k, tp in enumerate(tg if not ticks else []):
                 key = f"t{k + 1}"
                 if tp and key not in t["hits"] and hi >= tp:
                     t["hits"][key] = hm
-                    _sell(t, tp, SELL[k] if k < 2 else t["rest"])
+                    _sell(t, max(op, tp), sells[k] if k < len(sells) else t["rest"])   # 갭 상승이면 시초가
                     _event(t, f"{k + 1}차목표달성", hm)
                     t["be"] = True
             if t["rest"] <= 1e-9:
                 return _finish(t, hm, now)
-            if _sell_signal(full, off + i) and "매도신호포착" not in [x["state"] for x in t["events"]]:
+            if cfg.get("sell_signal", True) and _sell_signal(full, off + i) \
+                    and "매도신호포착" not in [x["state"] for x in t["events"]]:
                 _event(t, "매도신호포착", hm)
                 _sell(t, cl, t["rest"])                                 # 1차 전이면 매수가 부근 매도, 뒤면 나머지 정리
                 return _finish(t, hm, now)
@@ -141,12 +160,13 @@ def step(t: dict, bars: pd.DataFrame | None, price: float | None, score_now: flo
     if price:
         t["last"] = price
         inzone = t["buy_lo"] <= price <= t["buy_hi"]
-        if inzone and not t.get("inzone", True) and not t["hits"]:      # 매수구간을 벗어났다 다시 들어올 때만
+        if inzone and not t.get("inzone", True) and not t["hits"] and not cfg.get("wait_buy"):  # 벗어났다 다시 들어올 때만
             _event(t, "매수구간", now.strftime("%H:%M"))
         t["inzone"] = inzone
     if score_now is not None:
         t["score_now"] = score_now
-        if score_now < cfg["hold"] and "신규진입보류" not in [x["state"] for x in t["events"]]:
+        if cfg.get("hold") is not None and score_now < cfg["hold"] \
+                and "신규진입보류" not in [x["state"] for x in t["events"]]:
             _event(t, "신규진입보류", now.strftime("%H:%M"))
     today, hm_now = now.strftime("%Y-%m-%d"), now.strftime("%H:%M")
     if cfg["overnight"]:                                               # 상한가포착: 다음 거래일 09:30
@@ -160,11 +180,57 @@ def step(t: dict, bars: pd.DataFrame | None, price: float | None, score_now: flo
     return False
 
 
-def tick(t: dict, price: float, now: pd.Timestamp) -> bool:
+def _buy(t: dict, px: float, ts: pd.Timestamp) -> None:
+    """종가배팅: 매수 범위 안 가격에 매수 (그 가격이 매수가)"""
+    t["entry"], t["bought"], t["buy_time"] = round(px, 2), True, ts.strftime("%H:%M")
+    t["high"] = t["low"] = t["last"] = px
+    t["seen"] = ts.strftime("%Y-%m-%d %H:%M")
+    _event(t, "매수", ts.strftime("%H:%M"))
+
+
+def _no_fill(t: dict, hm: str, now: pd.Timestamp) -> bool:
+    _event(t, "미체결", hm)
+    t.update({"done": True, "result": "미체결", "pnl": None, "exit_price": None,
+              "exit_time": now.strftime("%Y-%m-%d ") + hm})
+    return True
+
+
+def _wait_buy(t: dict, bars: pd.DataFrame | None, price: float | None, now: pd.Timestamp, cfg: dict) -> bool:
+    """매수대기: 고정 뒤 그날 buy_until 까지 매수 범위에 닿으면 매수. 넘기면 미체결 (True)"""
+    lo_b, hi_b = t["buy_lo"], t["buy_hi"]
+    until = pd.Timestamp(f"{t['date']} {cfg.get('buy_until', '15:30')}")
+    if bars is not None and len(bars):
+        b = bars[(bars["time"] > pd.Timestamp(t["seen"])) & (bars["time"] <= until)].sort_values("time")
+        for _, r in b.iterrows():
+            if float(r["low"]) <= hi_b and float(r["high"]) >= lo_b:
+                _buy(t, min(max(float(r["close"]), lo_b), hi_b), pd.Timestamp(r["time"]))
+                return False
+            t["last"] = float(r["close"])
+        if len(b):
+            t["seen"] = pd.Timestamp(b["time"].iloc[-1]).strftime("%Y-%m-%d %H:%M")
+    if price:
+        t["last"] = price
+        if now <= until and lo_b <= price <= hi_b:
+            _buy(t, price, now)
+            return False
+    if now > until:
+        return _no_fill(t, until.strftime("%H:%M") if now.strftime("%Y-%m-%d") == t["date"] else "15:30", now)
+    return False
+
+
+def tick(t: dict, price: float, now: pd.Timestamp, cfg: dict | None = None) -> bool:
     """실시간 체결 하나: 손절(1차 뒤 본전)·1·2·3차 목표를 바로 판단. 상태가 바뀌면 True (결과가 나오면 t['done'])"""
     if t["done"] or not price:
         return False
+    cfg = cfg or {}
     hm = now.strftime("%H:%M")
+    if cfg.get("wait_buy"):
+        if not t.get("bought", True):
+            return _wait_buy(t, None, price, now, cfg) or t.get("bought", False)
+        if now.strftime("%Y-%m-%d") <= t["date"]:                       # 산 날은 가격만
+            t["last"] = price
+            return False
+    sells = cfg.get("sell", SELL[:2])
     n0 = len(t["events"])
     t["last"] = price
     t["high"], t["low"] = max(t["high"], price), min(t["low"], price)
@@ -178,14 +244,14 @@ def tick(t: dict, price: float, now: pd.Timestamp) -> bool:
         key = f"t{k + 1}"
         if tp and key not in t["hits"] and price >= tp:
             t["hits"][key] = hm
-            _sell(t, tp, SELL[k] if k < 2 else t["rest"])
+            _sell(t, tp, sells[k] if k < len(sells) else t["rest"])
             _event(t, f"{k + 1}차목표달성", hm)
             t["be"] = True
     if t["rest"] <= 1e-9:
         _finish(t, hm, now)
         return True
     inzone = t["buy_lo"] <= price <= t["buy_hi"]
-    if inzone and not t.get("inzone", True) and not t["hits"]:
+    if inzone and not t.get("inzone", True) and not t["hits"] and not cfg.get("wait_buy"):
         _event(t, "매수구간", hm)
     t["inzone"] = inzone
     return len(t["events"]) != n0
@@ -217,8 +283,13 @@ def _finish(t: dict, hm: str, now: pd.Timestamp) -> bool:
 
 
 class Tracker:
-    def __init__(self, sb, kind: str, day: str, user_id: str | None = None, amount: float = AMOUNT):
+    def __init__(self, sb, kind: str, day: str, user_id: str | None = None, amount: float = AMOUNT,
+                 carry_only: bool = False, write_carry: bool = True):
+        """carry_only: 전날 이월분만 관리 (오늘 파일은 안 씀 — 당일매매 통합 실행이 종가배팅 다음 날 오전을 추적할 때)
+        write_carry: False 면 전날 파일은 안 씀 (종가배팅 실행은 오늘 후보만 — 다음 날 오전 결과를 덮어쓰지 않게)"""
         self.sb, self.kind, self.day, self.cfg = sb, kind, day, CFG[kind]
+        self.carry_only, self.write_carry = carry_only, write_carry
+        self.prev: dict[str, dict] = {}             # 전날 추적 전부 (끝난 것 포함 · 화면용, show_prev)
         self.user_id = user_id if user_id is not None else (os.getenv("SUPABASE_USER_ID") or "").strip() or None
         self.amount = amount
         self.tracks: dict[str, dict] = {}
@@ -250,6 +321,7 @@ class Tracker:
                 old = self._get(d).get("tracks", {})
                 if old:
                     self.carry = {c: t for c, t in old.items() if not t.get("done")}
+                    self.prev = old
                     self.carry_day = d
                     break
 
@@ -261,9 +333,10 @@ class Tracker:
 
     def _save(self) -> None:
         try:
-            self.sb.upload(self._key(self.day), json.dumps({"tracks": self.tracks}, ensure_ascii=False, default=str).encode(),
-                           "application/json")
-            if self.carry:
+            if not self.carry_only:
+                self.sb.upload(self._key(self.day), json.dumps({"tracks": self.tracks}, ensure_ascii=False,
+                                                               default=str).encode(), "application/json")
+            if self.carry and self.write_carry:
                 self.sb.upload(self._key(self.carry_day), json.dumps({"tracks": {**self._get(self.carry_day).get("tracks", {}),
                                                                                 **self.carry}},
                                                                      ensure_ascii=False, default=str).encode(),
@@ -279,7 +352,7 @@ class Tracker:
         qty = max(1, int(self.amount // e)) if e else 1
         row = {"user_id": self.user_id, "mode": "signal", "code": t["code"], "name": t["name"],
                "strategy": self.cfg["name"], "list_key": self.kind, "score": t["score"],
-               "entry_time": f"{t['date']} {t['time']}:00", "entry_price": e, "qty": qty, "entry_cost": e * qty,
+               "entry_time": f"{t['date']} {t.get('buy_time') or t['time']}:00", "entry_price": e, "qty": qty, "entry_cost": e * qty,
                "stop": t["stop"], "target1": t.get("t1"), "target2": t.get("t2"),
                "reasons": t["card"].get("reasons") or [], "warnings": t["card"].get("risks") or [],
                "verdict": t["card"].get("type") or t["card"].get("group"),
@@ -293,7 +366,7 @@ class Tracker:
             log.warning("매매일지 기록 실패 %s: %s", t["name"], ex)
 
     def _close_position(self, t: dict) -> None:
-        if not self.sb or not t.get("pos_id"):
+        if not self.sb or not t.get("pos_id") or t.get("exit_price") is None:
             return
         e, px = t["entry"], t["exit_price"]
         qty = max(1, int(self.amount // e)) if e else 1
@@ -322,9 +395,10 @@ class Tracker:
             t = Track.new(self.kind, self.day, r, now)
             with self.lock:
                 self.tracks[r["code"]] = t
-                self._open_position(t)
+                if t["bought"]:
+                    self._open_position(t)
             new.append(r["code"])
-            self._emit(t, "매수발생")
+            self._emit(t, "매수발생" if t["bought"] else "후보고정")       # 종가배팅은 매수 범위에 들어올 때 매수발생
             log.info("★ 추적 시작 %s %s %s %s원", t["time"], t["name"], self.cfg["trigger"], f"{t['entry']:,.0f}")
         return new
 
@@ -341,10 +415,16 @@ class Tracker:
 
     def _after(self, t: dict, n0: int) -> None:
         for ev in t["events"][n0:]:
-            self._emit(t, ev["state"])
+            if ev["state"] == "매수":                       # 종가배팅: 매수 범위 → 매수 · 매매일지
+                self._open_position(t)
+                log.info("★ 매수 %s %s %s원", t["buy_time"], t["name"], f"{t['entry']:,.0f}")
+                self._emit(t, "매수발생")
+            else:
+                self._emit(t, ev["state"])
         if t["done"]:
             self._close_position(t)
-            log.info("■ 결과 %s %s %s %+.2f%%", t["exit_time"], t["name"], t["result"], t["pnl"])
+            log.info("■ 결과 %s %s %s %s", t["exit_time"], t["name"], t["result"],
+                     "" if t["pnl"] is None else f"{t['pnl']:+.2f}%")
             self._emit(t, "결과")
 
     def update(self, code: str, bars: pd.DataFrame | None, price: float | None, score_now: float | None,
@@ -365,7 +445,7 @@ class Tracker:
             if not t or t["done"]:
                 return False
             n0 = len(t["events"])
-            changed = tick(t, price, now)
+            changed = tick(t, price, now, self.cfg)
             if changed:
                 self._after(t, n0)
             return changed
@@ -380,25 +460,27 @@ class Tracker:
     def view(self) -> list[dict]:
         """앱: 신호 시각 순 (먼저 잡힌 것 위). 전날에서 이어진 것 먼저"""
         with self.lock:                                 # 실시간 스레드가 바꾸는 중일 수 있어 복사본으로
-            rows = json.loads(json.dumps(list(self.carry.values()) + list(self.tracks.values()), default=str))
+            before = {**self.prev, **self.carry} if self.cfg.get("show_prev") else dict(self.carry)
+            rows = json.loads(json.dumps(list(before.values()) + list(self.tracks.values()), default=str))
         return sorted(rows, key=lambda t: (t["date"], t["time"]))
 
     def any_open(self) -> bool:
         return bool(self.codes())
 
 
-def finish_day(sb, kis, day: str, kinds=("daytrade", "limitcatch")) -> dict:
+def finish_day(sb, kis, day: str, kinds=("daytrade", "limitcatch", "closingbet")) -> dict:
     """저녁 배치: PC 가 꺼졌거나 중간에 멈춰 결과가 안 난 추적을 그날 1분봉으로 마무리 (PC 실시간이 없을 때의 대비)
       당일단타    오늘 추적 → 09:00~15:30 1분봉 → 15:20 마감 청산까지
       상한가포착  전날에서 이어진 추적 → 오늘 09:00~09:30 1분봉 → 09:30 청산 · 오늘 잡힌 추적 → 오늘 1분봉까지 반영(내일 09:30 마감)
     결과가 나오면 관리자 매매일지도 매도 기록. 7일 지난 intraday_live 행 정리"""
     out = {}
     day = pd.Timestamp(day).strftime("%Y-%m-%d")
-    end = pd.Timestamp(f"{day} 15:30")
+    end = pd.Timestamp(f"{day} 15:31")                                # 장 마감 뒤 (종가배팅 15:30 까지 매수 범위 판단 → 그 뒤 미체결)
     for kind in kinds:
         tr = Tracker(sb, kind, day)
         n_done = 0
-        groups = [(tr.carry, "093000", pd.Timestamp(f"{day} 09:30"))] if tr.carry else []
+        cend = tr.cfg["end"]                                         # 이월분 마감 (상한가포착 09:30 · 종가배팅 10:30)
+        groups = [(tr.carry, cend.replace(":", "") + "00", pd.Timestamp(f"{day} {cend}"))] if tr.carry else []
         groups.append((tr.tracks, "153000", end))
         for tracks, until, now in groups:
             for code, t in list(tracks.items()):
@@ -418,6 +500,12 @@ def finish_day(sb, kis, day: str, kinds=("daytrade", "limitcatch")) -> dict:
         tr.save()
         out[kind] = {"tracked": len(tr.tracks) + len(tr.carry), "finished_now": n_done,
                      "open": len(tr.codes())}
+        if kind == "closingbet":                                      # 앱 '종가배팅' 구역의 전날·오늘 내역
+            try:
+                from ..cloud import publish as pub
+                pub.publish_status(sb, "closingbet_track", {"date": day, "time": "마감", "tracked": tr.view()})
+            except Exception as e:  # noqa: BLE001
+                log.debug("종가배팅 내역 발행 실패: %s", e)
     try:
         cut = (pd.Timestamp(day) - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
         sb.delete("intraday_live", {"date": f"lt.{cut}"})

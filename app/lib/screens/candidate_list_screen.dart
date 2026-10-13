@@ -24,8 +24,8 @@ class CandidateListScreen extends StatefulWidget {
   // daytrade = 당일단타 (PC 가 09:00~10:30 1분마다 올림 · system_status)
   // limitcatch = 상한가포착 (PC 가 09:05~15:20 1분마다 올림 · system_status)
   // closingbet = 종가배팅 (PC 가 14:50~15:20 1분마다 올림 · system_status)
-  // 당일단타·상한가포착은 하단 '당일매매'(관리자)로 옮겨 관심 탭에서 뺌 (2026-10-13)
-  static const keys = ['v3', 'nextday', 'early', 'reversal', 'uplimit', 'closingbet']; // V2 목록(지금 매수구간·매수 신호·강력 후보·관심)은 숨김
+  // 당일단타·상한가포착·종가배팅은 하단 '당일매매'(관리자)로 옮겨 관심 탭에서 뺌 (2026-10-13)
+  static const keys = ['v3', 'nextday', 'early', 'reversal', 'uplimit']; // V2 목록(지금 매수구간·매수 신호·강력 후보·관심)은 숨김
 
   @override
   State<CandidateListScreen> createState() => _CandidateListScreenState();

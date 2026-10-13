@@ -59,6 +59,9 @@ class Runner:
         self.news: dict[str, str | None] = {}
         from stockeye.cloud.recommend import IntradayRecorder
         self.rec = IntradayRecorder(sb, "closingbet", runner)        # 검증용 추천 기록 ('매수 후보' 첫 시점)
+        from stockeye.trading.intraday_track import Tracker
+        # 당일매매: '매수 후보' 처음 뜨면 고정 → 매수 범위면 매수(매매일지) · 다음 날 오전은 22_intraday 가 추적
+        self.track = Tracker(sb, "closingbet", self.day, write_carry=False)
 
     def _news(self, code):
         if code not in self.news:
@@ -127,10 +130,17 @@ class Runner:
         counts = {s: sum(r["status"] == s for r in res) for s in order}
         final = now.strftime("%H:%M") >= "15:20"
         picks = [r for r in res if r["status"] == "매수 후보"][:PICK]
+        # 고정 → 매수 범위 확인 (지금 시세) — 오늘 고정한 것만 (전날 것은 22_intraday 가 오전에 마무리)
+        self.track.add(res, now)
+        for code, t in list(self.track.tracks.items()):
+            if not t["done"] and code in snap.index:
+                self.track.update(code, None, float(snap.loc[code, "close"]), None, now)
+        self.track.save()
         return {"date": self.day, "time": now.strftime("%H:%M"), "version": cb.VERSION, "scanned": len(res),
                 "counts": counts, "items": keep, "final": final, "idx_chg": idx_chg, "runner": self.runner,
                 "picks": [{k: r.get(k) for k in ("code", "name", "score", "type", "entry", "stop", "t1", "t2", "atr", "gap")}
-                          | {"date": self.day} for r in picks]}
+                          | {"date": self.day} for r in picks],
+                "tracked": self.track.view()}
 
     def publish(self, p):
         if self.sb:

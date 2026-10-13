@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'api.dart';
-import 'daytrade.dart' show DaytradeTile, DaytradeFindButton, dtIsToday, lookupLabel;
+import 'closingbet.dart' show ClosingbetTile;
+import 'daytrade.dart' show DaytradeTile, DaytradeFindButton, dtIsToday, liveWindow, lookupLabel;
 import 'format.dart';
 import 'limitcatch.dart' show LimitcatchTile;
 import 'live.dart';
@@ -34,7 +35,8 @@ bool _marketWindow() {
 }
 
 class _IntradayScreenState extends State<IntradayScreen> {
-  Json? _dt, _lc;
+  Json? _dt, _lc, _cb; // 당일단타 · 상한가포착 · 종가배팅
+  Json _cbm = {}; // 종가배팅 고정·매수 내역 (후보 실행 + 다음 날 추적 합친 것) {'tracked': [...]}
   DateTime? _at;
   Timer? _t;
   Set<String>? _buySeen, _sellSeen; // 이미 알린 매수(고정)·매도신호 — 처음 읽을 때는 알리지 않고 기억만
@@ -77,7 +79,7 @@ class _IntradayScreenState extends State<IntradayScreen> {
                 _live['${r['kind']}:${pl['date']}:${pl['code']}'] = {...pl, 'kind': r['kind']};
                 _rtAt = DateTime.now();
                 _applyLive();
-                _announce([...asList(_dt?['tracked']), ...asList(_lc?['tracked'])]);
+                _announce([...asList(_dt?['tracked']), ...asList(_lc?['tracked']), ...asList(_cbm['tracked'])]);
                 setState(() {});
               })
           .subscribe();
@@ -86,7 +88,7 @@ class _IntradayScreenState extends State<IntradayScreen> {
 
   /// 실시간 상태를 1분 갱신본 위에 덮기 (상태가 같거나 더 나아간 것만 — 늦게 온 1분 갱신본이 되돌리지 않게)
   void _applyLive() {
-    for (final (kind, d) in [('daytrade', _dt), ('limitcatch', _lc)]) {
+    for (final (kind, d) in [('daytrade', _dt), ('limitcatch', _lc), ('closingbet', _cbm)]) {
       if (d == null) continue;
       final list = [...asList(d['tracked'])];
       for (final e in _live.entries.where((e) => e.key.startsWith('$kind:'))) {
@@ -104,6 +106,18 @@ class _IntradayScreenState extends State<IntradayScreen> {
     }
   }
 
+  /// 같은 종목·날짜는 더 진행된 것(끝남 > 상태 수 많음)으로
+  static List<Json> _mergeTracks(List<Json> a, List<Json> b) {
+    final m = <String, Json>{};
+    int rank(Json t) => (t['done'] == true ? 1000 : 0) + asList(t['events']).length;
+    for (final t in [...a, ...b]) {
+      final k = '${t['date']}:${t['code']}';
+      final o = m[k];
+      if (o == null || rank(t) >= rank(o)) m[k] = {...?o, ...t};
+    }
+    return m.values.toList()..sort((x, y) => '${x['date']} ${x['time']}'.compareTo('${y['date']} ${y['time']}'));
+  }
+
   /// PC 실시간이 멈췄는지: 장중(09:07 뒤)인데 3분 넘게 갱신·실시간 수신이 없고 진행 중인 고정 종목이 있음
   bool _stale(Json? d) {
     if (d == null || !_marketWindow()) return false;
@@ -116,10 +130,12 @@ class _IntradayScreenState extends State<IntradayScreen> {
   }
 
   Future<void> _load() async {
-    final r = await Future.wait([Api.daytrade(), Api.limitcatch()]);
+    final r = await Future.wait([Api.daytrade(), Api.limitcatch(), Api.closingbet(), Api.closingbetTrack()]);
     if (!mounted) return;
     _dt = r[0];
     _lc = r[1];
+    _cb = r[2];
+    _cbm = {'tracked': _mergeTracks(asList(r[2]['tracked']), asList(r[3]['tracked']))};
     _applyLive();
     // PC 꺼짐 대비: 진행 중인 고정 종목 지금가 (그 종목만 · 1분에 한 번)
     final open = <String>{
@@ -136,7 +152,7 @@ class _IntradayScreenState extends State<IntradayScreen> {
       } catch (_) {}
     }
     if (!mounted) return;
-    _announce([...asList(_dt!['tracked']), ...asList(_lc!['tracked'])]);
+    _announce([...asList(_dt!['tracked']), ...asList(_lc!['tracked']), ...asList(_cbm['tracked'])]);
     setState(() {
       _quotes = q;
       _at = DateTime.now();
@@ -150,7 +166,9 @@ class _IntradayScreenState extends State<IntradayScreen> {
     final buy = <String>{}, sell = <String>{};
     for (final t in tracked) {
       final key = '${t['kind']}:${t['code']}:${t['date']}';
-      if (t['date'] == today) buy.add(key);
+      // 종가배팅은 고정이 아니라 매수 범위에 들어와 '매수' 됐을 때
+      final bought = t['kind'] != 'closingbet' || asList(t['events']).any((e) => e['state'] == '매수');
+      if (t['date'] == today && bought) buy.add(key);
       if (asList(t['events']).any((e) => e['state'] == '매도신호포착')) sell.add(key);
     }
     final first = _buySeen == null;
@@ -179,6 +197,8 @@ class _IntradayScreenState extends State<IntradayScreen> {
                   _Section(kind: 'daytrade', d: _dt!, at: _at, onDone: _load, stale: _stale(_dt), quotes: _quotes, rtAt: _rtAt),
                   const SizedBox(height: 18),
                   _Section(kind: 'limitcatch', d: _lc!, at: _at, onDone: _load, stale: _stale(_lc), quotes: _quotes, rtAt: _rtAt),
+                  const SizedBox(height: 18),
+                  _ClosingSection(d: _cb ?? const <String, dynamic>{}, tracked: asList(_cbm['tracked']), at: _at, onDone: _load),
                   const SizedBox(height: 12),
                   Text('진입조건충족 종목은 처음 충족된 시각의 진입가·손절·목표로 고정하고, 그 시각에 산 것으로 보고 결과를 매겨요 (모의 · 주문 없음). '
                       '결과가 나오면 매매일지(구분: 당일매매 자동)에 기록돼요. 진입대기·관찰은 조건에 따라 바뀌고 기록하지 않아요.',
@@ -253,7 +273,7 @@ class _Section extends StatelessWidget {
       sub('진입조건충족', tracked.length, '충족된 시간 순 · 고정'),
       if (tracked.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('아직 없어요', style: t.bodySmall)),
       for (final x in tracked)
-        _TrackCard(t: x, lc: _lc, quote: stale && x['done'] != true ? quotes['${x['code']}'] : null),
+        _TrackCard(t: x, kind: kind, quote: stale && x['done'] != true ? quotes['${x['code']}'] : null),
       sub('진입대기', wait.length, _lc ? '+20%↑ · 100억↑ · 75점↑ (바뀔 수 있음)' : '80점↑ · 진입 신호 전 (바뀔 수 있음)'),
       for (final (i, r) in wait.indexed) tile(r, i),
       sub('관찰', watch.length, '바뀔 수 있음'),
@@ -276,7 +296,71 @@ class _Section extends StatelessWidget {
   }
 }
 
+/// 종가배팅 (14:50~15:20 · PC 16_closingbet.bat) — 매수 후보 · 우선 관찰 · 관찰. 고정·추적 없이 1분마다 바뀜
+/// 결과(종가 매수 → 다음 날 10:30 매도)는 다음 날 저녁 배치가 검증 탭에 올림
+class _ClosingSection extends StatelessWidget {
+  const _ClosingSection({required this.d, required this.tracked, required this.at, required this.onDone});
+  final Json d;
+  final List<Json> tracked; // 고정·매수 내역 (전날 · 오늘)
+  final DateTime? at;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final today = dtIsToday(d);
+    final fixed = {for (final x in tracked) if (dtIsToday({'date': x['date']})) '${x['code']}'};
+    final items = today ? asList(d['items']).where((r) => !fixed.contains('${r['code']}')).toList() : <Json>[];
+    final c = asMap(d['counts']);
+    final todayT = tracked.where((x) => dtIsToday({'date': x['date']})).toList();
+    // 전날 내역: 오늘보다 앞선 날짜 중 가장 최근 하루
+    final prevDates = tracked.map((x) => '${x['date']}').where((x) => !dtIsToday({'date': x})).toSet().toList()..sort();
+    final prevT = prevDates.isEmpty ? <Json>[] : tracked.where((x) => x['date'] == prevDates.last).toList();
+    Widget sub(String title, int n, String note) => Padding(
+          padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
+          child: Text.rich(TextSpan(children: [
+            TextSpan(text: '$title $n', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+            TextSpan(text: '  $note', style: t.bodySmall?.copyWith(color: Colors.grey)),
+          ])),
+        );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Text('종가배팅', style: t.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+        const SizedBox(width: 8),
+        Expanded(
+            child: Text(
+                today
+                    ? '${lookupLabel(d, at)}${d['final'] == true ? ' (오늘 마지막)' : liveWindow(closing: true) ? ' · 1분마다' : ''}'
+                    : '오늘 결과 없음',
+                overflow: TextOverflow.ellipsis,
+                style: t.bodySmall?.copyWith(color: Colors.grey))),
+        DaytradeFindButton(closing: true, onDone: onDone),
+      ]),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 2, 4, 4),
+        child: Text(
+            today
+                ? '후보 ${d['scanned'] ?? 0} · 매수 후보 ${c['매수 후보'] ?? 0} · 우선 관찰 ${c['우선 관찰'] ?? 0} · 관찰 ${c['관찰'] ?? 0}'
+                : '평일 14:50~15:20 PC 16_closingbet.bat(작업 스케줄러 14:45) 또는 [종목찾기]로 올라와요 (매수 후보는 15:10 이후)',
+            style: t.bodySmall?.copyWith(color: Colors.grey)),
+      ),
+      if (prevT.isNotEmpty) ...[
+        sub('전일 종가배팅', prevT.length,
+            '${prevDates.last.length >= 10 ? prevDates.last.substring(5) : prevDates.last} 고정 · 다음 날 10:30 까지 매도'),
+        for (final x in prevT) _TrackCard(t: x, kind: 'closingbet'),
+      ],
+      sub('오늘 고정', todayT.length, '매수 후보 처음 뜬 시각 순 · 매수 범위에 들어오면 매수'),
+      if (todayT.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('아직 없어요', style: t.bodySmall)),
+      for (final x in todayT) _TrackCard(t: x, kind: 'closingbet'),
+      sub('후보', items.length, '우선 관찰·관찰 (바뀔 수 있음)'),
+      if (today && items.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('조건에 맞는 종목이 없어요', style: t.bodySmall)),
+      for (final (i, r) in items.indexed) ClosingbetTile(r: r, rank: i + 1, showRules: true),
+    ]);
+  }
+}
+
 const _states = ['매수구간', '신규진입보류', '1차목표달성', '2차목표달성', '3차목표달성', '매도신호포착', '손절'];
+const _cbStates = ['매수대기', '매수', '1차목표달성', '2차목표달성', '손절']; // 종가배팅
 
 Color _resultColor(String? r) => switch (r) {
       '이익실현' => upColor,
@@ -287,9 +371,11 @@ Color _resultColor(String? r) => switch (r) {
 
 /// 진입조건충족 한 종목: 종목명·점수·현재가 / 기존 상태설명(고정 카드) / 상태별 시각 / 매매 결과
 class _TrackCard extends StatelessWidget {
-  const _TrackCard({required this.t, required this.lc, this.quote});
+  const _TrackCard({required this.t, required this.kind, this.quote});
   final Json t;
-  final bool lc;
+  final String kind; // daytrade · limitcatch · closingbet
+  bool get lc => kind == 'limitcatch';
+  bool get cb => kind == 'closingbet';
   final double? quote; // PC 꺼짐 대비 지금가 (있으면 이걸로 표시 · 결과는 저녁 확정)
 
   /// 지금가가 목표·손절의 어디쯤인지 (확정 아님)
@@ -310,8 +396,11 @@ class _TrackCard extends StatelessWidget {
     final entry = (t['entry'] as num?)?.toDouble() ?? 0;
     final last = quote ?? (t['last'] as num?)?.toDouble();
     final done = t['done'] == true;
+    final bought = t['bought'] != false; // 종가배팅은 매수 범위에 들어와야 매수
     final where = quote == null ? null : _where(quote!);
-    final pnl = done ? (t['pnl'] as num?)?.toDouble() : (last != null && entry > 0 ? (last / entry - 1) * 100 : null);
+    final pnl = done
+        ? (t['pnl'] as num?)?.toDouble()
+        : (bought && last != null && entry > 0 ? (last / entry - 1) * 100 : null);
     final events = asList(t['events']);
     String? timeOf(String s) {
       for (final e in events) {
@@ -321,12 +410,13 @@ class _TrackCard extends StatelessWidget {
       return null;
     }
     final closeT = timeOf('마감 청산');
+    final noFillT = timeOf('미체결');
     final card = {...asMap(t['card']), 'code': t['code'], 'name': t['name']};
     final cur = '${t['state'] ?? ''}';
     final prevDay = !dtIsToday({'date': t['date']});
     // 매수구간·매도신호포착 상태면 깜빡임 (끝난 종목은 끝난 뒤 10분까지만)
     final ended = DateTime.tryParse('${t['exit_time'] ?? ''}'.replaceFirst(' ', 'T'));
-    final blink = (cur == '매수구간' || cur == '매도신호포착') &&
+    final blink = (cur == '매수구간' || cur == '매도신호포착' || cur == '매수대기') &&
         (!done || (ended != null && DateTime.now().difference(ended).inMinutes < 10));
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 5),
@@ -345,7 +435,7 @@ class _TrackCard extends StatelessWidget {
                   child: StockName('${t['name']}', score: t['score'] as num?, scoreDigits: 1, style: tx.titleMedium)),
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                 Text(won(last), style: tx.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                Text('매수가 대비 ${pnl == null ? '-' : pct(pnl)}',
+                Text(bought ? '매수가 대비 ${pnl == null ? '-' : pct(pnl)}' : (done ? '미체결' : '매수 전'),
                     style: tx.bodySmall?.copyWith(color: (pnl ?? 0) >= 0 ? upColor : downColor)),
               ]),
             ]),
@@ -353,7 +443,8 @@ class _TrackCard extends StatelessWidget {
           const SizedBox(height: 4),
           infoBoxes([
             InfoBox('${prevDay ? '${'${t['date']}'.substring(5)} ' : ''}${t['time']} 포착', bold: true, fill: true),
-            InfoBox('매수 ${num0(t['entry'] as num?)} (${num0(t['buy_lo'] as num?)}~${num0(t['buy_hi'] as num?)})'),
+            if (cb && t['buy_time'] != null) InfoBox('${t['buy_time']} 매수', color: upColor, bold: true),
+            InfoBox('${cb && !bought ? '매수범위' : '매수 ${num0(t['entry'] as num?)}'} (${num0(t['buy_lo'] as num?)}~${num0(t['buy_hi'] as num?)})'),
             InfoBox('손절 ${num0(t['stop'] as num?)}', color: downColor),
             InfoBox('1차 ${num0(t['t1'] as num?)}', color: upColor),
             InfoBox('2차 ${num0(t['t2'] as num?)}', color: upColor),
@@ -368,7 +459,13 @@ class _TrackCard extends StatelessWidget {
               childrenPadding: EdgeInsets.zero,
               initiallyExpanded: false,
               title: Text('기존 상태설명 (${t['time']} 충족 때)', style: tx.bodyMedium),
-              children: [lc ? LimitcatchTile(r: card, rank: 1) : DaytradeTile(r: card, rank: 1)],
+              children: [
+                cb
+                    ? ClosingbetTile(r: card, rank: 1, showRules: true)
+                    : lc
+                        ? LimitcatchTile(r: card, rank: 1)
+                        : DaytradeTile(r: card, rank: 1)
+              ],
             ),
           ),
           // 현재 상태 | 시간 | 매매결과
@@ -377,7 +474,7 @@ class _TrackCard extends StatelessWidget {
               flex: 6,
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('현재 상태', style: tx.labelMedium?.copyWith(color: Colors.grey)),
-                for (final s in [..._states, if (closeT != null) '마감 청산'])
+                for (final s in [...(cb ? _cbStates : _states), if (closeT != null) '마감 청산', if (noFillT != null) '미체결'])
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 1.5),
                     child: Row(children: [
@@ -413,7 +510,8 @@ class _TrackCard extends StatelessWidget {
                 ] else ...[
                   Text('진행중', style: tx.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                   Blink(on: blink, child: Text(cur, style: tx.bodySmall?.copyWith(fontWeight: blink ? FontWeight.bold : null))),
-                  Text(lc ? '다음 날 09:30 까지' : '15:20 까지', style: tx.bodySmall?.copyWith(color: Colors.grey)),
+                  Text(cb ? (bought ? '다음 날 10:30 까지' : '오늘 15:30 까지 매수 범위 대기') : lc ? '다음 날 09:30 까지' : '15:20 까지',
+                      style: tx.bodySmall?.copyWith(color: Colors.grey)),
                   if (quote != null)
                     Text('지금가 기준${where == null ? '' : ' $where'} · 저녁 확정',
                         style: tx.bodySmall?.copyWith(color: Colors.orange)),

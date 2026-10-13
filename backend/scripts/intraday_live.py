@@ -100,7 +100,8 @@ class Live:
         name = tracker.cfg["name"]
         if state == "매수발생":
             return (f"매수발생 · {t['name']}",
-                    f"{name} {t['time']} 진입조건충족\n매수 {t['entry']:,.0f} · 손절 {t['stop']:,.0f}"
+                    f"{name} {t.get('buy_time') or t['time']} {'매수 범위 매수' if tracker.kind == 'closingbet' else '진입조건충족'}"
+                    f"\n매수 {t['entry']:,.0f} · 손절 {t['stop']:,.0f}"
                     + (f" · 1차 {t['t1']:,.0f}" if t.get("t1") else ""))
         if state == "매도신호포착":
             return (f"매도발생 · {t['name']}",
@@ -153,9 +154,23 @@ def main():
     dt = sd.Runner(sb, kis, listing, args.top, args.workers, runner="pc")
     dt.until = "10:00"
     lc = sl.Runner(sb, kis, listing, ohlcv, sectors, args.workers, runner="pc", log_dir=data_dir(cfg) / "limitcatch")
+    from stockeye.trading.intraday_track import Tracker
+    cb = Tracker(sb, "closingbet", _now().strftime("%Y-%m-%d"), carry_only=True)   # 전날 종가배팅 → 오늘 10:30 까지
     live = Live(sb, admin_topics(sb))
     print(f"관리자 알림 토픽 {len(live.topics)}개" + ("" if live.topics else " — 없음 (알림 설정에서 토픽 저장 또는 setx NTFY_TOPIC)"))
-    trackers = (dt.track, lc.track)
+    trackers = (dt.track, lc.track, cb)
+
+    def cb_publish(now) -> None:                                       # 앱 '종가배팅' 구역의 전날 내역
+        if sb:
+            try:
+                from stockeye.cloud import publish as pub
+                pub.publish_status(sb, "closingbet_track", {"date": cb.day, "time": now.strftime("%H:%M"),
+                                                            "tracked": cb.view()})
+            except Exception as e:  # noqa: BLE001
+                log.debug("종가배팅 내역 발행 실패: %s", e)
+    cb_publish(_now())
+    if cb.carry:
+        print(f"전날 종가배팅 {len(cb.carry)}개 → 오늘 10:30 까지 추적")
     for tr in trackers:
         tr.on_event = live.on_event
 
@@ -206,8 +221,17 @@ def main():
                 lc.track.save()
         except Exception as e:  # noqa: BLE001
             print(f"⚠ 이번 회차 실패: {e}")
+        try:                                                           # 전날 종가배팅: 09:00~10:30 1분봉으로 (실시간이면 목표·손절은 체결로)
+            if cb.any_open() and hm >= "09:00":
+                for code in cb.codes():
+                    b = dt._bars(code, now.strftime("%H%M%S"))
+                    cb.update(code, b, float(b["close"].iloc[-1]) if b is not None and len(b) else None, None, now)
+                cb.save()
+                cb_publish(now)
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠ 종가배팅 추적 실패: {e}")
         # 실시간: 고정 종목만 구독 (먼저 잡힌 순, 최대 40). 끊겨 있으면 1분봉으로 목표·손절 판단
-        codes = list(dict.fromkeys(lc.track.codes() + dt.track.codes()))
+        codes = list(dict.fromkeys(cb.codes() + lc.track.codes() + dt.track.codes()))
         if feed:
             feed.set_wanted(codes)
             ok = feed.connected and (feed.last_tick == 0 or time.time() - feed.last_tick < 300)

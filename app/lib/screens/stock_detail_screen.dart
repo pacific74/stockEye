@@ -99,8 +99,21 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     final at = q.tradedAt ?? (_kstOpen() ? k : null);
     if (at == null) return chart;
     final today = at.toIso8601String().substring(0, 10);
-    if (today.compareTo('${chart.last['date']}') <= 0) return chart; // 이미 들어 있음
+    final last = '${chart.last['date']}';
     final o = q.open ?? q.price;
+    if (today.compareTo(last) < 0) return chart;
+    if (today == last) {
+      // 장중 재분석(11:00·14:00)이 그때 가격으로 오늘 봉을 넣어 둠 → 지금 시세로 바꿈 (이평선 값은 그대로)
+      final b = chart.last;
+      double? n(String k) => (b[k] as num?)?.toDouble();
+      final hi = [q.high, n('high'), q.price].whereType<double>().reduce((a, c) => a > c ? a : c);
+      final lo = [q.low, n('low'), q.price].whereType<double>().reduce((a, c) => a < c ? a : c);
+      return [
+        ...chart.sublist(0, chart.length - 1),
+        {...b, 'open': q.open ?? n('open') ?? o, 'high': hi, 'low': lo, 'close': q.price,
+         'volume': q.volume ?? b['volume'] ?? 0, 'live': true},
+      ];
+    }
     return [
       ...chart,
       {

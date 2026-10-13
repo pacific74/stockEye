@@ -172,8 +172,8 @@ def test_runner_step(monkeypatch, tmp_path):
         def minute_bars_day(self, c, s, e): return _bars([12000] * 10 + [LIM] * 20)
         def minute_bars(self, c, e): return _bars([LIM], start="2026-10-12 09:30")
 
+    monkeypatch.setattr(sl, "_now", lambda: pd.Timestamp("2026-10-12 10:00"))      # 날짜 고정 (Runner 가 만들 때 오늘을 읽음)
     run = sl.Runner(None, K(), listing, oh, sectors, workers=2, log_dir=tmp_path)
-    monkeypatch.setattr(sl, "_now", lambda: pd.Timestamp("2026-10-12 10:00"))
     p = run.step()
     codes = {r["code"]: r for r in p["items"]}
     assert set(codes) == {"000010", "000030"} and codes["000030"]["status"] == "제외"

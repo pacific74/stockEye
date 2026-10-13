@@ -153,6 +153,9 @@ def main():
     step("리포트 → Storage", lambda: (sync.put_json("reports/latest.json", report),
                                        sync.put_json(f"reports/{report['date']}.json", report)), errors)
     step("리포트 발행", lambda: pub.publish_report(sb, report), errors, required=True)
+    if report.get("sector_members"):                                # 앱 업종 상세 '전체 종목' (업종마다 전 종목 등락)
+        step("업종 전체 종목 발행", lambda: pub.publish_status(sb, "sector_members", {
+            "date": report["date"], **report["sector_members"]}), errors)
     if not args.as_of:                                              # 검증용 추천 기록 (영구 · 같은 날 첫 기록만)
         from stockeye.cloud.recommend import record_daily
         step("추천 기록 (검증용)", lambda: record_daily(sb, report), errors)

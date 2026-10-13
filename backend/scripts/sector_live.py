@@ -1,8 +1,8 @@
 """업종/테마 '오늘' 강도 — 장중 1시간마다 (GitHub sector_live 작업, PC 필요 없음)
 
-  최근 저녁 리포트의 업종·테마별 '전체 종목'(평소 거래대금 5억↑)과 가중치(20일 평균 거래대금)
-  → 네이버 지금 시세로 업종마다 거래대금 가중 등락률 → Supabase system_status 'sectors_live'
-  → 앱 메인 '업종/테마 강도' 왼쪽(오늘). 저녁 리포트의 업종 등락과 같은 계산 방식.
+  최근 저녁 리포트의 업종·테마별 '전체 종목'과 가중치(시가총액 — HTS 업종지수와 같은 방식, 없으면 같은 비중)
+  → 네이버 지금 시세로 업종마다 가중 등락률 + 단순 평균 + 상승/하락 종목 수 → Supabase system_status 'sectors_live'
+  → 앱 메인 '업종/테마 강도' 왼쪽(오늘). 저녁 리포트의 업종 등락과 같은 계산 방식 (2026-10-13 전체 종목으로 바꿈).
 
   python -m scripts.sector_live            # 한 번
   python -m scripts.sector_live --dry-run  # 발행 없이 화면에만
@@ -33,19 +33,21 @@ def members_of(sectors: list[dict]) -> dict[str, list[tuple[str, float]]]:
 def compute(members: dict[str, list[tuple[str, float]]], chg: dict[str, float], types: dict[str, str]) -> list[dict]:
     rows = []
     for grp, ms in members.items():
-        sw = sr = 0.0
-        n = up = 0
+        sw = sr = se = 0.0
+        n = up = down = 0
         for code, w in ms:
             c = chg.get(code)
             if c is None or w <= 0:
                 continue
             sw += w
             sr += w * c
+            se += c
             n += 1
             up += c > 0
+            down += c < 0
         if n >= 3 and sw > 0:
-            rows.append({"group": grp, "type": types.get(grp), "chg_pct": round(sr / sw, 2), "n": n, "up": up,
-                         "members": len(ms)})
+            rows.append({"group": grp, "type": types.get(grp), "chg_pct": round(sr / sw, 2), "eq_pct": round(se / n, 2),
+                         "n": n, "up": up, "down": down, "members": len(ms)})
     return sorted(rows, key=lambda r: -r["chg_pct"])
 
 

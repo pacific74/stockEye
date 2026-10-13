@@ -67,9 +67,10 @@ class PykrxSource:
             if df is None or df.empty:
                 continue
             df = df.reset_index()
-            df = df.rename(columns={df.columns[0]: "code", "종목명": "name", "업종명": "sector"})
+            df = df.rename(columns={df.columns[0]: "code", "종목명": "name", "업종명": "sector", "시가총액": "marcap"})
             df["market"] = mkt
-            parts.append(df[["code", "name", "sector", "market"]])
+            # 시가총액: 업종 등락을 HTS 업종지수처럼 시가총액 가중으로 계산할 때 씀 (2026-10-13)
+            parts.append(df[["code", "name", "sector", "market"] + (["marcap"] if "marcap" in df else [])])
             _time.sleep(self.sleep)
         if not parts:
             return pd.DataFrame()

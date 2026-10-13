@@ -14,7 +14,7 @@ from pathlib import Path
 import pandas as pd
 
 from .ai.explainer import Explainer
-from .analysis.market import market_overview, load_themes, build_groups, group_strength
+from .analysis.market import market_overview, load_themes, build_groups, group_strength, group_members, cap_map
 from .config import data_dir
 from .data.pit import PointInTimeData
 from .engine.screener import screen, default_as_of
@@ -43,7 +43,8 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
     names = pit.listing if not pit.listing.empty else pd.DataFrame(columns=["code", "name"])
     sectors = getattr(pit, "sectors", pd.DataFrame())
     groups, unmatched = build_groups(names, sectors, load_themes())
-    strength = group_strength(x, groups, uni_scores, names)
+    caps = cap_map(sectors)                                   # 업종 등락 = 전체 종목 시가총액 가중 (없으면 단순 평균)
+    strength = group_strength(x, groups, uni_scores, names, marcap=caps)
     mf = cfg.get("market_filter", {})
     market = market_overview(view.index(), x, int(mf.get("ma", 60)))
     try:                                   # 저녁 알림 '금일장 브리핑·내일장 예상'용 지수·거래대금 요약
@@ -67,6 +68,7 @@ def build_report_full(pit: PointInTimeData, cfg: dict, as_of=None, with_ai: bool
     report = {
         "date": d["date"], "as_of": d["as_of"], "funnel": d["funnel"], "dropped": d["dropped"],
         "market": market, "sectors": strength, "unmatched_theme_names": unmatched,
+        "sector_members": {"basis": "cap" if caps else "eq", "groups": group_members(x, groups, names, caps)},
         "labels": d["labels"], "explanations": {}, "brief": brief,
     }
 

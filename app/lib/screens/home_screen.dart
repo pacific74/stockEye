@@ -157,7 +157,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ...asList(_report!['top10']).map((c) => '${c['code']}'),
       for (final l in _picks.values) ...l.map((c) => '${c['code']}'),
       ..._pool.map((c) => '${c['code']}'),
-      for (final g in asList(_report!['sectors'])) ...asList(g['top']).map((m) => '${m['code']}'),
     }.toList();
     final mine = _holdings.map((h) => '${h['code']}').where((c) => !common.contains(c)).toList();
     final r = await Future.wait([Live.indices(), Live.stocks(common), Live.stocks(mine)]);
@@ -223,7 +222,6 @@ class _HomeScreenState extends State<HomeScreen> {
               : _dateLabel(repDate, clock.now);
           final repBasis = intraday != null ? repLabel : '$repLabel 마감'; // "오늘(10/8) 11:00 장중" / "10/7 마감"
           final quotes = _stk?.quotes ?? const <String, LiveQuote>{};
-          final todaySec = sectorsToday(sectors, quotes); // 업종 오늘 지금 등락 (거래대금 가중)
           const weak = <String>{}; // V3: 시장 필터 없음 (비중 고정)
           final t = Theme.of(context).textTheme;
           return RefreshIndicator(
@@ -242,16 +240,18 @@ class _HomeScreenState extends State<HomeScreen> {
                             Navigator.push(context, MaterialPageRoute(builder: (_) => const SectorListScreen())),
                         child: const Text('전체'))),
                 () {
-                  // 왼쪽 = 오늘: sector-live(업종 전체 종목, 1시간마다) · 아직 없으면 대표 종목 지금 시세 평균
+                  // 왼쪽 = 오늘: sector-live (업종 전체 종목 · 시가총액 가중, 1시간마다). 아직 안 돌았으면 비워 둠
+                  //   (예전엔 대표 종목 5개 평균을 보여줬는데 업종 전체와 달라서 뺌 — 2026-10-13)
                   final byName = {for (final g in sectors) '${g['group']}': g};
                   final liveToday = dtIsToday(_secLive) && asList(_secLive['groups']).isNotEmpty;
                   final today = liveToday
                       ? [
                           for (final x in asList(_secLive['groups']))
                             if ((x['chg_pct'] as num?) != null)
-                              (byName['${x['group']}'] ?? {'group': x['group']}, (x['chg_pct'] as num).toDouble()),
+                              ({...(byName['${x['group']}'] ?? {'group': x['group']}), 'today': x, 'today_time': _secLive['time']},
+                               (x['chg_pct'] as num).toDouble()),
                         ]
-                      : [for (final x in todaySec) (x.g, x.avg)];
+                      : <(Json, double)>[];
                   final prevDate = '${d['sectors_prev_date'] ?? repDate}';
                   final prev = [
                     for (final g in asList(d['sectors_prev']))
@@ -261,10 +261,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   return _SectorCompare(
                     today: today,
                     todayLabel: liveToday ? '오늘 ${_secLive['time']}' : (_liveAt == null ? '오늘' : '오늘 ${_hm(_liveAt!)}'),
-                    todaySub: liveToday ? '업종 전체 종목 · 1시간마다' : '대표 종목 평균 (전체 집계 전)',
+                    todaySub: liveToday ? '업종 전체 종목 · 시가총액 가중 · 1시간마다' : '09:10부터 1시간마다 업종 전체 집계 (아직 전)',
                     prev: prev,
                     prevLabel: pl.startsWith('오늘') ? '$pl 마감' : '전일($pl) 마감',
-                    prevSub: '업종 전체 종목 · 저녁 배치',
+                    prevSub: '업종 전체 종목 · 시가총액 가중',
                   );
                 }(),
                 if (_stk?.error != null && quotes.isEmpty)
@@ -592,7 +592,7 @@ class _SectorCompare extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     Widget row(int rank, Json g, double v) => InkWell(
-          onTap: g['members'] == null ? null : () => _open(context, g),
+          onTap: () => _open(context, g),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 5),
             child: Row(children: [

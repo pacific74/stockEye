@@ -225,8 +225,11 @@ class _Records extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: Row(children: [
               Expanded(flex: 4, child: Text('종목명', style: head)),
-              Expanded(flex: 3, child: Text('매수일', style: head, textAlign: TextAlign.center)),
-              Expanded(flex: 3, child: Text('매도일', style: head, textAlign: TextAlign.center)),
+              Expanded(flex: 3, child: Text('구분', style: head, textAlign: TextAlign.center)),
+              Expanded(flex: 2, child: Text('매수일', style: head, textAlign: TextAlign.center)),
+              Expanded(flex: 3, child: Text('매수가', style: head, textAlign: TextAlign.right)),
+              Expanded(flex: 2, child: Text('매도일', style: head, textAlign: TextAlign.center)),
+              Expanded(flex: 3, child: Text('매도가', style: head, textAlign: TextAlign.right)),
               Expanded(flex: 3, child: Text('수익률', style: head, textAlign: TextAlign.right)),
             ]),
           ),
@@ -250,6 +253,17 @@ class _EntryRow extends StatelessWidget {
     return s.startsWith(now) ? '${int.parse(s.substring(5, 7))}/${int.parse(s.substring(8, 10))}' : s.substring(2, 10).replaceAll('-', '/');
   }
 
+  /// 칸이 좁으면 글자를 줄여서 한 줄에
+  static Widget _cell(String text, TextAlign align, {Color? color, bool bold = false}) => FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: align == TextAlign.right
+            ? Alignment.centerRight
+            : (align == TextAlign.center ? Alignment.center : Alignment.centerLeft),
+        child: Text(text,
+            maxLines: 1,
+            style: TextStyle(fontSize: 12, color: color, fontWeight: bold ? FontWeight.bold : null)),
+      );
+
   @override
   Widget build(BuildContext context) {
     final closed = p['status'] == 'closed';
@@ -272,21 +286,39 @@ class _EntryRow extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // 한 줄: 종목명 · 관심구분 · 매수일 · 매수가 · 매도일 · 매도가(보유 중이면 지금가) · 수익률
           Row(children: [
             Expanded(
                 flex: 4,
                 child: Text('${p['name']}',
-                    style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
-            Expanded(flex: 3, child: Text(_d(p['entry_time']), textAlign: TextAlign.center)),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis)),
             Expanded(
                 flex: 3,
-                child: Text(closed ? _d(p['exit_time']) : '보유 중',
-                    textAlign: TextAlign.center, style: closed ? null : const TextStyle(color: Colors.teal))),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(
+                        color: Colors.blueGrey.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)),
+                    child: Text(_kinds[kind] ?? kind,
+                        style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+                )),
+            Expanded(flex: 2, child: _cell(_d(p['entry_time']), TextAlign.center)),
+            Expanded(flex: 3, child: _cell(num0(entry), TextAlign.right)),
+            Expanded(
+                flex: 2,
+                child: _cell(closed ? _d(p['exit_time']) : '보유', TextAlign.center,
+                    color: closed ? null : Colors.teal)),
             Expanded(
                 flex: 3,
-                child: Text(pct(ret),
-                    textAlign: TextAlign.right,
-                    style: TextStyle(fontWeight: FontWeight.bold, color: (ret ?? 0) >= 0 ? upColor : downColor))),
+                child: _cell(
+                    closed ? num0((p['exit_price'] as num?)?.toDouble()) : (q != null ? num0(q!.price) : '-'),
+                    TextAlign.right,
+                    color: closed ? null : Colors.teal)),
+            Expanded(
+                flex: 3,
+                child: _cell(pct(ret), TextAlign.right,
+                    bold: true, color: (ret ?? 0) >= 0 ? upColor : downColor)),
           ]),
           Padding(
             padding: const EdgeInsets.only(top: 4),

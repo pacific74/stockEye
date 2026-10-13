@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -42,15 +44,44 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
   late Future<Json> _f = Api.stock(widget.code);
   LiveQuote? _q; // 지금 시세 (오늘 봉)
 
+  Timer? _t;
+  String? _liveErr; // 지금 시세를 못 받은 이유 (차트 제목에 표시)
+
   @override
   void initState() {
     super.initState();
     _loadLive();
+    // 장중에는 1분마다 지금 시세 → 오늘 봉·현재가 선 갱신
+    _t = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (_kstOpen()) _loadLive();
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  /// 한국 시각 평일 09:00~15:35
+  static bool _kstOpen() {
+    final k = DateTime.now().toUtc().add(const Duration(hours: 9));
+    final m = k.hour * 60 + k.minute;
+    return k.weekday <= 5 && m >= 9 * 60 && m <= 15 * 60 + 35;
   }
 
   Future<void> _loadLive() async {
-    final r = await Live.stocks([widget.code]);
-    if (mounted) setState(() => _q = r.quotes[widget.code]);
+    try {
+      final r = await Live.stocks([widget.code]);
+      if (!mounted) return;
+      final q = r.quotes[widget.code];
+      setState(() {
+        if (q != null) _q = q; // 실패하면 직전 값 유지
+        _liveErr = q == null ? (r.error ?? '응답에 종목 없음') : null;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _liveErr = '$e');
+    }
   }
 
   void _refresh() {
@@ -62,8 +93,12 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
 
   /// 저녁 배치 차트(어제까지) + 오늘 시세로 만든 봉 1개
   static List<Json> _withToday(List<Json> chart, LiveQuote? q) {
-    if (q == null || q.tradedAt == null || chart.isEmpty) return chart;
-    final today = q.tradedAt!.toIso8601String().substring(0, 10);
+    if (q == null || chart.isEmpty) return chart;
+    // 체결 시각이 없으면 장중일 때 한국 날짜를 오늘로
+    final k = DateTime.now().toUtc().add(const Duration(hours: 9));
+    final at = q.tradedAt ?? (_kstOpen() ? k : null);
+    if (at == null) return chart;
+    final today = at.toIso8601String().substring(0, 10);
     if (today.compareTo('${chart.last['date']}') <= 0) return chart; // 이미 들어 있음
     final o = q.open ?? q.price;
     return [
@@ -218,8 +253,8 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(
                           hasToday
-                              ? '일봉 · 맨 오른쪽 봉 = 오늘 ${_hm(q!.tradedAt!)} 시세 (장중엔 계속 바뀜)'
-                              : '일봉 (최근 ${chart.length}일)',
+                              ? '일봉 · 맨 오른쪽 봉 = 오늘${q!.tradedAt == null ? '' : ' ${_hm(q!.tradedAt!)}'} 시세 (장중 1분마다 갱신)'
+                              : '일봉 (최근 ${chart.length}일)${q == null && _liveErr != null ? ' · 지금 시세를 못 받아 어제까지만 ($_liveErr)' : ''}',
                           style: Theme.of(context).textTheme.bodySmall),
                       const SizedBox(height: 6),
                       ZoomableChart(
@@ -232,6 +267,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                                 if (iv('entry') != null)
                                   PriceLevel(widget.source == 'closingbet' ? '매수' : '진입', iv('entry')!.toDouble(), Colors.grey),
                                 if (iv('stop') != null) PriceLevel('손절', iv('stop')!.toDouble(), downColor),
+                                if (q != null) PriceLevel('현재', q.price, Colors.grey),
                               ]
                             : [
                           if (pv('target1') != null) PriceLevel('1차 목표', pv('target1')!.toDouble(), upColor),

@@ -211,3 +211,15 @@ def test_closingbet_no_fill_and_gap_down():
     tr.update("000040", _bars([(9600, 9650, 9500, 9550, 100)], start="2026-10-14 09:00"), None, None,
               pd.Timestamp("2026-10-14 09:01"))
     assert t["result"] == "손절" and t["sold"] == [[9600, 1.0]]                 # 시초가가 손절 아래 → 시초가
+
+
+def test_closingbet_buy_window_1450_1520():
+    tr = it.Tracker(None, "closingbet", "2026-10-13", user_id=None)
+    tr.add([CB], pd.Timestamp("2026-10-13 14:52"))
+    tr.update("000030", None, 10000, None, pd.Timestamp("2026-10-13 15:25"))   # 범위 안이지만 15:20 지남
+    t = tr.tracks["000030"]
+    assert t["result"] == "미체결" and t["events"][-1] == {"state": "미체결", "time": "15:20"}
+    tr2 = it.Tracker(None, "closingbet", "2026-10-13", user_id=None)
+    tr2.add([CB], pd.Timestamp("2026-10-13 14:52"))
+    tr2.update("000030", None, 10000, None, pd.Timestamp("2026-10-13 14:53"))  # 14:50 뒤 바로 매수
+    assert tr2.tracks["000030"]["buy_time"] == "14:53"

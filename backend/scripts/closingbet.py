@@ -57,6 +57,7 @@ class Runner:
         self.hist = {c: g.sort_values("date").reset_index(drop=True) for c, g in oh[oh["date"].isin(last)].groupby("code")}
         self.bars: dict[str, pd.DataFrame] = {}
         self.news: dict[str, str | None] = {}
+        self.news_items: dict[str, list] = {}
         from stockeye.cloud.recommend import IntradayRecorder
         self.rec = IntradayRecorder(sb, "closingbet", runner)        # 검증용 추천 기록 ('매수 후보' 첫 시점)
         from stockeye.trading.intraday_track import Tracker
@@ -67,7 +68,13 @@ class Runner:
         if code not in self.news:
             from stockeye.data import naver_news
             from stockeye.analysis.news_flags import judge
-            self.news[code] = judge(naver_news.fetch(self.names.get(code, code), days=2))["level"] if naver_news.enabled() else None
+            if naver_news.enabled():
+                from stockeye.engine.limitcatch import news_items
+                items = naver_news.fetch(self.names.get(code, code), days=2)
+                self.news[code] = judge(items)["level"]
+                self.news_items[code] = news_items(items)                 # 앱 카드·상세 화면용 제목
+            else:
+                self.news[code] = None
         return self.news[code]
 
     def _bars(self, code, hhmmss):
@@ -115,6 +122,8 @@ class Runner:
                     pass
                 r = cb.evaluate(daily, today, self._bars(code, now.strftime("%H%M%S")), ctx)
             r.update({"code": code, "name": self.names.get(code, code), "atr": round(cb.atr_pct(daily), 4)})
+            if self.news_items.get(code):
+                r["news"] = self.news_items[code]
             return r
 
         from concurrent.futures import ThreadPoolExecutor

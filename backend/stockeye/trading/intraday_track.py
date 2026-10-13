@@ -18,7 +18,7 @@
 매수는 신호가 뜬 그 시각 진입가에 됐다고 봄 (모의 · 주문 없음). 비용 0.25% 뺀 손익. 매매일지 금액은 1건 100만원 기준
 상태는 Storage track/<kind>/<날짜>.json 에 저장 (PC 를 다시 켜도 · [종목찾기] 버튼으로 돌려도 이어서)
 
-종가배팅 (2026-10-13): '매수 후보' 가 처음 뜨면 고정(매수대기) → 그날 15:30 까지 가격이 매수 범위(종가 ±0.5%)에 들어오면
+종가배팅 (2026-10-13): '매수 후보' 가 처음 뜨면 고정(매수대기) → 그날 14:50~15:20 사이 가격이 매수 범위(후보 때 가격 ±0.5%)에 들어오면
 그 가격에 매수 (매매일지 기록) · 안 들어오면 미체결(기록 안 함). 산 날은 목표·손절을 보지 않고 다음 날부터:
 시초가가 손절 아래면 시초가 전량 · 1차 목표에 절반 · 2차에 나머지 · 1차 뒤 매수가 이탈 시 나머지 · 10:30 남은 몫 전량
 """
@@ -40,7 +40,7 @@ CFG = {
     "limitcatch": {"name": "상한가포착", "trigger": "매수 검토", "hold": 75.0, "end": "09:30", "overnight": True},
     # 종가배팅: 고정 뒤 매수 범위에 들어와야 매수 · 1차 50% → 2차 나머지 · 매도신호(거래량) 안 봄 · 전날 내역도 화면에
     "closingbet": {"name": "종가배팅", "trigger": "매수 후보", "hold": None, "end": "10:30", "overnight": True,
-                   "wait_buy": True, "buy_until": "15:30", "sell": (0.5, 1.0), "sell_signal": False, "show_prev": True},
+                   "wait_buy": True, "buy_until": "15:20", "sell": (0.5, 1.0), "sell_signal": False, "show_prev": True},
 }
 RESULTS = ("이익실현", "매수가매도", "손절", "미체결")
 LC_STOP = 0.04                    # 상한가포착 손절 = 매수가 −4%
@@ -198,7 +198,7 @@ def _no_fill(t: dict, hm: str, now: pd.Timestamp) -> bool:
 def _wait_buy(t: dict, bars: pd.DataFrame | None, price: float | None, now: pd.Timestamp, cfg: dict) -> bool:
     """매수대기: 고정 뒤 그날 buy_until 까지 매수 범위에 닿으면 매수. 넘기면 미체결 (True)"""
     lo_b, hi_b = t["buy_lo"], t["buy_hi"]
-    until = pd.Timestamp(f"{t['date']} {cfg.get('buy_until', '15:30')}")
+    until = pd.Timestamp(f"{t['date']} {cfg.get('buy_until', '15:20')}")
     if bars is not None and len(bars):
         b = bars[(bars["time"] > pd.Timestamp(t["seen"])) & (bars["time"] <= until)].sort_values("time")
         for _, r in b.iterrows():
@@ -214,7 +214,7 @@ def _wait_buy(t: dict, bars: pd.DataFrame | None, price: float | None, now: pd.T
             _buy(t, price, now)
             return False
     if now > until:
-        return _no_fill(t, until.strftime("%H:%M") if now.strftime("%Y-%m-%d") == t["date"] else "15:30", now)
+        return _no_fill(t, until.strftime("%H:%M"), now)
     return False
 
 
@@ -475,7 +475,7 @@ def finish_day(sb, kis, day: str, kinds=("daytrade", "limitcatch", "closingbet")
     결과가 나오면 관리자 매매일지도 매도 기록. 7일 지난 intraday_live 행 정리"""
     out = {}
     day = pd.Timestamp(day).strftime("%Y-%m-%d")
-    end = pd.Timestamp(f"{day} 15:31")                                # 장 마감 뒤 (종가배팅 15:30 까지 매수 범위 판단 → 그 뒤 미체결)
+    end = pd.Timestamp(f"{day} 15:31")                                # 장 마감 뒤 (종가배팅 15:20 까지 매수 범위 판단 → 그 뒤 미체결)
     for kind in kinds:
         tr = Tracker(sb, kind, day)
         n_done = 0

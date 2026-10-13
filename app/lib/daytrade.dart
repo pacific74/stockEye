@@ -47,6 +47,32 @@ bool dtIsToday(Json d) {
   return d['date'] == today;
 }
 
+/// 카드 안 뉴스 한 줄 (장중 카드가 찾은 뉴스 · 악재 먼저) — 제목 1개 + 나머지 건수. 전체는 눌러서 상세 화면
+class NewsLine extends StatelessWidget {
+  const NewsLine(this.items, {super.key});
+  final List<Json> items;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    final f = items.first;
+    final tone = (f['tone'] as num?)?.toInt() ?? 0;
+    final c = tone < 0 ? downColor : (tone > 0 ? upColor : Colors.grey);
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(children: [
+        Icon(tone < 0 ? Icons.warning_amber_rounded : Icons.article_outlined, size: 14, color: c),
+        const SizedBox(width: 4),
+        Expanded(
+            child: Text('${f['title']}',
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall)),
+        if (items.length > 1)
+          Text(' 외 ${items.length - 1}건', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey)),
+      ]),
+    );
+  }
+}
+
 /// 후보 카드: 순위 · 종목명 [점수] · 현재가 / 상태 · 유형 · VWAP · 거래대금 / 진입 · 손절 · 1·2차 / 근거
 class DaytradeTile extends StatelessWidget {
   const DaytradeTile({super.key, required this.r, required this.rank, this.price});
@@ -111,6 +137,7 @@ class DaytradeTile extends StatelessWidget {
                 for (final x in ex) Text('⛔ $x', style: t.bodySmall?.copyWith(color: Colors.red)),
                 for (final x in warns) Text('⚠ $x', style: t.bodySmall?.copyWith(color: Colors.orange)),
                 if (reasons.isNotEmpty) Text(reasons.join(' · '), style: t.bodySmall?.copyWith(color: Colors.grey)),
+                NewsLine(asList(r['news'])),
               ]),
             ),
           ]),

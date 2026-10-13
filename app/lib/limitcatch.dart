@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'api.dart';
-import 'daytrade.dart' show dtIsToday, DaytradeFindButton, lookupLabel;
+import 'daytrade.dart' show dtIsToday, DaytradeFindButton, NewsLine, lookupLabel;
 import 'format.dart';
 import 'screens/stock_detail_screen.dart';
 import 'widgets/common.dart';
@@ -110,10 +110,7 @@ class LimitcatchTile extends StatelessWidget {
                   if (r['limit'] is num) InfoBox('상한가 ${num0(r['limit'] as num?)}'),
                 ]),
                 for (final x in ex) Text('⛔ $x', style: t.bodySmall?.copyWith(color: Colors.red)),
-                // 악재 판단 근거 (제목 1개 · 전체는 눌러서 상세 화면)
-                if ((nl == 'neg' || nl == 'severe') && asList(r['news']).isNotEmpty)
-                  Text('   └ ${asList(r['news']).first['title']}',
-                      maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySmall?.copyWith(color: Colors.grey)),
+                NewsLine(asList(r['news'])), // 뉴스 제목 1개 (악재 먼저 · 전체는 눌러서 상세 화면)
                 for (final x in risks) Text('⚠ $x', style: t.bodySmall?.copyWith(color: Colors.orange)),
                 if (r['fill_warn'] != null) Text('ⓘ ${r['fill_warn']}', style: t.bodySmall?.copyWith(color: Colors.grey)),
                 if (reasons.isNotEmpty) Text(reasons.join(' · '), style: t.bodySmall?.copyWith(color: Colors.grey)),

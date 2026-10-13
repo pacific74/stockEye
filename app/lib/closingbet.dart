@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'api.dart';
-import 'daytrade.dart' show dtIsToday, DaytradeFindButton, liveWindow, lookupLabel;
+import 'daytrade.dart' show dtIsToday, DaytradeFindButton, NewsLine, liveWindow, lookupLabel;
 import 'format.dart';
 import 'screens/stock_detail_screen.dart';
 import 'widgets/common.dart';
 
 /// 종가배팅 (CB-0.1) — PC 가 평일 14:50~15:20 1분마다 올리는 후보 (system_status 'closingbet')
-///   상태: 매수 후보(80↑ · 갭 위험 높음 아님 · 15:10 이후) / 우선 관찰(80↑) / 관찰(70↑) / 진입 금지
+///   상태: 매수 후보(80↑ · 갭 위험 높음 아님 · 14:50~15:20) / 우선 관찰(80↑) / 관찰(70↑) / 진입 금지
 ///   종가 무렵 매수 → 다음 날 오전(10:30 까지) 청산. 주문은 하지 않음 — 알림·관찰용
 
 Color cbStatusColor(String? s) => switch (s) {
@@ -98,6 +98,7 @@ class ClosingbetTile extends StatelessWidget {
                 for (final x in ex) Text('⛔ $x', style: t.bodySmall?.copyWith(color: Colors.red)),
                 if (why.isNotEmpty) Text('갭 위험: ${why.join(' · ')}', style: t.bodySmall?.copyWith(color: Colors.orange)),
                 if (reasons.isNotEmpty) Text(reasons.join(' · '), style: t.bodySmall?.copyWith(color: Colors.grey)),
+                NewsLine(asList(r['news'])),
                 if (showRules && st == '매수 후보') ...[
                   const SizedBox(height: 4),
                   Text('다음 날 오전 매도 (${r['exit_time'] ?? '10:30'} 까지)', style: t.bodySmall?.copyWith(fontWeight: FontWeight.bold)),
@@ -177,13 +178,13 @@ class _ClosingbetTabState extends State<ClosingbetTab> with AutomaticKeepAliveCl
               today
                   ? '${lookupLabel(d, _at)}${d['final'] == true ? ' (오늘 마지막)' : liveWindow(closing: true) ? ' · 1분마다 갱신' : ''} · 후보 ${d['scanned'] ?? 0} · '
                       '매수 후보 ${c['매수 후보'] ?? 0} · 우선 관찰 ${c['우선 관찰'] ?? 0} · 관찰 ${c['관찰'] ?? 0}'
-                  : '오늘 종가배팅 결과가 아직 없어요. 관리자가 [종목찾기]를 누르거나 PC 에서 16_closingbet.bat 을 켜 두면 올라와요 (매수 후보는 15:10 이후).'
+                  : '오늘 종가배팅 결과가 아직 없어요. 관리자가 [종목찾기]를 누르거나 PC 에서 16_closingbet.bat 을 켜 두면 올라와요 (매수 후보는 14:50~15:20).'
                       '${d['date'] != null ? ' (아래는 ${d['date']} ${d['time']} 결과)' : ''}',
               style: t.bodySmall),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
-          child: Text('80점 이상이어도 갭 위험이 높거나 15:10 전이면 매수 후보가 아니에요. 매수는 종가 근처(매수 범위), '
+          child: Text('80점 이상이어도 갭 위험이 높으면 매수 후보가 아니에요. 매수는 14:50~15:20 사이 매수 범위 안에서, '
               '다음 날 오전 10:30 까지 규칙대로 매도. 갭 위험 괄호는 평소 다음 날 시가 갭 범위(하위 20%~상위 20%). 주문은 하지 않는 알림용이에요.',
               style: t.bodySmall?.copyWith(color: Colors.grey)),
         ),

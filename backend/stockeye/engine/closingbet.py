@@ -17,7 +17,7 @@
   예상 갭 범위 = 지난 60일 시가 갭 하위 20% ~ 상위 20%
 
 필수 제외: 오늘 거래대금 30억 미만 · 오늘 +20% 이상(과열·되밀림) · 관리종목 · 심각 악재 뉴스 · 하락 마감(-1% 미만)
-상태: 진입 금지 / 관찰(70↑) / 우선 관찰(80↑) / 매수 후보(80↑ + 갭 위험 낮음·보통 + 15:10 이후)
+상태: 진입 금지 / 관찰(70↑) / 우선 관찰(80↑) / 매수 후보(80↑ + 갭 위험 낮음·보통 + 14:50~15:20 · 2026-10-13 사용자: 딱 종가가 아니라 그 사이에 매수)
 
 다음 날 매매 (손절가에 정확히 체결된다고 가정하지 않음)
   1차 목표 = 종가 +max(2%, ATR%×0.5) · 2차 = +max(4%, ATR%×1.0) · 손절 = -max(2%, ATR%×0.6) (최대 5%)
@@ -38,6 +38,7 @@ COST = 0.0025                # 왕복 비용 (수수료·세금, 비율)
 MIN_VALUE = 30e8             # 오늘 거래대금 30억
 MAX_CHG = 20.0               # 오늘 +20% 이상 제외
 EXIT_TIME = "10:30"
+BUY_FROM, BUY_UNTIL = "14:50", "15:20"   # 매수 시간 (예전 15:10 이후 → 14:50 부터)
 WATCH, PRIORITY = 70.0, 80.0
 PARTS = {"close20": ("종가 강도", 20), "late20": ("장 후반 매수세", 20), "liq15": ("거래대금·유동성", 15),
          "pat15": ("돌파·눌림 패턴", 15), "news15": ("뉴스·공시", 15), "mkt10": ("시장·업종 흐름", 10),
@@ -184,7 +185,7 @@ def evaluate(daily: pd.DataFrame, today: dict, mbars: pd.DataFrame | None, ctx: 
     hm = pd.Timestamp(ctx["now"]).strftime("%H:%M") if ctx.get("now") is not None else "15:20"
     if ex:
         status = "진입 금지"
-    elif score >= PRIORITY and gr["grade"] != "높음" and hm >= "15:10":
+    elif score >= PRIORITY and gr["grade"] != "높음" and hm >= BUY_FROM:
         status = "매수 후보"
     elif score >= PRIORITY:
         status = "우선 관찰"

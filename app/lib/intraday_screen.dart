@@ -341,7 +341,7 @@ class _ClosingSection extends StatelessWidget {
         child: Text(
             today
                 ? '후보 ${d['scanned'] ?? 0} · 매수 후보 ${c['매수 후보'] ?? 0} · 우선 관찰 ${c['우선 관찰'] ?? 0} · 관찰 ${c['관찰'] ?? 0}'
-                : '평일 14:50~15:20 PC 16_closingbet.bat(작업 스케줄러 14:45) 또는 [종목찾기]로 올라와요 (매수 후보는 15:10 이후)',
+                : '평일 14:50~15:20 PC 16_closingbet.bat(작업 스케줄러 14:45) 또는 [종목찾기]로 올라와요 (매수는 14:50~15:20 사이 매수 범위 안)',
             style: t.bodySmall?.copyWith(color: Colors.grey)),
       ),
       if (prevT.isNotEmpty) ...[
@@ -510,7 +510,7 @@ class _TrackCard extends StatelessWidget {
                 ] else ...[
                   Text('진행중', style: tx.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                   Blink(on: blink, child: Text(cur, style: tx.bodySmall?.copyWith(fontWeight: blink ? FontWeight.bold : null))),
-                  Text(cb ? (bought ? '다음 날 10:30 까지' : '오늘 15:30 까지 매수 범위 대기') : lc ? '다음 날 09:30 까지' : '15:20 까지',
+                  Text(cb ? (bought ? '다음 날 10:30 까지' : '오늘 15:20 까지 매수 범위 대기') : lc ? '다음 날 09:30 까지' : '15:20 까지',
                       style: tx.bodySmall?.copyWith(color: Colors.grey)),
                   if (quote != null)
                     Text('지금가 기준${where == null ? '' : ' $where'} · 저녁 확정',

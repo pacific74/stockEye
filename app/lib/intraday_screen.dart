@@ -143,6 +143,27 @@ class _IntradayScreenState extends State<IntradayScreen> {
     });
   }
 
+  /// 새로 고정된 종목 → "매수발생"(여성) · 새 매도신호포착 → "매도발생"(남성)
+  void _announce(List<Json> tracked) {
+    final now = DateTime.now();
+    final today = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final buy = <String>{}, sell = <String>{};
+    for (final t in tracked) {
+      final key = '${t['kind']}:${t['code']}:${t['date']}';
+      if (t['date'] == today) buy.add(key);
+      if (asList(t['events']).any((e) => e['state'] == '매도신호포착')) sell.add(key);
+    }
+    final first = _buySeen == null;
+    final newBuy = first ? <String>{} : buy.difference(_buySeen!);
+    final newSell = first ? <String>{} : sell.difference(_sellSeen!);
+    _buySeen = {...?_buySeen, ...buy};
+    _sellSeen = {...?_sellSeen, ...sell};
+    () async {
+      if (newBuy.isNotEmpty) await VoiceAlert.buy();
+      if (newSell.isNotEmpty) await VoiceAlert.sell();
+    }();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

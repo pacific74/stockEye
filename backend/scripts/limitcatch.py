@@ -31,6 +31,14 @@ from pathlib import Path
 import pandas as pd
 
 log = logging.getLogger("stockeye.limitcatch")
+
+BANNER = """==============================================================
+ StockEye [상한가포착]  (19_limitcatch.bat · 작업 스케줄러 월~금 08:55)
+  09:05~15:20  1분마다 +20% 이상 종목의 상한가 잠김·풀림·잔량 계산 → 앱 하단 '당일매매'
+  '매수 검토' 종목은 고정 → 다음 날 09:30 까지 목표·손절 추적 (전날 종목도 이어서)
+  1분 호가 기록을 남기고 장 마감 뒤 올림 · 주문은 하지 않음
+  창을 닫으면 멈춤 (닫아도 되는 때: 15:21 이후)
+=============================================================="""
 SHOW = 30
 PRE_VALUE = 50e8          # 근사 거래대금(가격×거래량) 50억 미만은 자세히 안 봄 (100억 기준은 KIS 값으로 다시 확인)
 DANGER_STATUS = {"51": "관리종목", "52": "투자위험", "53": "투자경고", "58": "거래정지", "59": "단기과열"}
@@ -84,6 +92,8 @@ class Runner:
         self.ticks: list[dict] = []
         from stockeye.cloud.recommend import IntradayRecorder
         self.rec = IntradayRecorder(sb, "limitcatch", runner)        # 검증용 추천 기록 ('매수 검토' 첫 시점)
+        from stockeye.trading.intraday_track import Tracker
+        self.track = Tracker(sb, "limitcatch", self.day)             # 당일매매: 매수 검토 종목 고정 → 다음 날 09:30 까지 추적
         self.sec_live, self._sec_at = None, 0.0           # 업종 강도 (10분마다 다시 읽음)
         self._snap_at, self._snap = 0.0, None             # 네이버 전 종목 시세 (순위 조회 실패 때만 · 5분에 한 번)
         self.log_path = (log_dir / f"ticks_{self.day}.jsonl") if log_dir else None
@@ -193,7 +203,7 @@ class Runner:
         val = found["value"] if "value" in found else found["close"] * found["volume"]
         hot = found[(found["chg_pct"] >= lc.MIN_CHG) & (val >= PRE_VALUE)].index.tolist()
         self.ever |= set(hot)
-        cands = list(dict.fromkeys(hot + sorted(self.ever)))      # 한 번 잡힌 종목은 밀려도 계속 (조건 무효 표시)
+        cands = list(dict.fromkeys(hot + sorted(self.ever) + self.track.codes()))  # 한 번 잡힌 종목은 밀려도 계속
         with ThreadPoolExecutor(self.workers) as ex:                   # 여러 종목 동시에 (KIS 초당 한도 안에서)
             res = [r for r in ex.map(lambda c: self.one(c, now, sec), cands) if r is not None]
         self._write_ticks()
@@ -204,11 +214,22 @@ class Runner:
             r["rank"] = i
         counts = {s: sum(r["status"] == s for r in res) for s in order}
         final = now.strftime("%H:%M") >= lc.LAST_NEW
+        # 당일매매: 처음 '매수 검토' 종목 고정 → 1분봉으로 상태·결과 갱신 (전날 잡힌 종목은 오늘 09:30 까지)
+        self.track.add(res, now)
+        score = {r["code"]: r["score"] for r in res}
+        price = {r["code"]: r["price"] for r in res}
+        for code in self.track.codes():
+            b = self.bars.get(code)
+            if b is None:
+                b = self._bars(code, now.strftime("%H%M%S"))
+            px = price.get(code) or (float(b["close"].iloc[-1]) if b is not None and len(b) else None)
+            self.track.update(code, b, px, score.get(code), now)
+        self.track.save()
         return {"date": self.day, "time": now.strftime("%H:%M"), "version": lc.VERSION, "scanned": len(res),
                 "counts": counts, "groups": {"도달": sum(r["group"] == "도달" for r in keep),
                                              "미도달": sum(r["group"] == "미도달" for r in keep)},
                 "items": keep, "final": final, "runner": self.runner,
-                "first_buy": list(self.first_buy.values())}
+                "first_buy": list(self.first_buy.values()), "tracked": self.track.view()}
 
     def _write_ticks(self):
         if not self.log_path or not self.ticks:
@@ -262,6 +283,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--cloud", action="store_true", help="GitHub: Supabase Storage 에서 일봉·종목 목록·업종을 받아 씀")
     args = ap.parse_args()
+    print(BANNER, flush=True)
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(message)s", datefmt="%H:%M:%S", stream=sys.stdout)
     logging.getLogger("stockeye").setLevel(logging.INFO)
     from stockeye.config import load_config, data_dir

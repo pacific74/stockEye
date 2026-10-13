@@ -514,7 +514,9 @@ class _Cloud {
     var q = db.from('positions').select();
     if (status != null) q = q.eq('status', status);
     if (mode != null) q = q.eq('mode', mode);
-    final rows = await q.order('entry_time', ascending: false).limit(300);
+    // 당일매매 자동 기록(mode signal)은 모의 추적이라 보유종목·메인 보유 표에는 안 보이게 (매매일지·분석에만)
+    if (status == 'open' && mode == null) q = q.neq('mode', 'signal');
+    final rows = await q.order('entry_time', ascending: false).limit(1000);
     return rows.map(_position).toList();
   }
 

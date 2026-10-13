@@ -1,4 +1,5 @@
 @echo off
+title StockEye - Limitcatch (09:05-15:20)
 chcp 65001 >nul
 cd /d %~dp0..\backend
 call .venv\Scripts\activate

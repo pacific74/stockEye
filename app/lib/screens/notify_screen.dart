@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../api.dart';
+import '../voice.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
 
@@ -25,6 +26,7 @@ class _NotifySettingsScreenState extends State<NotifySettingsScreen> {
   bool _loading = true;
   bool _busy = false;
   bool _saved = false;
+  bool _voice = true; // 당일매매 음성 안내 (이 기기)
 
   static String _randomTopic() {
     const chars = 'abcdefghijkmnpqrstuvwxyz23456789';
@@ -39,6 +41,8 @@ class _NotifySettingsScreenState extends State<NotifySettingsScreen> {
   }
 
   Future<void> _load() async {
+    final v = await VoiceAlert.enabled();
+    if (mounted) setState(() => _voice = v);
     Json? p;
     try {
       p = await myProfile();
@@ -148,6 +152,29 @@ class _NotifySettingsScreenState extends State<NotifySettingsScreen> {
                 leading: Icon(Icons.info_outline),
                 title: Text('관리자 승인이 나면 이 토픽으로 바로 알려 드립니다'),
               ),
+              if (isAdminUser) ...[
+                const Divider(),
+                SwitchListTile(
+                  value: _voice,
+                  onChanged: (v) async {
+                    await VoiceAlert.setEnabled(v);
+                    setState(() => _voice = v);
+                  },
+                  title: const Text('당일매매 음성 안내'),
+                  subtitle: const Text('매수 조건 충족 → "매수발생"(여성) · 매도신호 → "매도발생"(남성). '
+                      '이 기기에만 저장 · 앱이 켜져 있을 때만 울려요'),
+                ),
+                Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                  TextButton.icon(
+                      onPressed: () => VoiceAlert.buy(force: true),
+                      icon: const Icon(Icons.volume_up, size: 18),
+                      label: const Text('매수발생 듣기')),
+                  TextButton.icon(
+                      onPressed: () => VoiceAlert.sell(force: true),
+                      icon: const Icon(Icons.volume_up, size: 18),
+                      label: const Text('매도발생 듣기')),
+                ]),
+              ],
               const SizedBox(height: 8),
               FilledButton(onPressed: _busy ? null : () => _save(), child: const Text('저장')),
               const SizedBox(height: 8),

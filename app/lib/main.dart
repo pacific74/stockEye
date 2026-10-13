@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'api.dart';
+import 'intraday_screen.dart';
 import 'screens/backtest_screen.dart';
 import 'screens/candidate_list_screen.dart';
 import 'screens/home_screen.dart';
@@ -58,7 +59,7 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   // 탭을 누를 때마다 그 탭 화면을 새로 만들어서 최신 데이터를 다시 불러온다 (메인·관심·보유·일지·검증 모두)
-  final _gen = List<int>.filled(5, 0);
+  final _gen = List<int>.filled(6, 0);
   int _lastTap = 0;
 
   @override
@@ -101,6 +102,7 @@ class _HomeShellState extends State<HomeShell> {
       PortfolioScreen(key: ValueKey('p${_gen[2]}')),
       JournalScreen(key: ValueKey('j${_gen[3]}')),
       if (canSeeBacktest) BacktestScreen(key: ValueKey('b${_gen[4]}')), // 관리자만
+      if (canSeeBacktest) IntradayScreen(key: ValueKey('i${_gen[5]}')), // 관리자만: 당일단타·상한가포착
     ];
     return Scaffold(
       body: IndexedStack(index: tabIndex.value < pages.length ? tabIndex.value : 0, children: pages),

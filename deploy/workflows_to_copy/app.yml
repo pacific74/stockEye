@@ -54,6 +54,8 @@ jobs:
           sed -i 's#android:label="[^"]*"#android:label="StockEye"#' $M
           # 업데이트 안내에서 APK 주소(https)를 브라우저로 열기 (안드로이드 11+ 패키지 공개 범위)
           grep -q 'android:scheme="https"' $M || sed -i 's#</manifest>#    <queries><intent><action android:name="android.intent.action.VIEW"/><data android:scheme="https"/></intent></queries>\n</manifest>#' $M
+          # 당일매매 음성 안내 (flutter_tts): 안드로이드 11+ 에서 TTS 엔진 찾기
+          grep -q "TTS_SERVICE" $M || sed -i 's#</manifest>#    <queries><intent><action android:name="android.intent.action.TTS_SERVICE"/></intent></queries>\n</manifest>#' $M
           # 업데이트 버튼 → 앱 안에서 APK 받아 설치 화면 열기 (open_filex): 설치 권한
           grep -q "REQUEST_INSTALL_PACKAGES" $M || sed -i 's#<application#<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>\n    <application#' $M
           sed -i 's#<title>.*</title>#<title>StockEye</title>#' web/index.html

@@ -1,4 +1,5 @@
 @echo off
+title StockEye - Closingbet (14:50-15:20)
 chcp 65001 >nul
 cd /d %~dp0..\backend
 call .venv\Scripts\activate

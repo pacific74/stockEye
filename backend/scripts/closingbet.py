@@ -24,6 +24,13 @@ import time
 import pandas as pd
 
 log = logging.getLogger("stockeye.closingbet")
+
+BANNER = """==============================================================
+ StockEye [종가배팅]  (16_closingbet.bat · 작업 스케줄러 월~금 14:45)
+  14:50~15:20  1분마다 종가 무렵 매수 후보 계산 → 앱 메인 '종가배팅' · 관심 탭
+  15:20 마지막 회차의 매수 후보 3개 저장 → 다음 날 저녁 배치가 결과를 매김
+  주문은 하지 않음 · 창을 닫으면 멈춤 (닫아도 되는 때: 15:21 이후)
+=============================================================="""
 SHOW, PICK = 20, 3
 
 
@@ -164,6 +171,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--cloud", action="store_true", help="GitHub: Supabase Storage 에서 일봉·종목 목록·업종을 받아 씀")
     args = ap.parse_args()
+    print(BANNER, flush=True)
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(message)s", datefmt="%H:%M:%S", stream=sys.stdout)
     logging.getLogger("stockeye").setLevel(logging.INFO)
     from stockeye.config import load_config, data_dir

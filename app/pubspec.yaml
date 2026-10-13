@@ -15,6 +15,8 @@ dependencies:
   url_launcher: ^6.3.0
   open_filex: ^4.7.0      # 받은 APK 로 안드로이드 설치 화면 열기
   path_provider: ^2.1.4   # APK 를 받아 둘 앱 임시 폴더
+  flutter_tts: ^4.2.0     # 당일매매 음성 안내 ("매수발생" 여성 · "매도발생" 남성)
+  shared_preferences: ^2.3.2  # 음성 안내 켜기/끄기 (이 기기에만)
 
 dev_dependencies:
   flutter_test:

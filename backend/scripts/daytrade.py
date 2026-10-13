@@ -25,6 +25,14 @@ import time
 import pandas as pd
 
 log = logging.getLogger("stockeye.daytrade")
+
+BANNER = """==============================================================
+ StockEye [당일단타]  (14_daytrade.bat · 작업 스케줄러 월~금 08:50)
+  09:00~10:00  1분마다 새 종목 찾기 → 앱 하단 '당일매매'
+  '진입 조건 충족' 종목은 그 시각 계획으로 고정 → 15:20 까지 목표·손절 추적
+  결과는 관리자 매매일지(당일매매 자동)에 기록 · 주문은 하지 않음
+  창을 닫으면 멈춤 (닫아도 되는 때: 15:20 이후)
+=============================================================="""
 SHOW = 20
 
 
@@ -75,6 +83,9 @@ class Runner:
         self.day = _now().strftime("%Y-%m-%d")
         from stockeye.cloud.recommend import IntradayRecorder
         self.rec = IntradayRecorder(sb, "daytrade", runner)          # 검증용 추천 기록 ('진입 조건 충족' 첫 시점)
+        from stockeye.trading.intraday_track import Tracker
+        self.track = Tracker(sb, "daytrade", self.day)               # 당일매매: 충족 종목 고정 → 상태·결과 추적 → 매매일지
+        self.last_items: list[dict] = []
 
     def _news(self, code: str) -> str | None:
         if code not in self.news:
@@ -136,7 +147,7 @@ class Runner:
         from concurrent.futures import ThreadPoolExecutor
         live = snap[snap["value"] >= dt.MIN_VALUE]                    # 거래대금 10억 미만은 어차피 제외 → 분봉 안 받음
         top = live.sort_values("value", ascending=False).head(self.top).index.tolist()
-        cands = list(dict.fromkeys(top + [c for c in self.watch if c in live.index]))
+        cands = list(dict.fromkeys(top + [c for c in self.watch if c in live.index] + self.track.codes()))
         with ThreadPoolExecutor(self.workers) as ex:                 # 1분봉을 여러 종목 동시에 (KIS 초당 한도 안에서)
             bars = dict(zip(cands, ex.map(lambda c: self._bars(c, hhmmss), cands)))
 
@@ -185,9 +196,34 @@ class Runner:
         for i, r in enumerate(keep, 1):
             r["rank"] = i
         counts = {s: sum(r["status"] == s for r in res) for s in order}
+        # 당일매매: 처음 충족된 종목 고정 → 고정 종목은 1분봉·지금 점수로 상태만 갱신
+        self.track.add(res, now)
+        score = {r["code"]: r["score"] for r in res}
+        for code in self.track.codes():
+            b = bars.get(code)
+            if b is None:
+                b = self._bars(code, hhmmss)
+            price = float(b["close"].iloc[-1]) if b is not None and len(b) else None
+            self.track.update(code, b, price, score.get(code), now)
+        self.track.save()
+        self.last_items = keep
         return {"date": self.day, "time": now.strftime("%H:%M"), "version": dt.VERSION, "scanned": len(res),
                 "counts": counts, "items": keep, "signals": list(self.signals.values()), "idx_chg": idx_chg,
-                "runner": self.runner, "until": self.until}
+                "runner": self.runner, "until": self.until, "tracked": self.track.view()}
+
+    def track_step(self) -> dict:
+        """10:00 뒤: 새 종목은 찾지 않고 고정된 종목만 15:20 까지 1분마다 상태·결과 갱신 (종목당 1분봉 1번)"""
+        from stockeye.engine import daytrade as dt
+        now = _now()
+        hhmmss = now.strftime("%H%M%S")
+        for code in self.track.codes():
+            b = self._bars(code, hhmmss)
+            price = float(b["close"].iloc[-1]) if b is not None and len(b) else None
+            self.track.update(code, b, price, None, now)
+        self.track.save()
+        return {"date": self.day, "time": now.strftime("%H:%M"), "version": dt.VERSION, "scanned": 0,
+                "counts": {}, "items": self.last_items, "signals": list(self.signals.values()), "runner": self.runner,
+                "until": self.until, "scan_closed": True, "tracked": self.track.view()}
 
     def publish(self, payload: dict) -> None:
         if not self.sb:
@@ -219,6 +255,7 @@ def main():
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="발행하지 않고 화면에만")
     args = ap.parse_args()
+    print(BANNER, flush=True)
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(message)s", datefmt="%H:%M:%S", stream=sys.stdout)
     logging.getLogger("stockeye").setLevel(logging.INFO)
 
@@ -231,9 +268,9 @@ def main():
     now = _now()
     if now.weekday() >= 5 or naver_live.is_trading_day() is False:
         print("오늘은 장이 열리지 않음 → 종료"); return
-    if not args.once and now.strftime("%H:%M") >= args.until:
-        # 작업 스케줄러가 놓친 실행을 늦게 돌린 경우 (PC 를 10:00 넘어 켬) → 아무것도 안 함
-        print(f"이미 {args.until} 이 지나 오늘 당일단타는 끝 → 종료"); return
+    if not args.once and now.strftime("%H:%M") >= "15:21":
+        # 작업 스케줄러가 놓친 실행을 늦게 돌린 경우 (장 마감 뒤 PC 를 켬) → 아무것도 안 함
+        print("이미 장이 끝나 오늘 당일단타는 끝 → 종료"); return
     cfg = load_config()
     sb = Supabase() if enabled() and not args.dry_run else None
     try:
@@ -268,7 +305,8 @@ def main():
     while _now().strftime("%H:%M") < "09:00" and not args.once:
         print(f"{_now():%H:%M:%S} 장 시작 대기..."); time.sleep(20)
     p = None
-    while True:
+    late = not args.once and _now().strftime("%H:%M") >= args.until      # 10:00 뒤에 켠 경우: 고정 종목 추적만
+    while not late:
         t0 = time.time()
         try:
             p = run.step()
@@ -283,6 +321,17 @@ def main():
         if args.once or _now().strftime("%H:%M") >= args.until:
             break
         time.sleep(max(5, args.every - (time.time() - t0)))
+    # 고정(충족) 종목은 15:20 까지 계속 추적 → 결과가 나오면 매매일지에 기록
+    if not args.once and run.track.any_open():
+        print(f"새 종목 찾기 끝 → 고정 종목 {len(run.track.codes())}개 15:20 까지 추적")
+        while run.track.any_open() and _now().strftime("%H:%M") < "15:21":
+            t0 = time.time()
+            try:
+                p = run.track_step()
+                run.publish(p)
+            except Exception as e:  # noqa: BLE001
+                print(f"⚠ 추적 실패: {e}")
+            time.sleep(max(5, args.every - (time.time() - t0)))
     run.save_signals()
     job(status="done" if p else "failed", finished=_now().strftime("%H:%M"), found=len((p or {}).get("items") or []))
     if sb and p and not args.once:

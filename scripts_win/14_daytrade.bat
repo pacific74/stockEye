@@ -1,4 +1,5 @@
 @echo off
+title StockEye - Daytrade (09:00-15:20)
 chcp 65001 >nul
 cd /d %~dp0..\backend
 call .venv\Scripts\activate

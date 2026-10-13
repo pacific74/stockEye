@@ -28,9 +28,12 @@ const _labels = {
 };
 
 class StockDetailScreen extends StatefulWidget {
-  const StockDetailScreen({super.key, required this.code, required this.name, this.source, this.intraday});
+  const StockDetailScreen(
+      {super.key, required this.code, required this.name, this.source, this.intraday, this.news});
   final String code;
   final String name;
+  /// 장중 카드(당일단타·상한가포착)가 찾은 뉴스 제목 — 저녁 배치 뉴스가 없는 종목도 '뉴스 악재' 근거를 보이게
+  final List<Json>? news;
   /// 당일단타·종가배팅 카드에서 열면 그 계획 (진입·손절·1·2차) → 매매 계획·차트 선을 이걸로 (source = daytrade/closingbet)
   final Json? intraday;
   /// 어느 후보 탭에서 열었는지 (nextday·early·reversal·v3) → 맨 위에 그 탭 점수를 보여줌 (목록 점수와 같게)
@@ -145,6 +148,11 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
           final hasToday = chart.isNotEmpty && chart.last['live'] == true;
           final p = asMap(c['plan']);
           final disc = asList(d['disclosures']);
+          // 뉴스: 저녁 배치(관심 탭 상위·보유종목) 것이 없으면 장중 카드가 찾은 것
+          final batchNews = asList(asMap(c['news'])['items']).isNotEmpty;
+          final newsItems = batchNews
+              ? asList(asMap(c['news'])['items'])
+              : (widget.news ?? asList(widget.intraday?['news']));
           final reasons = (c['reasons'] is List) ? (c['reasons'] as List).map((e) => '$e').toList() : <String>[];
           final warnings = (c['warnings'] is List) ? (c['warnings'] as List).map((e) => '$e').toList() : <String>[];
           final explanation = d['explanation'] == null ? null : asMap(d['explanation']);
@@ -341,12 +349,12 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 _V3Score(v: v3),
 
               // ---- 최근 뉴스 (3일 · 비슷한 제목은 하나만 · 관심 탭 상위·보유종목만) ----
-              if (asList(asMap(c['news'])['items']).isNotEmpty) ...[
-                SectionTitle('최근 뉴스 (3일)',
-                    trailing: asMap(c['news'])['count'] != null
+              if (newsItems.isNotEmpty) ...[
+                SectionTitle(batchNews ? '최근 뉴스 (3일)' : '최근 뉴스 (장중 카드가 찾은 것)',
+                    trailing: batchNews && asMap(c['news'])['count'] != null
                         ? Text('${asMap(c['news'])['count']}건', style: Theme.of(context).textTheme.bodySmall)
                         : null),
-                ...asList(asMap(c['news'])['items']).map((x) {
+                ...newsItems.map((x) {
                   final tone = newsTone('${x['title']}');
                   return ListTile(
                     dense: true,

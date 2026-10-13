@@ -338,7 +338,8 @@ class _TrackCard extends StatelessWidget {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           InkWell(
             onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${t['code']}', name: '${t['name']}'))),
+                MaterialPageRoute(builder: (_) => StockDetailScreen(
+                    code: '${t['code']}', name: '${t['name']}', news: asList(asMap(t['card'])['news'])))),
             child: Row(children: [
               Expanded(
                   child: StockName('${t['name']}', score: t['score'] as num?, scoreDigits: 1, style: tx.titleMedium)),

@@ -77,6 +77,7 @@ class Runner:
         self.watch = watch_codes(sb) if sb else set()
         self.bars: dict[str, pd.DataFrame] = {}
         self.news: dict[str, str | None] = {}
+        self.news_items: dict[str, list] = {}                     # 앱 상세 화면용 뉴스 제목
         self.spread: dict[str, tuple[float, float | None]] = {}     # code → (받은 시각, 스프레드)
         self.adr: dict[str, float | None] = {}                       # code → 평소 하루 변동폭 (하루 한 번)
         self.signals: dict[tuple, dict] = {}
@@ -118,7 +119,13 @@ class Runner:
         if code not in self.news:
             from stockeye.data import naver_news
             from stockeye.analysis.news_flags import judge
-            self.news[code] = judge(naver_news.fetch(self.names.get(code, code), days=2))["level"] if naver_news.enabled() else None
+            if naver_news.enabled():
+                from stockeye.engine.limitcatch import news_items
+                items = naver_news.fetch(self.names.get(code, code), days=2)
+                self.news[code] = judge(items)["level"]
+                self.news_items[code] = news_items(items)
+            else:
+                self.news[code] = None
         return self.news[code]
 
     def _adr(self, code: str) -> float | None:
@@ -203,6 +210,8 @@ class Runner:
                             "adr": self.adr.get(code)})
                 r = dt.evaluate(bars[code], ctx)
             r.update({"code": code, "name": self.names.get(code, code)})
+            if self.news_items.get(code):
+                r["news"] = self.news_items[code]
             res.append(r)
             if r["status"] == "진입 조건 충족":
                 key = (code, r["type"])

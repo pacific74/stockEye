@@ -169,7 +169,18 @@ def news_detail(items: list[dict] | None, level: str | None, today: str) -> dict
     pos = [it for it in items if _tone(it.get("title", "")) > 0]
     fresh = bool(pos) and all(str(it.get("time", ""))[:10] >= today for it in pos)
     official = any(OFFICIAL.search(it.get("title", "")) for it in pos)
-    return {"level": level, "fresh": fresh, "official": official, "pos": [it["title"] for it in pos[:2]]}
+    return {"level": level, "fresh": fresh, "official": official, "pos": [it["title"] for it in pos[:2]],
+            "items": news_items(items)}
+
+
+def news_items(items: list[dict] | None, n: int = 5) -> list[dict]:
+    """앱 표시용 뉴스 제목 (악재 먼저 → 최신순) — 카드의 '뉴스 악재' 근거를 상세 화면에서 보이게"""
+    from ..analysis.news_flags import _tone
+    items = items or []
+    bad = [it for it in items if _tone(it.get("title", "")) < 0]
+    rest = [it for it in items if it not in bad]
+    return [{"title": it.get("title"), "time": it.get("time"), "link": it.get("link"),
+             "tone": _tone(it.get("title", ""))} for it in (bad + rest)[:n]]
 
 
 def news_score(nd: dict | None) -> float:
@@ -305,7 +316,7 @@ def evaluate(daily: pd.DataFrame, today: dict, bars: pd.DataFrame | None, book: 
             "group": "도달" if lp["reached"] else "미도달", "stage1": stage1, "stage2": stage2,
             "price": c, "chg_pct": round(chg, 2), "value": round(value), "limit": lim, "prev_close": prev,
             "lock": lp, "time_bucket": time_bucket(lp["reach_time"]), "book": bm, "first": fl,
-            "news_level": (nd or {}).get("level"), "excluded": ex, "risks": risk, "heat_why": heat_why,
+            "news_level": (nd or {}).get("level"), "news": (nd or {}).get("items") or None, "excluded": ex, "risks": risk, "heat_why": heat_why,
             "reasons": reasons, "exit_rules": EXIT_RULES, "exit_time": EXIT_TIME, **pl,
             "labels": {k: v for k, (v, _) in PARTS.items()}, "maxes": {k: m for k, (_, m) in PARTS.items()}}
 

@@ -76,7 +76,7 @@ class Track:
         hm = now.strftime("%H:%M")
         card = {k: r.get(k) for k in ("status", "score", "type", "group", "price", "chg_pct", "value", "vwap", "entry",
                                        "stop", "t1", "t2", "t1_pct", "risk_pct", "loss_pct", "limit", "reasons",
-                                       "excluded", "risks", "parts", "labels", "maxes", "lock", "book", "news_level",
+                                       "excluded", "risks", "parts", "labels", "maxes", "lock", "book", "news_level", "news",
                                        "fill_warn", "level") if r.get(k) is not None}
         return {"kind": kind, "date": day, "code": r["code"], "name": r.get("name"), "time": hm,
                 "score": _f(r.get("score")), **p, "card": card, "events": [{"state": "매수구간", "time": hm}],

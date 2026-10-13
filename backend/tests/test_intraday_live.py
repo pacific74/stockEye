@@ -158,3 +158,11 @@ def test_daytrade_discover_uses_kis_rank_then_naver_fallback(monkeypatch):
     assert len(snap) == 4 and len(calls) == 2
     sd.Runner.discover(r)
     assert len(calls) == 2
+
+
+def test_news_items_bad_first():
+    from stockeye.engine.limitcatch import news_detail
+    items = [{"title": "서산 신제품 공급계약 체결", "time": "2026-10-13 09:00", "link": "a"},
+             {"title": "서산 횡령 혐의 피소", "time": "2026-10-12 10:00", "link": "b"}]
+    nd = news_detail(items, "severe", "2026-10-13")
+    assert [x["link"] for x in nd["items"]] == ["b", "a"] and nd["items"][0]["tone"] < 0

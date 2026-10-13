@@ -60,7 +60,7 @@ class LimitcatchTile extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () => Navigator.push(
-            context, MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${r['code']}', name: '${r['name']}'))),
+            context, MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${r['code']}', name: '${r['name']}', news: asList(r['news'])))),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -110,6 +110,10 @@ class LimitcatchTile extends StatelessWidget {
                   if (r['limit'] is num) InfoBox('상한가 ${num0(r['limit'] as num?)}'),
                 ]),
                 for (final x in ex) Text('⛔ $x', style: t.bodySmall?.copyWith(color: Colors.red)),
+                // 악재 판단 근거 (제목 1개 · 전체는 눌러서 상세 화면)
+                if ((nl == 'neg' || nl == 'severe') && asList(r['news']).isNotEmpty)
+                  Text('   └ ${asList(r['news']).first['title']}',
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySmall?.copyWith(color: Colors.grey)),
                 for (final x in risks) Text('⚠ $x', style: t.bodySmall?.copyWith(color: Colors.orange)),
                 if (r['fill_warn'] != null) Text('ⓘ ${r['fill_warn']}', style: t.bodySmall?.copyWith(color: Colors.grey)),
                 if (reasons.isNotEmpty) Text(reasons.join(' · '), style: t.bodySmall?.copyWith(color: Colors.grey)),

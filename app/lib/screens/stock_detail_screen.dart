@@ -274,7 +274,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(
                           hasToday
-                              ? '일봉 · 맨 오른쪽 봉 = 오늘${q!.tradedAt == null ? '' : ' ${_hm(q!.tradedAt!)}'} 시세 (장중 1분마다 갱신)'
+                              ? '일봉 · 맨 오른쪽 봉 = 오늘${q!.tradedAt == null ? '' : ' ${_hm(q.tradedAt!)}'} 시세 (장중 1분마다 갱신)'
                               : '일봉 (최근 ${chart.length}일)${q == null && _liveErr != null ? ' · 지금 시세를 못 받아 어제까지만 ($_liveErr)' : ''}',
                           style: Theme.of(context).textTheme.bodySmall),
                       const SizedBox(height: 6),

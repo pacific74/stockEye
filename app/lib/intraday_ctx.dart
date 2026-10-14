@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'format.dart';
 import 'widgets/common.dart';
 
 /// 검증 > 시장·업종 (2026-10-14): 당일단타 매수 → 청산 구간의 시장·업종 흐름과 결과의 관계

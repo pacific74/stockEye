@@ -135,3 +135,35 @@ def test_min_target_and_adr_exclusion():
     d = pd.DataFrame({"date": pd.date_range("2026-09-01", periods=21, freq="B"),
                       "high": [102.0] * 21, "low": [99.0] * 21, "close": [100.0] * 21})
     assert abs(dt.adr(d) - 0.03) < 1e-9
+
+
+def test_support_stop_not_one_tick_below():
+    """2026-10-14: 돌파 전(지금가 < 당일 고점)이면 예전엔 지금가 −1호가 손절 → 지지선 아래로"""
+    import pandas as pd
+    from stockeye.engine import daytrade as dt
+    t = pd.date_range("2026-10-14 09:00", periods=25, freq="1min")
+    px = [158000, 159000, 160000, 159500, 161000, 162000, 163500, 164200, 163000, 161500,   # 고점 164,200
+          160200, 160800, 161500, 162000, 161800, 162300, 162800, 162400, 162100, 162500,
+          162300, 162700, 162400, 162500, 162600]
+    rows = [{"time": t[i], "open": px[i - 1] if i else px[0], "high": max(px[i], px[i - 1] if i else px[0]) + 100,
+             "low": min(px[i], px[i - 1] if i else px[0]) - 100, "close": px[i], "volume": 5000} for i in range(25)]
+    b = pd.DataFrame(rows)
+    r = dt.evaluate(b, {"prev_close": 156800, "now": t[-1], "value": 100e8, "adr": 0.065})
+    assert r["price"] == 162600 and r["stop"] <= 162600 * (1 - 0.009)            # 흔들림 폭(0.6%·ADR 15%) 밖
+    assert r["stop"] >= 162600 * (1 - dt.MAX_STOP) and r["stop_basis"]
+    assert any(x.startswith("손절 근거") for x in r["reasons"])
+    print(r["stop"], r["stop_basis"], r["t1"], r["t2"])
+
+
+def test_support_stop_none_within_3pct():
+    import pandas as pd
+    from stockeye.engine import daytrade as dt
+    t = pd.date_range("2026-10-14 09:00", periods=12, freq="1min")
+    px = [10000 + 100 * i for i in range(12)]                                     # 쉬지 않고 올라 아래 지지선이 멂
+    b = pd.DataFrame([{"time": t[i], "open": px[i] - 100, "high": px[i] + 10, "low": px[i] - 100, "close": px[i],
+                       "volume": 1000} for i in range(12)])
+    ss = dt.support_stop(b, 11100.0, 10400.0, 10500.0, 9900.0, {"over_pct": 0.5, "level": 11000.0}, 0.05)
+    assert ss["stop"] is not None and ss["stop"] < 11100 * (1 - 0.006)
+    far = pd.DataFrame([{"time": t[0], "open": 10700.0, "high": 11100.0, "low": 10700.0, "close": 11100.0, "volume": 1}])
+    ss2 = dt.support_stop(far, 11100.0, 10600.0, 11100.0, 10700.0, {}, 0.05)   # 가장 가까운 지지선 10,700 → 3.8%
+    assert ss2["stop"] is None and "3% 초과" in ss2["basis"]

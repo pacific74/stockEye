@@ -3,7 +3,7 @@
 세 가지를 따로 본다 (점수가 높아도 진입 신호가 없으면 사지 않는다)
   선별 점수   지금 관찰할 가치가 있나 (100점)
   진입 신호   실제 매수 조건이 맞았나 (A 돌파형 / B 눌림목형)
-  위험 관리   손절 거리·기대 보상이 맞나 (손절 1.5% 이내, 비용 뺀 손익비 1.5 이상이 되도록 목표)
+  위험 관리   손절 거리·기대 보상이 맞나 (손절 = 아래 지지선 밑 · 3% 이내, 비용 뺀 손익비 1.5 이상이 되도록 목표)
 
 100점 (초기 가설 — 검증 후 조정)
   거래대금·유동성 20  오전 누적 거래대금 14 + 호가 스프레드 6
@@ -15,23 +15,30 @@
   손익비·위험 여유  5  손절 거리 짧을수록 · 눌림목은 위 고점까지 공간
 
 필수 제외 (점수와 상관없이)
-  오전 누적 거래대금 10억 미만 · 스프레드 0.3% 초과 · 최근 1분 체결 없음 · 손절 거리 1.5% 초과
+  오전 누적 거래대금 10억 미만 · 스프레드 0.3% 초과 · 최근 1분 체결 없음 · 3% 안에 지지선 없음
   거래정지·투자경고 등 위험 상태 · 심각 악재 뉴스 · 시세 지연(마지막 봉이 3분 넘게 지남)
   VWAP 대비 3% 이상 위 → 신규 진입 보류 (추격 금지) · 09:05 전 → 후보 수집만
 
 상태: 진입 금지 / 관찰(70↑) / 진입 대기(80↑, 신호 없음) / 진입 조건 충족(80↑ + 신호)
-주문: 1차 익절 = 위험의 1.5배, 2차 = 2배 (비용 0.2% 반영), 손절 = 패턴 무효화 가격, 장 마감 전 청산
+주문: 1차 익절 = 위험의 1.5배, 2차 = 2배 (비용 0.2% 반영), 손절 = 지지선 아래, 장 마감 전 청산
+
+손절 (DT-0.3, 2026-10-14): 예전엔 패턴 가격 바로 밑(돌파 전이면 지금가 −1호가)이라 호가가 한 번 튀면 손절됐음 →
+  지금가 아래 지지선 후보 (돌파한 저항 · 눌림 저점 · VWAP · 시초 범위 고/저 · 최근 1분봉 스윙 저점 · 당일 저가) 중
+  '흔들림 폭'(3호가 · 0.6% · 평소 하루 폭의 15% 중 큰 것)보다 아래 있는 가장 가까운 것 → 그 밑 2호가(최소 0.2%)
+  3% 안에 그런 지지선이 없으면 진입 금지 (진입 신호가 떠도)
 """
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-VERSION = "DT-0.2"   # 0.2: 1차 목표 +3%↑ · 2차 +5%↑ · 평소 하루 변동폭 5% 미만 제외
+VERSION = "DT-0.3"   # 0.2: 1차 목표 +3%↑ · 2차 +5%↑ · 평소 하루 변동폭 5% 미만 제외 · 0.3: 손절 = 지지선 아래 (3% 이내)
 COST = 0.002                 # 왕복 수수료·세금 (비율)
 MIN_VALUE = 10e8             # 오전 누적 거래대금 10억
 MAX_SPREAD = 0.003           # 0.3%
-MAX_STOP = 0.015             # 손절 거리 1.5%
+MAX_STOP = 0.03              # 손절 거리 최대 3% (지지선이 그보다 멀면 진입 금지)
+NOISE_PCT, NOISE_TICKS, NOISE_ADR = 0.006, 3, 0.15   # 흔들림 폭: 이보다 가까운 지지선은 손절 기준으로 안 씀
+STOP_BUF_PCT, STOP_BUF_TICKS = 0.002, 2              # 지지선 밑 여유
 MIN_T1 = 0.03               # 1차 목표 최소 +3% (작게 먹고 위험만 지는 자리 제외)
 MIN_T2 = 0.05               # 2차 목표 최소 +5%
 MIN_ADR = 0.05              # 최근 20일 평균 하루 변동폭(고가-저가)/전일종가 5% 미만 → 3% 먹기 어려움
@@ -92,6 +99,33 @@ def adr(daily: pd.DataFrame, n: int = 20) -> float | None:
     r = ((d["high"] - d["low"]) / pc).dropna()
     r = r[(r >= 0) & (r < 0.6)]
     return float(r.mean()) if len(r) else None
+
+
+def swing_lows(b: pd.DataFrame, n: int = 30, k: int = 2) -> list[float]:
+    """최근 n개 1분봉의 스윙 저점 (앞뒤 k개 봉보다 낮은 저가)"""
+    lo = b["low"].to_numpy(float)[-n:]
+    return [float(lo[i]) for i in range(k, len(lo) - k)
+            if lo[i] <= lo[i - k:i].min() and lo[i] <= lo[i + 1:i + k + 1].min()]
+
+
+def support_stop(b: pd.DataFrame, p: float, vw: float, or_high: float, or_low: float, use: dict,
+                 adr_v: float | None = None) -> dict:
+    """지지선 기준 손절: 흔들림 폭보다 아래 있는 가장 가까운 지지선 − 여유. 없으면 None (3% 안에 지지선 없음)"""
+    noise = max(NOISE_TICKS * tick(p), p * NOISE_PCT, p * NOISE_ADR * (adr_v or 0))
+    cands = {"돌파한 저항": use.get("level") if use.get("over_pct", -1) > 0 else None,
+             "눌림 저점": use.get("low"), "VWAP": vw, "시초 고점": or_high, "시초 저점": or_low,
+             "최근 저점": float(b["low"].iloc[-10:].min()) if len(b) else None,
+             "당일 저가": float(b["low"].min()) if len(b) else None}
+    pairs = list(cands.items()) + [("1분봉 스윙 저점", v) for v in swing_lows(b)]
+    below = [(float(v), k) for k, v in pairs if v and np.isfinite(v) and v <= p - noise]
+    if not below:
+        return {"stop": None, "basis": None, "support": None}
+    sup, name = max(below)
+    stop = rt(sup - max(STOP_BUF_TICKS * tick(sup), sup * STOP_BUF_PCT), "down")
+    if (p - stop) / p > MAX_STOP:
+        return {"stop": None, "basis": f"가까운 지지선 {name} {rt(sup):,.0f}원 (손절 {(p - stop) / p * 100:.1f}% — 3% 초과)",
+                "support": sup}
+    return {"stop": stop, "basis": f"{name} {rt(sup):,.0f}원 아래", "support": sup}
 
 
 def breakout(b: pd.DataFrame) -> dict:
@@ -168,6 +202,7 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
     vw = vwap(b)
     or_bars = b[b["time"].dt.strftime("%H:%M") < "09:05"]
     or_high = float(or_bars["high"].max()) if len(or_bars) else float(b["high"].iloc[0])
+    or_low = float(or_bars["low"].min()) if len(or_bars) else float(b["low"].iloc[0])
     value = float(ctx.get("value") or (b["close"] * b["volume"]).sum())
     spread = ctx.get("spread")
     prev = float(ctx.get("prev_close") or b["open"].iloc[0])
@@ -200,11 +235,11 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
     use = A if A["score"] >= B["score"] else B
     typ = "돌파" if use is A else "눌림목"
     sig = bool(use.get("signal"))
-    stop = float(use.get("stop") or p * (1 - MAX_STOP))
-    pl = plan(p, min(stop, p - tick(p)))
+    ss = support_stop(b, p, vw, or_high, or_low, use, a)            # 손절 = 지지선 아래 (호가 흔들림에 안 걸리게)
+    pl = plan(p, ss["stop"] if ss["stop"] else p * (1 - MAX_STOP))
     stop_pct = (p - pl["stop"]) / p
-    if sig and stop_pct > MAX_STOP:
-        ex.append(f"손절 거리 {stop_pct * 100:.1f}% (1.5% 초과)")
+    if sig and ss["stop"] is None:
+        ex.append(ss["basis"] or "3% 안에 지지선 없음")
 
     # ---- 점수 ----
     vavg = float(b["volume"].iloc[-25:-5].mean()) if len(b) > 6 else float(b["volume"].mean())
@@ -222,7 +257,7 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
         "trend15": (5 if p > vw else 0) + (4 if slope5 > 0 else 0) + (3 if ema(5) > ema(20) else 0) + (3 if p > or_high else 0),
         "news10": {"pos": 10.0, "neg": 0.0, "severe": 0.0}.get(ctx.get("news_level"), 5.0),
         "mkt10": ramp(idx_chg, [(-1, 0), (0, 3), (1, 5)]) + ramp(chg - idx_chg, [(0, 1), (3, 3), (8, 5)]),
-        "risk5": ramp(stop_pct, [(0.004, 5), (0.007, 5), (0.01, 4), (0.015, 2), (0.02, 0)]) - (2 if room is not None and room < 1.5 else 0),
+        "risk5": ramp(stop_pct, [(0.006, 5), (0.012, 5), (0.02, 3), (0.03, 1), (0.035, 0)]) - (2 if room is not None and room < 1.5 else 0),
     }
     parts = {k: round(max(0.0, min(v, PARTS[k][1])), 2) for k, v in parts.items()}
     score = round(sum(parts.values()), 1)
@@ -259,10 +294,12 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
         r.append(f"오전 상승 +{use.get('gain_pct', 0):.1f}% 뒤 눌림 (깊이 {use.get('depth', 0):.0%})"
                  f" · 고점 {rt(use.get('level') or p):,.0f}원")
     r.append(f"VWAP {rt(vw):,.0f}원 {'위' if p > vw else '아래'} · 오전 거래대금 {value / 1e8:,.0f}억")
+    if ss["basis"]:
+        r.append(f"손절 근거: {ss['basis']}")
     out.update({"status": status, "score": score, "parts": parts, "type": typ, "signal": sig,
                 "price": p, "chg_pct": round(chg, 2), "vwap": rt(vw), "vwap_gap_pct": round(gap * 100, 2),
                 "value": round(value), "adr_pct": None if a is None else round(a * 100, 1), "spread_pct": None if spread is None else round(spread * 100, 3),
-                "or_high": rt(or_high), "level": rt(use.get("level") or p), **pl,
+                "or_high": rt(or_high), "level": rt(use.get("level") or p), **pl, "stop_basis": ss["basis"],
                 "labels": {k: v for k, (v, _) in PARTS.items()}, "maxes": {k: m for k, (_, m) in PARTS.items()}})
     return out
 

@@ -412,7 +412,11 @@ class _TrackCard extends StatelessWidget {
     final closeT = timeOf('마감 청산');
     final noFillT = timeOf('미체결');
     final card = {...asMap(t['card']), 'code': t['code'], 'name': t['name']};
-    final cur = '${t['state'] ?? ''}';
+    // '매수구간' 은 들어온 시각 기록일 뿐 → 지금가가 구간 밖이면 '매수구간 이탈'로 보여 주고 깜빡이지 않음
+    final lo = (t['buy_lo'] as num?)?.toDouble(), hi = (t['buy_hi'] as num?)?.toDouble();
+    final inZone = last != null && lo != null && hi != null && last >= lo && last <= hi;
+    final rawCur = '${t['state'] ?? ''}';
+    final cur = (rawCur == '매수구간' && !done && !inZone) ? '매수구간 이탈' : rawCur;
     final prevDay = !dtIsToday({'date': t['date']});
     // 매수구간·매도신호포착 상태면 깜빡임 (끝난 종목은 끝난 뒤 10분까지만)
     final ended = DateTime.tryParse('${t['exit_time'] ?? ''}'.replaceFirst(' ', 'T'));
@@ -510,6 +514,9 @@ class _TrackCard extends StatelessWidget {
                 ] else ...[
                   Text('진행중', style: tx.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                   Blink(on: blink, child: Text(cur, style: tx.bodySmall?.copyWith(fontWeight: blink ? FontWeight.bold : null))),
+                  if (cur == '매수구간 이탈' && last != null)
+                    Text('지금가가 구간 ${last > (hi ?? 0) ? '위' : '아래'}',
+                        style: tx.bodySmall?.copyWith(color: Colors.grey)),
                   Text(cb ? (bought ? '다음 날 10:30 까지' : '오늘 15:20 까지 매수 범위 대기') : lc ? '다음 날 09:30 까지' : '15:20 까지',
                       style: tx.bodySmall?.copyWith(color: Colors.grey)),
                   if (quote != null)

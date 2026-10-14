@@ -158,6 +158,36 @@ class StockInfoLine extends StatelessWidget {
       );
 }
 
+/// 오늘 등락률 배지 (현재가 옆): ▲ 5.89 빨강 / ▼ 1.20 파랑 / 0.00 회색 — 전일 종가 대비
+class ChgBadge extends StatelessWidget {
+  const ChgBadge(this.pct, {super.key});
+  final num? pct;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = pct;
+    if (p == null) return const SizedBox.shrink();
+    final c = p > 0 ? upColor : (p < 0 ? downColor : Colors.grey);
+    return Container(
+      margin: const EdgeInsets.only(left: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(color: c.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(4)),
+      child: Text('${p > 0 ? '▲' : (p < 0 ? '▼' : '')} ${p.abs().toStringAsFixed(2)}%',
+          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: c)),
+    );
+  }
+}
+
+/// 손익비 박스: (1차 − 매수) / (매수 − 손절) · 2차까지 있으면 '1 : 1.5 / 2.3' — 1.5 이상 청록 · 1 미만 빨강 · 그 사이 주황
+Widget? rrBox(num? entry, num? stop, num? t1, [num? t2]) {
+  if (entry == null || stop == null || t1 == null || entry <= stop) return null;
+  final risk = (entry - stop).toDouble();
+  final r1 = (t1 - entry) / risk;
+  final r2 = t2 == null ? null : (t2 - entry) / risk;
+  final c = r1 >= 1.5 ? Colors.teal : (r1 >= 1 ? Colors.orange : downColor);
+  return InfoBox('손익비 1 : ${r1.toStringAsFixed(1)}${r2 == null ? '' : ' / ${r2.toStringAsFixed(1)}'}', color: c, bold: true);
+}
+
 /// 점수 배지 (V3B 100점 환산) — 80↑ 빨강 / 65↑ 주황 / 50↑ 청록 / 그 아래 회색
 class ScoreBadge extends StatelessWidget {
   const ScoreBadge(this.score, {super.key, this.label, this.digits = 0});

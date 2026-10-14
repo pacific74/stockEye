@@ -162,7 +162,11 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                                 _lbl(t, '매수가'),
                                 _val(num0(h['avg_price'] as num?)),
                                 _lbl(t, h['now_live'] == true ? '현재가' : '최근가'),
-                                _val(num0(h['now_price'] as num?)),
+                                _val(num0(h['now_price'] as num?),
+                                    sub: Live.last['${h['code']}'] == null
+                                        ? null
+                                        : '${Live.last['${h['code']}']!.ratio >= 0 ? '▲' : '▼'} ${Live.last['${h['code']}']!.ratio.abs().toStringAsFixed(2)}%',
+                                    subColor: (Live.last['${h['code']}']?.ratio ?? 0) >= 0 ? upColor : downColor),
                               ]),
                             ],
                           ),

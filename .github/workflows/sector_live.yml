@@ -1,5 +1,6 @@
 # 업종/테마 '오늘' 강도 — 평일 장중 1시간마다 (09:10 ~ 15:10, 마감 뒤 15:35 한 번 더) → 앱 메인 '업종/테마 강도'
 #   업종·테마별 전체 종목의 지금 등락을 거래대금 가중 평균 (저녁 리포트와 같은 방식). PC 필요 없음
+#   (2026-10-14) PC 22_intraday 가 켜져 있으면 09:10 부터 매시 10분에 직접 발행 → 이 작업은 PC 꺼진 날·15:35 마감 값 대비
 #   한 번에 1분 안팎 (필요한 패키지만 설치 · 네이버 시세만 사용). GitHub 예약은 10~20분 늦을 수 있음
 name: sector-live
 
@@ -33,4 +34,4 @@ jobs:
       - run: pip install -r backend/requirements-live.txt
       - name: 업종 오늘 강도
         working-directory: backend
-        run: python -m scripts.sector_live
+        run: python -m scripts.sector_live --skip-if-recent 30   # PC(22_intraday)가 정시에 이미 했으면 건너뜀

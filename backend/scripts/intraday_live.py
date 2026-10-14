@@ -216,6 +216,24 @@ def main():
     while _now().strftime("%H:%M") < "08:59":
         print(f"{_now():%H:%M:%S} 장 시작 대기..."); time.sleep(20)
     dt_closed = False
+    sector_done: set[str] = set()                                       # 업종/테마 오늘 강도: 09:10 부터 매시 10분 (한 번씩)
+
+    def sector_slot(hm: str) -> None:
+        slot = hm[:2] + ":10"
+        if not sb or hm < "09:10" or hm > "15:20" or hm < slot or slot in sector_done:
+            return
+        sector_done.add(slot)
+
+        def job():
+            try:
+                import scripts.sector_live as sl_
+                p = sl_.run(sb, quiet=True)
+                print(f"   업종/테마 강도 발행 {p['time']} · {len(p['groups'])}개")
+            except Exception as e:  # noqa: BLE001
+                print(f"⚠ 업종/테마 강도 실패: {e}")
+        import threading
+        threading.Thread(target=job, name="sector-live", daemon=True).start()   # 전 종목 시세 1회 (1시간에 한 번)
+
     while True:
         t0 = time.time()
         now = _now()
@@ -249,6 +267,7 @@ def main():
                 cb_publish(now)
         except Exception as e:  # noqa: BLE001
             print(f"⚠ 종가배팅 추적 실패: {e}")
+        sector_slot(hm)
         try:                                                           # 앱 카드 1분봉 차트 (오늘 고정 종목 · 1분에 한 번)
             publish_bars(now)
         except Exception as e:  # noqa: BLE001

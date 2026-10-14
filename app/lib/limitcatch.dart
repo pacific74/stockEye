@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'daytrade.dart' show dtIsToday, DaytradeFindButton, NewsLine, lookupLabel;
 import 'format.dart';
+import 'live.dart';
 import 'screens/stock_detail_screen.dart';
 import 'widgets/common.dart';
 
@@ -76,6 +77,7 @@ class LimitcatchTile extends StatelessWidget {
                       TextSpan(text: '현재가 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
                       TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
                     ])),
+                  ChgBadge(Live.last['${r['code']}']?.ratio ?? (r['chg_pct'] as num?)), // 오늘 등락률
                 ]),
                 StockInfoLine('${r['code']}'), // [시장][업종 · 테마][시총]
                 const SizedBox(height: 3),

@@ -94,6 +94,9 @@ class LiveResult {
 }
 
 class Live {
+  /// 최근에 받은 종목 시세 (종목코드 → 시세) — 카드의 '오늘 등락률' 배지가 씀
+  static final Map<String, LiveQuote> last = {};
+
   static Future<LiveResult> indices() => _get('index', const ['KOSPI', 'KOSDAQ']);
 
   /// 종목 시세. 50개씩 나눠 한 번에 요청하고, 빠진 종목은 하나씩 다시 요청
@@ -113,6 +116,7 @@ class Live {
         quotes.addAll(r.quotes);
       }
     }
+    last.addAll(quotes); // 화면 어디서나 오늘 등락률을 쓰도록 최근 시세 보관
     return LiveResult(quotes,
         fetchedAt: first.fetchedAt, error: quotes.isEmpty ? first.error : null, stale: parts.any((p) => p.stale));
   }

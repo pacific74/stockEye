@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'format.dart';
+import 'live.dart';
 import 'nextday.dart' show gradeColor, liveColor;
 import 'widgets/common.dart';
 
@@ -170,6 +171,7 @@ class WatchTile extends StatelessWidget {
                       TextSpan(text: price != null ? '현재가 ' : '기준가 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
                       TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
                     ])),
+                  ChgBadge(Live.last['${c['code']}']?.ratio), // 오늘 등락률
                 ]),
                 StockInfoLine('${c['code']}'),
                 PlanLine(c: c, price: price, live: price != null, tab: tab),

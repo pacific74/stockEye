@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'format.dart';
+import 'live.dart';
 import 'screens/stock_detail_screen.dart';
 import 'widgets/common.dart';
 
@@ -116,6 +117,7 @@ class DaytradeTile extends StatelessWidget {
                       TextSpan(text: '현재가 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
                       TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
                     ])),
+                  ChgBadge(Live.last['${r['code']}']?.ratio ?? (r['chg_pct'] as num?)), // 오늘 등락률
                 ]),
                 StockInfoLine('${r['code']}'), // [시장][업종 · 테마][시총]
                 const SizedBox(height: 3),
@@ -133,6 +135,7 @@ class DaytradeTile extends StatelessWidget {
                       color: downColor),
                   InfoBox('1차 ${num0(r['t1'] as num?)}${r['t1_pct'] is num ? ' (+${r['t1_pct']}%)' : ''}', color: upColor),
                   InfoBox('2차 ${num0(r['t2'] as num?)}${r['t2_pct'] is num ? ' (+${r['t2_pct']}%)' : ''}', color: upColor),
+                  if (rrBox(r['entry'] as num?, r['stop'] as num?, r['t1'] as num?, r['t2'] as num?) case final rr?) rr,
                   if (r['adr_pct'] is num) InfoBox('평소 하루 폭 ${r['adr_pct']}%'),
                 ]),
                 for (final x in ex) Text('⛔ $x', style: t.bodySmall?.copyWith(color: Colors.red)),

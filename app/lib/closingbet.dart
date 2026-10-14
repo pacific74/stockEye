@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'daytrade.dart' show dtIsToday, DaytradeFindButton, NewsLine, liveWindow, lookupLabel;
 import 'format.dart';
+import 'live.dart';
 import 'screens/stock_detail_screen.dart';
 import 'widgets/common.dart';
 
@@ -74,6 +75,7 @@ class ClosingbetTile extends StatelessWidget {
                       TextSpan(text: '현재가 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
                       TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
                     ])),
+                  ChgBadge(Live.last['${r['code']}']?.ratio ?? (r['chg_pct'] as num?)), // 오늘 등락률
                 ]),
                 StockInfoLine('${r['code']}'), // [시장][업종 · 테마][시총]
                 const SizedBox(height: 3),
@@ -95,6 +97,7 @@ class ClosingbetTile extends StatelessWidget {
                   InfoBox('1차 ${num0(r['t1'] as num?)}${r['t1_pct'] is num ? ' (+${r['t1_pct']}%)' : ''}', color: upColor),
                   InfoBox('2차 ${num0(r['t2'] as num?)}', color: upColor),
                   InfoBox('손절 ${num0(r['stop'] as num?)}${r['stop_pct'] is num ? ' (${r['stop_pct']}%)' : ''}', color: downColor),
+                  if (rrBox(r['entry'] as num?, r['stop'] as num?, r['t1'] as num?, r['t2'] as num?) case final rr?) rr,
                 ]),
                 for (final x in ex) Text('⛔ $x', style: t.bodySmall?.copyWith(color: Colors.red)),
                 if (why.isNotEmpty) Text('갭 위험: ${why.join(' · ')}', style: t.bodySmall?.copyWith(color: Colors.orange)),

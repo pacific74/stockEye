@@ -153,11 +153,17 @@ class _IntradayScreenState extends State<IntradayScreen> {
           for (final x in asList(d!['tracked']))
             if (x['done'] != true) '${x['code']}'
     };
+    // 고정 종목 전부 시세 (오늘 등락률 배지 · PC 꺼짐 대비 지금가) — 종목 수만큼만, 1분에 한 번
+    final all = <String>{
+      ...open,
+      for (final d in [_dt, _lc, _cbm])
+        for (final x in asList(d?['tracked'])) '${x['code']}',
+    };
     var q = <String, double>{};
-    if (open.isNotEmpty) {
+    if (all.isNotEmpty) {
       try {
-        final res = await Live.stocks(open.toList());
-        q = {for (final e in res.quotes.entries) e.key: e.value.price};
+        final res = await Live.stocks(all.toList());
+        q = {for (final e in res.quotes.entries) if (open.contains(e.key)) e.key: e.value.price};
       } catch (_) {}
     }
     if (!mounted) return;
@@ -490,6 +496,12 @@ class _TrackCard extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
           ]);
     final narrow = MediaQuery.sizeOf(context).width < 640;
+    // 오늘 등락률: 받아 둔 시세 → 없으면 포착 때 가격·등락률로 전일 종가를 거꾸로 구해 지금가와 비교 (같은 날만)
+    final cardPx = (asMap(t['card'])['price'] as num?)?.toDouble(), cardChg = (asMap(t['card'])['chg_pct'] as num?)?.toDouble();
+    final num? todayChg = Live.last['${t['code']}']?.ratio ??
+        (!prevDay && last != null && cardPx != null && cardChg != null && cardChg > -100
+            ? (last / (cardPx / (1 + cardChg / 100)) - 1) * 100
+            : null);
     String? timeOf(String s) {                       // 그 상태가 처음 생긴 시각
       for (final e in events) {
         final st = '${e['state']}';
@@ -515,7 +527,10 @@ class _TrackCard extends StatelessWidget {
               Expanded(
                   child: StockName('${t['name']}', score: t['score'] as num?, scoreDigits: 1, style: tx.titleMedium)),
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                Text(won(last), style: tx.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text(won(last), style: tx.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                  ChgBadge(todayChg), // 오늘 등락률
+                ]),
                 Text(bought ? '매수가 대비 ${pnl == null ? '-' : pct(pnl)}' : (done ? '미체결' : '매수 전'),
                     style: tx.bodySmall?.copyWith(color: (pnl ?? 0) >= 0 ? upColor : downColor)),
               ]),
@@ -531,6 +546,7 @@ class _TrackCard extends StatelessWidget {
             InfoBox('1차 ${num0(t['t1'] as num?)}', color: upColor),
             InfoBox('2차 ${num0(t['t2'] as num?)}', color: upColor),
             if (t['t3'] != null) InfoBox('3차 ${num0(t['t3'] as num?)}', color: upColor),
+            if (rrBox(t['entry'] as num?, t['stop'] as num?, t['t1'] as num?, t['t2'] as num?) case final rr?) rr,
           ]),
           // 왼쪽: 기존 상태설명 · 현재 상태 | 매매 결과   /   오른쪽: 1분봉 차트 (최근 2시간 · 현재가 실시간)
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

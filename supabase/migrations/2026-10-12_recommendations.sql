@@ -1,7 +1,7 @@
 -- ============================================================
 -- StockEye 스키마 변경분 (2026-10-12 · 추천 기록)
 --   내용: 관심 목록에 나온 종목을 '그때 계획 그대로' 영구 보관 → 나중에 실제 결과와 맞춰 검증
---     - 저녁 배치: V3 · 익일유망주 · 상승초기 · 추세전환 · 상파 목록 전부
+--     - 저녁 배치: V3 · 유망주 · 상승초기 · 추세전환 · 상파 목록 전부
 --     - 장중: 당일단타 '진입 조건 충족' · 종가배팅 '매수 후보' · 상한가포착 '매수 검토' 가 처음 나온 때 (PC·종목찾기)
 --     - 같은 추천일 + 구분 + 종목은 하루 첫 기록만 (나중 것은 무시)
 --     - 여러 구분에 겹쳐 추천되면 구분마다 따로 저장 → recommendation_overlaps 뷰로 한 종목 한 줄 (겹친 구분 전부)
@@ -11,7 +11,7 @@
 
 create table if not exists public.recommendations (
   rec_date     date not null,             -- 추천일
-  kind         text not null,             -- v3 · nextday(익일유망주) · early(상승초기) · reversal(추세전환) · uplimit(상파)
+  kind         text not null,             -- v3 · nextday(유망주) · early(상승초기) · reversal(추세전환) · uplimit(상파)
                                           -- · daytrade(당일단타) · closingbet(종가배팅) · limitcatch(상한가포착)
   code         text not null,
   name         text,
@@ -48,7 +48,7 @@ drop policy if exists "read for users" on public.recommendations;
 create policy "read for users" on public.recommendations for select to authenticated using (public.is_approved());
 -- 쓰기 정책 없음 → service_role 키(배치)만 쓸 수 있음
 
--- 같은 날 같은 종목이 여러 구분(V3·익일유망주·당일단타 …)에 겹쳐 추천되면 구분마다 한 줄씩 따로 저장됨 (위 키).
+-- 같은 날 같은 종목이 여러 구분(V3·유망주·당일단타 …)에 겹쳐 추천되면 구분마다 한 줄씩 따로 저장됨 (위 키).
 -- 한 종목을 한 줄로 모아 보기: 겹친 구분 전부 + 구분별 점수·매수가·목표·손절·손익비
 create or replace view public.recommendation_overlaps with (security_invoker = true) as
 select rec_date, code, max(name) as name,

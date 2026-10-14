@@ -1,4 +1,4 @@
-"""익일 유망주 탭 → 리포트 strategies['nextday'] + report['nextday'] + 종목 상세 candidate['nextday']"""
+"""유망주 탭 → 리포트 strategies['nextday'] + report['nextday'] + 종목 상세 candidate['nextday']"""
 from __future__ import annotations
 
 import numpy as np
@@ -14,7 +14,7 @@ DESC = ("장 마감 데이터로 다음 거래일에 움직임이 나올 만한 
         "변동성 15 · 시장 대비 강도 10 · 재료·위험 10). A 80↑ 우선 관찰 · B 70~79 관심 · C 60~69 보조.")
 LIMIT = ("관찰용 — 전날 점수가 높아도 다음 날 갭 상승 추격 매수를 뜻하지 않습니다. 시초가·거래량·지지를 확인하세요. "
          "뉴스 기사는 반영하지 않습니다(공시만).")
-# V2 차단 사유 중 '위험'이 아닌 것 (익일 유망주는 자체 거래대금 10억 기준을 씀)
+# V2 차단 사유 중 '위험'이 아닌 것 (유망주는 자체 거래대금 10억 기준을 씀)
 NOT_RISK = ("거래대금 부족", "손절폭이 지나치게 큼")
 
 
@@ -88,7 +88,7 @@ def build_section(pit, view, x: pd.DataFrame, ev: pd.DataFrame, name_of: dict, t
     types = {}
     for c in cands:
         types[c["nextday"]["type"]] = types.get(c["nextday"]["type"], 0) + 1
-    lst_ = {"experimental": True, "name": "익일 유망주", "short": "익일유망주", "description": DESC, "limitation": LIMIT,
+    lst_ = {"experimental": True, "name": "유망주", "short": "유망주", "description": DESC, "limitation": LIMIT,
             "count": len(ranked), "candidates": cands}
     meta = {"version": nd.VERSION, "as_of": d.strftime("%Y-%m-%d"), "rules": nd.RULES_TEXT, "grades": counts,
             "types": types, "eligible": int(sc["eligible"].sum()), "has_disclosures": has_news,
@@ -124,7 +124,7 @@ def apply(c: dict, row: pd.Series) -> dict:
     ni = info(row)
     c = {**c, "v2_score": c.get("score"), "score": ni["score"], "max_score": 100, "stars": None,
          "tags": ni["tags"], "reasons": ni["reasons"], "warnings": ni["warnings"], "nextday": ni}
-    c["plan"] = {**(c.get("plan") or {}), "verdict": f"익일 {ni['grade']} · {ni['grade_label']}",
+    c["plan"] = {**(c.get("plan") or {}), "verdict": f"유망주 {ni['grade']} · {ni['grade_label']}",
                  "verdict_reason": f"{ni['type']} — {nd.TYPE_CHECK.get(ni['type'], '')}", "reference_only": True}
     return c
 
@@ -271,7 +271,7 @@ def live_status(w: dict, o: float | None, p: float | None) -> str:
 
 
 def carry_over(report: dict, prev: dict | None, bars: pd.DataFrame, hm: str) -> bool:
-    """장중: 익일 유망주는 '전날 장 마감 점수'를 그대로 두고 지금 시세로 상태만 따로 붙임
+    """장중: 유망주는 '전날 장 마감 점수'를 그대로 두고 지금 시세로 상태만 따로 붙임
     prev = 전날 저녁 리포트(reports/latest.json), bars = 오늘 진행 중 봉 (code, open, high, low, close)"""
     if not prev or not (prev.get("strategies") or {}).get("nextday"):
         report.get("strategies", {}).pop("nextday", None)

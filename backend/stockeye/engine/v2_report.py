@@ -187,7 +187,7 @@ def rr_outside(ev: pd.DataFrame, codes, tab: str) -> dict:
 
 
 def below_ma5(x: pd.DataFrame) -> set:
-    """종가가 5일선 아래인 종목 — 관심 탭(익일유망주·상승초기·추세전환·상파) 추천에서 제외 (2026-10-11 사용자 요청)"""
+    """종가가 5일선 아래인 종목 — 관심 탭(유망주·상승초기·추세전환·상파) 추천에서 제외 (2026-10-11 사용자 요청)"""
     if "close" not in x or "sma5" not in x:
         return set()
     c, m = x["close"].astype(float), x["sma5"].astype(float)

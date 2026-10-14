@@ -120,7 +120,7 @@ class PlanLine extends StatelessWidget {
   }
 }
 
-/// 관심 탭 목록 카드 (V3 · 익일유망주 · 상승초기 · 추세전환 · 상파 공통)
+/// 관심 탭 목록 카드 (V3 · 유망주 · 상승초기 · 추세전환 · 상파 공통)
 ///   [순위]  종목명 [시장] [84.8점]        현재가 48,300원
 ///          [업종 급락 주의] / [매수구간 안] [매수구간 47,400~48,800] / [목표] [손절] [손익비]
 ///   아래 줄들은 카드 오른쪽 끝까지 써서 한 줄에 들어가게
@@ -238,7 +238,7 @@ List<(String, Color)> tabChipTexts(Json c, String? tab) {
   return [for (final x in out) if (seen.add(x.$1)) x];
 }
 
-/// 탭별 확인 가격 줄: 익일유망주 = 종가·돌파·지지·추격 금지 (장중이면 지금 상태), 상파 = 지지 가격
+/// 탭별 확인 가격 줄: 유망주 = 종가·돌파·지지·추격 금지 (장중이면 지금 상태), 상파 = 지지 가격
 Widget? tabWatch(BuildContext context, Json c, String? tab) {
   final t = Theme.of(context).textTheme;
   if (tab == 'nextday') {

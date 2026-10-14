@@ -329,13 +329,13 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 ),
               ]),
 
-              // ---- 근거 / 주의: 연 탭(익일유망주·상승초기·추세전환·상파) 기준, 아니면 V3 ----
+              // ---- 근거 / 주의: 연 탭(유망주·상승초기·추세전환·상파) 기준, 아니면 V3 ----
               // (문장 끝의 '→ 변동성 9/15' 같은 점수 표시는 빼고 보여줌)
               if (selR.isNotEmpty) ...[
                 const SectionTitle('매수 근거'),
                 ...selR.map((r) => _bullet('✓', _clean(r), Colors.green)),
               ],
-              // 다음 거래일 확인 (익일유망주·상파만)
+              // 다음 거래일 확인 (유망주·상파만)
               if (watchLines.isNotEmpty) ...[
                 const SectionTitle('다음 거래일 확인'),
                 ...watchLines.map((l) => _bullet('→', l, Colors.teal)),
@@ -678,7 +678,7 @@ class _V3Head extends StatelessWidget {
 }
 
 
-/// 후보 탭(익일유망주·상승초기·추세전환)에서 열었을 때: 그 탭 점수·등급 (목록에 보이던 점수와 같음)
+/// 후보 탭(유망주·상승초기·추세전환)에서 열었을 때: 그 탭 점수·등급 (목록에 보이던 점수와 같음)
 class _TabHead extends StatelessWidget {
   const _TabHead({required this.source, required this.v, this.v3score, this.c = const {}});
   final String source;
@@ -686,7 +686,7 @@ class _TabHead extends StatelessWidget {
   final Json c; // 후보 전체 (유형·태그 칩, 확인 가격 줄)
   final num? v3score;
 
-  static const _titles = {'nextday': '익일유망주', 'early': '상승초기', 'reversal': '추세전환', 'uplimit': '상파'};
+  static const _titles = {'nextday': '유망주', 'early': '상승초기', 'reversal': '추세전환', 'uplimit': '상파'};
 
   @override
   Widget build(BuildContext context) {
@@ -704,7 +704,7 @@ class _TabHead extends StatelessWidget {
               Text('${_titles[source] ?? source} ${label.isEmpty ? '' : label}',
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo)),
               if (type != null && tabChipTexts(c, source).isEmpty) ...[const SizedBox(height: 4), Text(type, style: t.bodySmall)],
-              // 관심 목록과 같은 유형·태그 칩 + 확인 가격 (익일유망주·상파)
+              // 관심 목록과 같은 유형·태그 칩 + 확인 가격 (유망주·상파)
               if (tabChipTexts(c, source).isNotEmpty) ...[
                 const SizedBox(height: 6),
                 infoBoxes([for (final x in tabChipTexts(c, source)) planChip(x.$1, x.$2)]),

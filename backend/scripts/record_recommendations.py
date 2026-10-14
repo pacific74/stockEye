@@ -3,7 +3,7 @@
   python -m scripts.record_recommendations                 # 오늘
   python -m scripts.record_recommendations --date 2026-10-12
 
-  저녁 배치  : candidates 표의 그날 V3·익일유망주·상승초기·추세전환·상파 목록 (60일 안의 날짜만 남아 있음)
+  저녁 배치  : candidates 표의 그날 V3·유망주·상승초기·추세전환·상파 목록 (60일 안의 날짜만 남아 있음)
   당일단타   : Storage daytrade/signals/날짜.json ('진입 조건 충족' 신호)
   종가배팅   : Storage closingbet/signals/날짜.json (15:20 매수 후보) + 그날 마지막 결과의 '매수 후보'
   상한가포착 : Storage limitcatch/signals/날짜.json (처음 매수 검토)

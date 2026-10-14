@@ -18,7 +18,7 @@ MAX_BYTES = 3900
 TAB_ORDER = ["v3", "nextday", "early", "reversal", "uplimit"]       # 앱 후보 메뉴 순서 (새 탭은 뒤에 자동으로)
 WEEK = "월화수목금토일"
 IDX_NAME = {"KOSPI": "코스피", "KOSDAQ": "코스닥"}
-TAB_LABEL = {"v3": "V3", "nextday": "익일유망주", "early": "상승초기", "reversal": "추세전환", "uplimit": "상파"}   # 앱 관심 탭 이름
+TAB_LABEL = {"v3": "V3", "nextday": "유망주", "early": "상승초기", "reversal": "추세전환", "uplimit": "상파"}   # 앱 관심 탭 이름
 
 
 # ---------------------------------------------------------------- 리포트 만들 때: 지수·시장 요약 숫자

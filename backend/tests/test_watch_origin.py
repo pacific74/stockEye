@@ -13,7 +13,7 @@ def test_origin_picks_latest_before_buy():
     rows = [_row("2026-10-05", "early", 34000), _row("2026-10-07", "nextday"), _row("2026-10-07", "v3"),
             _row("2026-10-08", "reversal")]                       # 매수일(10-08) 당일 것은 직전 기록이 있으면 안 씀
     o = pub._origin_of(rows, "2026-10-08")
-    assert o["date"] == "2026-10-07" and o["names"] == ["V3", "익일유망주"] and o["stop"] == 35000
+    assert o["date"] == "2026-10-07" and o["names"] == ["V3", "유망주"] and o["stop"] == 35000
     assert [z["name"] for z in o["zones"]] == ["1차", "2차", "3차"]
     assert pub._origin_of([_row("2026-10-08", "uplimit")], "2026-10-08")["names"] == ["상파"]   # 직전이 없으면 그날
     assert pub._origin_of([_row("2026-10-09", "v3")], "2026-10-08") is None

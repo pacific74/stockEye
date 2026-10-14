@@ -33,7 +33,7 @@ HORIZONS = (1, 3, 5, 10, 20)
 PERIODS = [("설계", "2021-07-01", "2024-12-31"), ("확인", "2025-01-01", "2026-10-08"), ("고정 이후", "2026-10-09", None)]
 STRATS = {  # key: (이름, 주 기준가격, 주 평가 기간, 선정 최소 점수)
     "v3": ("V3", "open1", 20, None),
-    "nextday": ("익일유망주", "open1", 1, 60.0),
+    "nextday": ("유망주", "open1", 1, 60.0),
     "early": ("상승초기", "close0", 10, 60.0),
     "reversal": ("추세전환", "close0", 10, 70.0),
     "uplimit": ("상파", "open1", 3, None),
@@ -350,7 +350,7 @@ def _stack(frames: dict[str, pd.DataFrame], start) -> pd.DataFrame:
 
 
 def universe_tabs(ohlcv: pd.DataFrame, W: dict, listing: pd.DataFrame, index: pd.DataFrame, start: str) -> dict:
-    """익일유망주·상승초기·추세전환·상파: 날짜마다 자격 종목과 점수 (보통주 · 20일 평균 거래대금 10억↑ · 120거래일↑)
+    """유망주·상승초기·추세전환·상파: 날짜마다 자격 종목과 점수 (보통주 · 20일 평균 거래대금 10억↑ · 120거래일↑)
     ※ 저녁 배치의 V2 매수 차단(공시 위험 등)은 과거 전 기간으로 다시 계산하지 않아 근사 — 공시 점수는 중립 7."""
     from ..engine import early as up, nextday as nd, reversal as rv, uplimit as ul
     O, H, L, C, V = (W[k] for k in ("open", "high", "low", "close", "volume"))
@@ -379,7 +379,7 @@ def universe_tabs(ohlcv: pd.DataFrame, W: dict, listing: pd.DataFrame, index: pd
         ex = v if ex is None else (ex | v)
     out["early"] = _stack({"score": t["total"], "eligible": (base & ~ex).astype(float), "value": val20}, start)
     del f, t, ex
-    # 익일유망주 (공시 점수 중립 7)
+    # 유망주 (공시 점수 중립 7)
     f = nd.raw_features(O, H, L, C, V, VAL, nd.index_returns(index), mk)
     news = pd.DataFrame(7.0, index=C.index, columns=C.columns)
     t = nd.totals(nd.score_frame(f, news, True))

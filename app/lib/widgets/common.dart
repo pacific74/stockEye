@@ -247,7 +247,7 @@ const strategyLabels = {
   'v3': 'V3',
   'reversal': '추세전환',
   'early': '상승초기',
-  'nextday': '익일유망주',
+  'nextday': '유망주',
   'uplimit': '상파',
   'daytrade': '당일단타',
   'limitcatch': '상한가포착',

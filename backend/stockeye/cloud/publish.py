@@ -93,7 +93,7 @@ def trading_status(cfg: dict) -> dict:
             "updated": datetime.now().strftime("%Y-%m-%d %H:%M")}
 
 
-WATCH_TABS = {"v3": "V3", "nextday": "익일유망주", "early": "상승초기", "reversal": "추세전환", "uplimit": "상파"}
+WATCH_TABS = {"v3": "V3", "nextday": "유망주", "early": "상승초기", "reversal": "추세전환", "uplimit": "상파"}
 
 
 def _origin_of(rows: list[dict], buy_date: str) -> dict | None:

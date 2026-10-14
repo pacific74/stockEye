@@ -661,7 +661,7 @@ class _HoldingsTable extends StatelessWidget {
       }
     }
     for (final n in (o['names'] as List? ?? const [])) {
-      out.add('$n');
+      out.add('$n'.replaceAll('익일유망주', '유망주')); // 예전 기록 이름
     }
     return out;
   }

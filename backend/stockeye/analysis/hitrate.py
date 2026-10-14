@@ -37,7 +37,7 @@ H = 20
 TOP = 3
 OUTCOMES = ("t1", "t2", "t3", "stop", "flat")          # 1차 · 2차 · 3차 · 손절 · 보합
 LABELS = {"t1": "1차 목표", "t2": "2차 목표", "t3": "3차 목표", "stop": "손절", "flat": "보합"}
-TABS = {"v3": "V3", "nextday": "익일유망주", "early": "상승초기", "reversal": "추세전환", "uplimit": "상파"}
+TABS = {"v3": "V3", "nextday": "유망주", "early": "상승초기", "reversal": "추세전환", "uplimit": "상파"}
 MIN_SCORE = {"nextday": 60.0, "early": 60.0, "reversal": 70.0}
 JUMP, LIMIT_OPEN = 0.31, 0.295
 ISSUES_FILE = Path(__file__).resolve().parents[1] / "data" / "market_issues.json"
@@ -80,7 +80,8 @@ def judge(o: np.ndarray, h: np.ndarray, l: np.ndarray, t: tuple, stop: float) ->
 SELL = (0.5, 0.3, 0.2)                                   # 1차 50% · 2차 30% · 3차 20%
 
 
-def simulate(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray, zones: list, t: tuple, stop: float) -> dict:
+def simulate(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray, zones: list, t: tuple, stop: float,
+             first_day_only: bool = False) -> dict:
     """앱 매매 계획대로 분할 매수 → 분할 매도 (HIT-1.3)
     매수  zones = [(구간 상단, 비중%), ...] (1·2·3차 매수구간, 보통 30/30/40)
           1차: 시가가 1차 구간 상단 이하면 시가에, 위면 1차 상단까지 내려올 때 그 가격에
@@ -88,15 +89,21 @@ def simulate(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray, zones: 
     매도  1차 목표 50% · 2차 30% · 3차 20% (산 수량 기준). 1차를 판 뒤 남은 몫은 평균 매수가(본전)까지 밀리면 전부.
           1차 전에는 손절가(갭하락이면 시가)에 전부. 20일 끝까지 남은 몫은 20일째 종가. 비용 COST 뺌 (산 금액 기준 %)
     하루 안 순서 (보수적): 시가 → 매수구간까지 내려감(매수) → 손절 → 목표. 시가가 1차 목표 위로 뜬 날은 목표 먼저
-    → {outcome, first(목표·손절 처음 닿은 날), pnl, filled(산 비중 %), fill_day}. 하나도 못 사면 outcome None"""
+    first_day_only (추천주 검증 2026-10-15): 추천 유효기간은 다음 거래일 하루 — 그날 1차 매수구간에서 못 사면 끝(미체결).
+          그날 샀으면 그 뒤 2·3차 매수·매도는 계속
+    → {outcome, first(목표·손절 처음 닿은 날), pnl, filled(산 비중 %), fill_day, even(매수가매도 날), exit_day(다 판 날 · 남았으면 None)}.
+      하나도 못 사면 outcome None"""
     qty, cost, val = 0.0, 0.0, 0.0                       # 보유 수량(비중/가격), 들인 돈, 판 돈
     bought = [False] * len(zones)
     first, best, st, fill_day = {}, 0, stop, None
     sold = [False, False, False]
     base = None                                          # 1차 목표 때 보유 수량 (매도 비율 기준)
+    exit_day = None
     for k in range(len(h)):
         day = k + 1
         if not (h[k] > 0):
+            break
+        if first_day_only and k >= 1 and qty <= 0:      # 추천 다음 날 못 샀으면 끝
             break
         # 매수 (1차 목표 전까지만)
         if not sold[0]:
@@ -117,6 +124,7 @@ def simulate(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray, zones: 
             val += qty * min(o[k], st)
             first.setdefault("stop" if not sold[0] else "even", day)
             qty = 0.0
+            exit_day = day
             break
         for i in range(3):
             if not sold[i] and t[i] > 0 and h[k] >= t[i]:
@@ -130,21 +138,24 @@ def simulate(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray, zones: 
                 first.setdefault(f"t{i + 1}", day)
                 best = max(best, i + 1)
         if qty <= 1e-12:
+            exit_day = day
             break
         if sold[0] and l[k] <= st:                        # 목표 판 그날 다시 본전까지 밀림
             val += qty * st
             first.setdefault("even", day)
             qty = 0.0
+            exit_day = day
             break
     if cost <= 0:
-        return {"outcome": None, "first": {}, "pnl": None, "filled": 0, "fill_day": None}
+        return {"outcome": None, "first": {}, "pnl": None, "filled": 0, "fill_day": None, "even": None, "exit_day": None}
     if qty > 0:
         cc = c[np.isfinite(c) & (c > 0)]
         val += qty * (float(cc[-1]) if len(cc) else cost / qty)
     outcome = f"t{best}" if best else ("stop" if "stop" in first else "flat")
-    first.pop("even", None)
+    even = first.pop("even", None)
     return {"outcome": outcome, "first": first, "pnl": (val / cost - 1) * 100 - COST,
-            "filled": int(round(sum(w for (_, w), b in zip(zones, bought) if b))), "fill_day": fill_day}
+            "filled": int(round(sum(w for (_, w), b in zip(zones, bought) if b))), "fill_day": fill_day,
+            "even": even, "exit_day": exit_day}
 
 
 # ------------------------------------------------------------------ 신호 → 결과

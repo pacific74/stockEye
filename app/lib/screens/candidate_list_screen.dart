@@ -20,7 +20,7 @@ class CandidateListScreen extends StatefulWidget {
   final String title;
 
   // v3 = V3 기준 전략 (🔒 고정) / now = 오늘 지금 가격 기준 / signal·buy·watch = 매수후보 V2 (참고)
-  // nextday = 익일 유망주 (실험 탭 · 60점 이상) / early = 상승초기 (실험 탭 · 60점 이상) / reversal = 추세전환 (실험 탭 · 70점 이상)
+  // nextday = 유망주 (실험 탭 · 60점 이상) / early = 상승초기 (실험 탭 · 60점 이상) / reversal = 추세전환 (실험 탭 · 70점 이상)
   // daytrade = 당일단타 (PC 가 09:00~10:30 1분마다 올림 · system_status)
   // limitcatch = 상한가포착 (PC 가 09:05~15:20 1분마다 올림 · system_status)
   // closingbet = 종가배팅 (PC 가 14:50~15:20 1분마다 올림 · system_status)
@@ -43,7 +43,7 @@ class _CandidateListScreenState extends State<CandidateListScreen> {
       initialIndex: keys.contains(list) ? keys.indexOf(list) : 0,
       child: Scaffold(
         appBar: AppBar(
-          title: const LogoTitle('관심'),
+          title: const LogoTitle('추천'),
           actions: topActions(context, onRefresh: () {
             Api.forgetReport();
             setState(() => _gen++);

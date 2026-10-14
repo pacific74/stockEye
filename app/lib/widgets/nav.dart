@@ -9,7 +9,7 @@ final ValueNotifier<String> candidateListKey = ValueNotifier<String>('v3'); // �
 
 const navDestinations = [
   NavigationDestination(icon: Icon(Icons.home_outlined), label: '오늘'),
-  NavigationDestination(icon: Icon(Icons.trending_up), label: '관심'),
+  NavigationDestination(icon: Icon(Icons.trending_up), label: '추천'),
   NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined), label: '보유'),
   NavigationDestination(icon: Icon(Icons.menu_book_outlined), label: '일지'),
   NavigationDestination(icon: Icon(Icons.fact_check_outlined), label: '검증'),

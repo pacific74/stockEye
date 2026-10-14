@@ -11,7 +11,7 @@ import '../widgets/common.dart';
 Future<Json> loadHitRate() => Api.latestBacktest(strategy: 'HIT');
 
 const _cols = [('t1', '1차'), ('t2', '2차'), ('t3', '3차'), ('stop', '손절'), ('flat', '보합')];
-const _tabList = [('v3', 'V3'), ('nextday', '익일유망주'), ('early', '상승초기'), ('reversal', '추세전환'), ('uplimit', '상파')];
+const _tabList = [('v3', 'V3'), ('nextday', '유망주'), ('early', '상승초기'), ('reversal', '추세전환'), ('uplimit', '상파')];
 
 Color _colOf(String k) => switch (k) {
       't1' || 't2' || 't3' => const Color(0xFFD32F2F),

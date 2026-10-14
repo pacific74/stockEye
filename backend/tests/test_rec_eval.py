@@ -66,3 +66,43 @@ def test_grade_open_and_summary():
     assert s["total"]["n"] == 3 and s["total"]["done"] == 3 and s["total"]["win"] == round(2 / 3 * 100, 1)
     assert s["by_overlap"]["여러 구분 겹침"]["n"] == 2 and s["by_overlap"]["한 구분만"]["n"] == 1
     assert set(s["by_kind"]) == {"v3", "nextday", "daytrade"} and "2026-10-01" in s["by_day"]
+
+
+def test_first_day_only_and_grid():
+    import numpy as np
+    from stockeye.analysis import rec_eval as re_
+    from stockeye.analysis.hitrate import simulate
+    o = np.array([105.0, 99.0, 100.0]); h = np.array([106.0, 100.0, 112.0])
+    lo = np.array([104.0, 98.0, 99.0]); c = np.array([105.0, 99.0, 111.0])
+    r = simulate(o, h, lo, c, [(100.0, 100.0)], (110.0, 120.0, 130.0), 95.0, first_day_only=True)
+    assert r["outcome"] is None                                    # 다음 날(1일째) 1차 구간까지 안 내려옴 → 미체결
+    r2 = simulate(o, h, lo, c, [(100.0, 100.0)], (110.0, 120.0, 130.0), 95.0)
+    assert r2["outcome"] == "t1"                                   # 예전 규칙은 2일째 체결
+    # 1일째 체결 → 1차 → 매수가 복귀 = 매수가매도
+    o = np.array([100.0, 108.0, 104.0]); h = np.array([101.0, 111.0, 105.0])
+    lo = np.array([99.0, 107.0, 99.0]); c = np.array([100.0, 109.0, 100.0])
+    r = simulate(o, h, lo, c, [(100.0, 100.0)], (110.0, 120.0, 130.0), 95.0, first_day_only=True)
+    assert r["outcome"] == "t1" and r["even"] == 3 and r["exit_day"] == 3 and re_.category("t1", r) == "even"
+    rows = [{"rec_date": "2026-10-15", "kind": "v3", "score": 91, "res_status": "매수가매도", "res_done": True,
+             "res_pnl": 4.0, "res_days": 3},
+            {"rec_date": "2026-10-15", "kind": "v3", "score": 95, "res_status": "미체결", "res_done": True},
+            {"rec_date": "2026-10-15", "kind": "daytrade", "score": 82, "res_status": "1차 목표 · 보유중", "res_done": False,
+             "res_pnl": 1.0, "res_days": 2},
+            {"rec_date": "2026-10-15", "kind": "v3", "score": 55, "res_status": "손절", "res_done": True, "res_pnl": -3}]
+    g = re_.grid(rows)["2026-10-15"]
+    assert g["90|v3"]["d"] == {"n": 2, "f": 1, "p": 4.0, "even": [1, 3]}
+    assert "d" not in g["80|daytrade"] and g["80|daytrade"]["h"]["t1"] == [1, 2]
+    assert not any(k.startswith("50") for k in g)
+
+
+def test_track_result():
+    from stockeye.analysis.rec_eval import track_result
+    t = {"done": True, "bought": True, "hits": {"t1": "09:40", "t2": "10:00"}, "events": [{"state": "매수가매도"}],
+         "result": "이익실현", "pnl": 1.2, "date": "2026-10-14", "exit_time": "2026-10-14 10:16"}
+    assert track_result(t)["status"] == "매수가매도" and track_result(t)["days"] == 1
+    t = {**t, "events": [], "hits": {"t1": "a", "t2": "b", "t3": "c"}}
+    assert track_result(t)["status"] == "3차 목표"
+    t = {"done": True, "bought": True, "hits": {}, "events": [], "result": "이익실현", "pnl": 2, "date": "2026-10-13",
+         "exit_time": "2026-10-14 09:30", "kind": "x"}
+    assert track_result({**t, "result": "손절"})["days"] == 2
+    assert track_result({"done": True, "bought": False, "result": "미체결"})["status"] == "미체결"

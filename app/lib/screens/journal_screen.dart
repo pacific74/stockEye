@@ -12,7 +12,7 @@ const _modes = {null: '전체', 'paper': '모의', 'kis_paper': 'KIS 모의', 'r
 
 /// 관심 구분 (positions.list_key — 당일매매 자동은 daytrade·limitcatch)
 const _kinds = {
-  null: '전체 구분', 'v3': 'V3', 'nextday': '익일유망주', 'early': '상승초기', 'reversal': '추세전환', 'uplimit': '상파',
+  null: '전체 구분', 'v3': 'V3', 'nextday': '유망주', 'early': '상승초기', 'reversal': '추세전환', 'uplimit': '상파',
   'daytrade': '당일단타', 'limitcatch': '상한가포착', 'closingbet': '종가배팅', '_none': '기타·직접',
 };
 
@@ -273,7 +273,7 @@ class _EntryRow extends StatelessWidget {
     // 매수 당시: 어떤 후보 탭·몇 위·몇 점·상태 (저녁/장중 배치가 positions.plan.entry_info 에 기록)
     final info = asMap(asMap(p['plan'])['entry_info']);
     final kind = _kindOf(p);
-    final summary = (info['summary'] as String?) ??
+    final summary = (info['summary'] as String?)?.replaceAll('익일유망주', '유망주') ?? // 예전 기록 이름
         (p['mode'] == 'signal'
             ? '${_kinds[kind] ?? kind} ${'${p['signal_time'] ?? p['entry_time']}'.length >= 16 ? '${p['signal_time'] ?? p['entry_time']}'.substring(11, 16) : ''} 포착 · ${p['exit_reason'] ?? ''}'
             : null);

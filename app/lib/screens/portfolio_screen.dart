@@ -461,7 +461,7 @@ Future<bool> _closeDialog(BuildContext context, Json h) async {
 }
 
 
-/// 보유종목 카드 안: [익일유망주] 10/07 관심 → 1·2·3차 매수구간 · 손절가 (지금 가격이 어느 구간인지 표시)
+/// 보유종목 카드 안: [유망주] 10/07 관심 → 1·2·3차 매수구간 · 손절가 (지금 가격이 어느 구간인지 표시)
 class _OriginBox extends StatelessWidget {
   const _OriginBox({required this.o, this.price, this.entry, this.maxPrice});
   final Json o;
@@ -499,7 +499,7 @@ class _OriginBox extends StatelessWidget {
           Flexible(
             child: infoBoxes([
               for (final n in (o['names'] as List? ?? const []))
-                InfoBox('$n', bold: true, color: Theme.of(context).colorScheme.primary),
+                InfoBox('$n'.replaceAll('익일유망주', '유망주'), bold: true, color: Theme.of(context).colorScheme.primary),
             ]),
           ),
           const SizedBox(width: 6),

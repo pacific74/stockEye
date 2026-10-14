@@ -272,8 +272,10 @@ class _Section extends StatelessWidget {
         Text('● 실시간 (체결 때마다 목표·손절 판단)', style: t.bodySmall?.copyWith(color: Colors.green)),
       sub('진입조건충족', tracked.length, '충족된 시간 순 · 고정'),
       if (tracked.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('아직 없어요', style: t.bodySmall)),
-      for (final x in tracked)
-        _TrackCard(t: x, kind: kind, quote: stale && x['done'] != true ? quotes['${x['code']}'] : null),
+      _grid([
+        for (final x in tracked)
+          _TrackCard(t: x, kind: kind, quote: stale && x['done'] != true ? quotes['${x['code']}'] : null),
+      ]),
       sub('진입대기', wait.length, _lc ? '+20%↑ · 100억↑ · 75점↑ (바뀔 수 있음)' : '80점↑ · 진입 신호 전 (바뀔 수 있음)'),
       _grid([for (final (i, r) in wait.indexed) tile(r, i)]),
       if (watch.isNotEmpty)
@@ -358,11 +360,11 @@ class _ClosingSection extends StatelessWidget {
       if (prevT.isNotEmpty) ...[
         sub('전일 종가배팅', prevT.length,
             '${prevDates.last.length >= 10 ? prevDates.last.substring(5) : prevDates.last} 고정 · 다음 날 10:30 까지 매도'),
-        for (final x in prevT) _TrackCard(t: x, kind: 'closingbet'),
+        _grid([for (final x in prevT) _TrackCard(t: x, kind: 'closingbet')]),
       ],
       sub('오늘 고정', todayT.length, '매수 후보 처음 뜬 시각 순 · 매수 범위에 들어오면 매수'),
       if (todayT.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('아직 없어요', style: t.bodySmall)),
-      for (final x in todayT) _TrackCard(t: x, kind: 'closingbet'),
+      _grid([for (final x in todayT) _TrackCard(t: x, kind: 'closingbet')]),
       sub('후보', items.length, '우선 관찰·관찰 (바뀔 수 있음)'),
       if (today && items.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('조건에 맞는 종목이 없어요', style: t.bodySmall)),
       _grid([for (final (i, r) in items.indexed) ClosingbetTile(r: r, rank: i + 1, showRules: true)]),
@@ -531,11 +533,17 @@ class _TrackCard extends StatelessWidget {
 }
 
 
-/// PC(넓은 화면)에서는 후보 카드를 두 줄씩 나란히 — 스크롤 줄이기
+/// 카드 배치: 종목 카드 폭을 정해(약 460) 옆으로 붙이고, 화면이 좁아지면 아래로 내림
+///   한 줄에 들어가는 개수만큼 남는 폭을 고르게 나눔 (휴대폰처럼 좁으면 한 줄에 하나 · 전체 폭)
+const _cardW = 460.0;
 Widget _grid(List<Widget> children) => LayoutBuilder(builder: (context, c) {
-      if (c.maxWidth < 900 || children.length < 2) return Column(children: children);
-      final w = (c.maxWidth - 8) / 2;
-      return Wrap(spacing: 8, children: [for (final x in children) SizedBox(width: w, child: x)]);
+      if (children.isEmpty) return const SizedBox.shrink();
+      final n = ((c.maxWidth + 8) / (_cardW + 8)).floor().clamp(1, 6);
+      if (n == 1) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children);
+      final w = (c.maxWidth - 8 * (n - 1)) / n;
+      return Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.start, children: [
+        for (final x in children) SizedBox(width: w, child: x),
+      ]);
     });
 
 /// 깜빡이는 표시 (on 이 false 면 그대로)

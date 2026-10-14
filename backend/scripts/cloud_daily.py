@@ -218,6 +218,15 @@ def main():
             return finish_day(sb, kis, report["date"])
         step("당일매매 추적 마무리 (PC 꺼짐 대비)", _intraday_finish, errors)
 
+        # 당일매매 시장·업종 기록: 오늘 당일단타 매수→청산 구간의 시장·업종 흐름 누적 → 앱 '검증 > 시장·업종' (시장 필터·진입 시간 조절 근거)
+        def _intraday_ctx():
+            from stockeye.analysis.intraday_ctx import run as ctx_run
+            from stockeye.data.sources.kis_source import KISClient
+            kc = cfg.get("kis", {})
+            kis = KISClient(kc.get("env", "prod"), data_dir(cfg) / ".kis_token.json", kc.get("calls_per_sec", 15))
+            return ctx_run(sb, kis, pit.listing, getattr(pit, "sectors", None), report["date"])
+        step("당일매매 시장·업종 기록", _intraday_ctx, errors)
+
     # 추천주 검증: recommendations 결과 칸 채우기(관심 탭 20거래일 · 장중 탭은 위 실전 기록) + 통계 → 앱 '검증 > 추천주'
     if not args.as_of:
         from stockeye.analysis.rec_eval import run as rec_run

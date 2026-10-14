@@ -5,7 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'api.dart';
 import 'closingbet.dart' show ClosingbetTile;
-import 'daytrade.dart' show DaytradeTile, DaytradeFindButton, dtIsToday, liveWindow, lookupLabel;
+import 'daytrade.dart' show DaytradeTile, DaytradeFindButton, dtIsToday, lookupLabel;
 import 'format.dart';
 import 'limitcatch.dart' show LimitcatchTile;
 import 'live.dart';
@@ -335,9 +335,13 @@ class _ClosingSection extends StatelessWidget {
     final items = today ? asList(d['items']).where((r) => !fixed.contains('${r['code']}')).toList() : <Json>[];
     final c = asMap(d['counts']);
     final todayT = tracked.where((x) => dtIsToday({'date': x['date']})).toList();
-    // 전날 내역: 오늘보다 앞선 날짜 중 가장 최근 하루
+    // 전날 내역: 오늘보다 앞선 날짜 중 가장 최근 하루 (다음 날 10:30 까지 매도 추적)
     final prevDates = tracked.map((x) => '${x['date']}').where((x) => !dtIsToday({'date': x})).toSet().toList()..sort();
     final prevT = prevDates.isEmpty ? <Json>[] : tracked.where((x) => x['date'] == prevDates.last).toList();
+    // 당일단타·상한가포착과 같은 구분: 진입대기 = 우선 관찰 · 관찰 · 기준 미달(대상 아님·진입 금지)
+    final wait = items.where((r) => r['status'] == '우선 관찰').toList();
+    final watch = items.where((r) => r['status'] == '관찰').toList();
+    final rest = items.where((r) => !{'우선 관찰', '관찰', '매수 후보'}.contains(r['status'])).toList();
     Widget sub(String title, int n, String note) => Padding(
           padding: const EdgeInsets.fromLTRB(4, 8, 4, 2),
           child: Text.rich(TextSpan(children: [
@@ -345,38 +349,50 @@ class _ClosingSection extends StatelessWidget {
             TextSpan(text: '  $note', style: t.bodySmall?.copyWith(color: Colors.grey)),
           ])),
         );
+    Widget fold(String title, String note, List<Widget> children) => Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            dense: true,
+            tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+            title: Text.rich(TextSpan(children: [
+              TextSpan(text: title, style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+              TextSpan(text: '  $note', style: t.bodySmall?.copyWith(color: Colors.grey)),
+            ])),
+            children: [_grid(children)],
+          ),
+        );
+    Widget tile(Json r, int i) => ClosingbetTile(r: r, rank: i + 1, showRules: true);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Text('종가배팅', style: t.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
         const SizedBox(width: 8),
         Expanded(
-            child: Text(
-                today
-                    ? '${lookupLabel(d, at)}${d['final'] == true ? ' (오늘 마지막)' : liveWindow(closing: true) ? ' · 1분마다' : ''}'
-                    : '오늘 결과 없음',
-                overflow: TextOverflow.ellipsis,
-                style: t.bodySmall?.copyWith(color: Colors.grey))),
+            child: Text(today ? lookupLabel(d, at) : '오늘 결과 없음',
+                overflow: TextOverflow.ellipsis, style: t.bodySmall?.copyWith(color: Colors.grey))),
         DaytradeFindButton(closing: true, onDone: onDone),
       ]),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(4, 2, 4, 4),
-        child: Text(
+      if (today && d['final'] == true)
+        Text('새 종목 찾기는 끝났고 고정 종목만 추적 중이에요 (다음 날 10:30 까지)', style: t.bodySmall?.copyWith(color: Colors.teal))
+      else
+        Text(
             today
-                ? '후보 ${d['scanned'] ?? 0} · 매수 후보 ${c['매수 후보'] ?? 0} · 우선 관찰 ${c['우선 관찰'] ?? 0} · 관찰 ${c['관찰'] ?? 0}'
-                : '평일 14:50~15:20 PC 16_closingbet.bat(작업 스케줄러 14:45) 또는 [종목찾기]로 올라와요 (매수는 14:50~15:20 사이 매수 범위 안)',
+                ? '14:50~15:20 1분마다 · 후보 ${d['scanned'] ?? 0} · 매수 후보 ${c['매수 후보'] ?? 0} · 우선 관찰 ${c['우선 관찰'] ?? 0} · 관찰 ${c['관찰'] ?? 0}'
+                : '평일 14:50~15:20 PC 16_closingbet.bat(작업 스케줄러 14:45) 또는 [종목찾기]로 올라와요',
             style: t.bodySmall?.copyWith(color: Colors.grey)),
-      ),
+      sub('진입조건충족', todayT.length, '매수 후보 처음 뜬 시각 순 · 고정 · 14:50~15:20 매수 범위에 들어오면 매수'),
+      if (todayT.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('아직 없어요', style: t.bodySmall)),
+      _grid([for (final x in todayT) _TrackCard(t: x, kind: 'closingbet')], width: _trackW),
       if (prevT.isNotEmpty) ...[
-        sub('전일 종가배팅', prevT.length,
+        sub('전일 진입조건충족', prevT.length,
             '${prevDates.last.length >= 10 ? prevDates.last.substring(5) : prevDates.last} 고정 · 다음 날 10:30 까지 매도'),
         _grid([for (final x in prevT) _TrackCard(t: x, kind: 'closingbet')], width: _trackW),
       ],
-      sub('오늘 고정', todayT.length, '매수 후보 처음 뜬 시각 순 · 매수 범위에 들어오면 매수'),
-      if (todayT.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('아직 없어요', style: t.bodySmall)),
-      _grid([for (final x in todayT) _TrackCard(t: x, kind: 'closingbet')], width: _trackW),
-      sub('후보', items.length, '우선 관찰·관찰 (바뀔 수 있음)'),
-      if (today && items.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('조건에 맞는 종목이 없어요', style: t.bodySmall)),
-      _grid([for (final (i, r) in items.indexed) ClosingbetTile(r: r, rank: i + 1, showRules: true)]),
+      sub('진입대기', wait.length, '우선 관찰 · 80점↑ 이지만 갭 위험 높음 (바뀔 수 있음)'),
+      _grid([for (final (i, r) in wait.indexed) tile(r, i)]),
+      if (watch.isNotEmpty)
+        fold('관찰 ${watch.length}', '70점↑ · 바뀔 수 있음 (눌러서 펼치기)', [for (final (i, r) in watch.take(10).indexed) tile(r, i)]),
+      if (rest.isNotEmpty)
+        fold('기준 미달 ${rest.length}', '70점 미만·진입 금지 (참고)', [for (final (i, r) in rest.take(10).indexed) tile(r, i)]),
     ]);
   }
 }
@@ -459,14 +475,20 @@ class _TrackCard extends StatelessWidget {
     double? n(String k) => (t[k] as num?)?.toDouble();
     final chart = mb.length < 3
         ? null
-        : SizedBox(
-            height: 190,
-            child: PriceChart(bars: mb, showMa: false, levels: [
-              if (bought && n('entry') != null) PriceLevel('매수', n('entry')!, Colors.grey),
-              if (n('stop') != null) PriceLevel('손절', n('stop')!, downColor),
-              if (n('t1') != null) PriceLevel('1차', n('t1')!, upColor),
-            ]),
-          );
+        : Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+            SizedBox(
+              height: 190,
+              child: PriceChart(bars: mb, showMa: false, levels: [
+                if (bought && n('entry') != null) PriceLevel('매수', n('entry')!, Colors.grey),
+                if (n('stop') != null) PriceLevel('손절', n('stop')!, downColor),
+                if (n('t1') != null) PriceLevel('1차', n('t1')!, upColor),
+              ]),
+            ),
+            // 언제 차트인지: 첫 봉 ~ 마지막 봉 시각 (마지막 봉은 실시간 현재가로 덧그림)
+            Text('1분봉 ${mb.first['date']} ~ ${mb.last['date']}${!done && last != null ? ' · 현재가 실시간' : ''}',
+                textAlign: TextAlign.right,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
+          ]);
     final narrow = MediaQuery.sizeOf(context).width < 640;
     String? timeOf(String s) {                       // 그 상태가 처음 생긴 시각
       for (final e in events) {

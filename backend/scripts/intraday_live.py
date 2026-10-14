@@ -169,6 +169,25 @@ def main():
             except Exception as e:  # noqa: BLE001
                 log.debug("종가배팅 내역 발행 실패: %s", e)
     cb_publish(_now())
+
+    def publish_bars(now) -> None:
+        """고정 종목(끝난 것 포함) 1분봉 최근 2시간 → system_status 'intraday_bars' (현재가는 앱이 실시간으로 덧그림)"""
+        if not sb or now.strftime("%H:%M") < "09:01":
+            return
+        from stockeye.trading.intraday_track import pack_bars
+        hhmmss = now.strftime("%H%M%S")
+        out = {}
+        for tr, run in ((dt.track, dt), (lc.track, lc), (cb, dt)):
+            with tr.lock:
+                codes = [c for c in {**tr.carry, **tr.tracks}]
+            for code in codes:
+                if code in out:
+                    continue
+                b = run._bars(code, hhmmss)                            # 캐시 + 새 봉만 (종목당 1회 호출)
+                out[code] = pack_bars(b)
+        from stockeye.cloud import publish as pub
+        pub.publish_status(sb, "intraday_bars", {"date": now.strftime("%Y-%m-%d"), "time": now.strftime("%H:%M"),
+                                                 "bars": out})
     if cb.carry:
         print(f"전날 종가배팅 {len(cb.carry)}개 → 오늘 10:30 까지 추적")
     for tr in trackers:
@@ -230,6 +249,10 @@ def main():
                 cb_publish(now)
         except Exception as e:  # noqa: BLE001
             print(f"⚠ 종가배팅 추적 실패: {e}")
+        try:                                                           # 앱 카드 1분봉 차트 (오늘 고정 종목 · 1분에 한 번)
+            publish_bars(now)
+        except Exception as e:  # noqa: BLE001
+            log.debug("1분봉 발행 실패: %s", e)
         # 실시간: 고정 종목만 구독 (먼저 잡힌 순, 최대 40). 끊겨 있으면 1분봉으로 목표·손절 판단
         codes = list(dict.fromkeys(cb.codes() + lc.track.codes() + dt.track.codes()))
         if feed:

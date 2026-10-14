@@ -63,6 +63,8 @@ class Api {
   /// 종가배팅: PC 가 14:50~15:20 1분마다 올리는 후보 (system_status 'closingbet')
   static Future<Json> closingbet() => useCloud ? _Cloud.statusOf('closingbet') : Future.value(<String, dynamic>{});
   /// 종가배팅 고정·매수 내역 (전날 것 다음 날 10:30 까지 · 22_intraday 가 1분마다 · 저녁 배치가 마감)
+  /// system_status 아무 키 (당일매매 1분봉 intraday_bars · closingbet_bars 등)
+  static Future<Json> statusKey(String key) => useCloud ? _Cloud.statusOf(key) : Future.value(<String, dynamic>{});
   static Future<Json> closingbetTrack() =>
       useCloud ? _Cloud.statusOf('closingbet_track') : Future.value(<String, dynamic>{});
   /// 당일단타 [종목찾기] (관리자) → GitHub 'daytrade' 작업이 지금 시세로 한 번 계산

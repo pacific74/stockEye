@@ -511,3 +511,16 @@ def finish_day(sb, kis, day: str, kinds=("daytrade", "limitcatch", "closingbet")
     except Exception as e:  # noqa: BLE001
         log.debug("intraday_live 정리 실패: %s", e)
     return out
+
+
+BARS_KEEP = 120                                     # 앱 카드 1분봉: 최근 2시간
+
+
+def pack_bars(b: pd.DataFrame | None, n: int = BARS_KEEP) -> list:
+    """1분봉 → 앱 카드 차트용 작은 배열 [[HH:MM, 시, 고, 저, 종, 거래량], ...] (최근 n개, 오늘 것만)"""
+    if b is None or len(b) == 0:
+        return []
+    b = b.sort_values("time")
+    b = b[b["time"].dt.date == b["time"].iloc[-1].date()].tail(n)
+    return [[pd.Timestamp(r.time).strftime("%H:%M"), float(r.open), float(r.high), float(r.low), float(r.close),
+             int(r.volume or 0)] for r in b.itertuples()]

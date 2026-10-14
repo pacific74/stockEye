@@ -145,6 +145,16 @@ class Runner:
             if not t["done"] and code in snap.index:
                 self.track.update(code, None, float(snap.loc[code, "close"]), None, now)
         self.track.save()
+        if self.sb and self.track.tracks:                              # 앱 카드 1분봉 (오늘 고정 종목)
+            try:
+                from stockeye.trading.intraday_track import pack_bars
+                from stockeye.cloud import publish as pub
+                hh = now.strftime("%H%M%S")
+                pub.publish_status(self.sb, "closingbet_bars", {
+                    "date": self.day, "time": now.strftime("%H:%M"),
+                    "bars": {c: pack_bars(self._bars(c, hh)) for c in self.track.tracks}})
+            except Exception as e:  # noqa: BLE001
+                log.debug("1분봉 발행 실패: %s", e)
         return {"date": self.day, "time": now.strftime("%H:%M"), "version": cb.VERSION, "scanned": len(res),
                 "counts": counts, "items": keep, "final": final, "idx_chg": idx_chg, "runner": self.runner,
                 "picks": [{k: r.get(k) for k in ("code", "name", "score", "type", "entry", "stop", "t1", "t2", "atr", "gap")}

@@ -239,3 +239,11 @@ def test_hold_needs_big_drop_or_three_minutes():
     tr2.add([SIG], pd.Timestamp("2026-10-14 09:10"))
     tr2.update("000010", None, 10000, 74, pd.Timestamp("2026-10-14 09:11"))      # 5점 넘게 하락 → 바로
     assert tr2.tracks["000010"]["events"][-1]["state"] == "신규진입보류"
+
+
+def test_pack_bars_today_last_n():
+    b = pd.concat([_bars([(1, 2, 0.5, 1.5, 10)] * 3, start="2026-10-13 15:28"),
+                   _bars([(10, 12, 9, 11, 100)] * 130, start="2026-10-14 09:00")])
+    out = it.pack_bars(b)
+    assert len(out) == it.BARS_KEEP and out[-1] == ["11:09", 10.0, 12.0, 9.0, 11.0, 100]
+    assert it.pack_bars(None) == []

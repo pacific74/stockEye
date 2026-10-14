@@ -185,7 +185,9 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                         ]),
                       ]),
                       // 관심 탭에서 산 종목: 어느 탭 · 그때 1·2·3차 매수구간 · 손절가
-                      if (_originOf(h) != null) _OriginBox(o: _originOf(h)!, price: (h['now_price'] as num?)?.toDouble()),
+                      if (_originOf(h) != null)
+                        _OriginBox(o: _originOf(h)!, price: (h['now_price'] as num?)?.toDouble(),
+                            entry: (h['entry_price'] as num?)?.toDouble(), maxPrice: (h['max_price'] as num?)?.toDouble()),
                       ...alerts.map((a) => Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text('⚠ $a', style: const TextStyle(color: Colors.orange)),
@@ -461,9 +463,11 @@ Future<bool> _closeDialog(BuildContext context, Json h) async {
 
 /// 보유종목 카드 안: [익일유망주] 10/07 관심 → 1·2·3차 매수구간 · 손절가 (지금 가격이 어느 구간인지 표시)
 class _OriginBox extends StatelessWidget {
-  const _OriginBox({required this.o, this.price});
+  const _OriginBox({required this.o, this.price, this.entry, this.maxPrice});
   final Json o;
   final double? price;
+  final double? entry; // 매수가
+  final double? maxPrice; // 보유 중 최고가 (저녁 배치)
 
   @override
   Widget build(BuildContext context) {
@@ -472,6 +476,8 @@ class _OriginBox extends StatelessWidget {
     final md = d.length >= 10 ? '${int.parse(d.substring(5, 7))}/${int.parse(d.substring(8, 10))}' : d;
     final zones = asList(o['zones']).map(asMap).toList();
     final stop = (o['stop'] as num?)?.toDouble();
+    final t1 = (o['target1'] as num?)?.toDouble();
+    final be = t1 != null && entry != null && ((maxPrice ?? 0) >= t1 || (price ?? 0) >= t1);
     Widget row(String label, String value, {Color? color, bool here = false}) => Padding(
           padding: const EdgeInsets.only(top: 2),
           child: Row(children: [
@@ -505,7 +511,11 @@ class _OriginBox extends StatelessWidget {
               '${num0(z['low'] as num?)} ~ ${num0(z['high'] as num?)}',
               here: price != null && z['low'] != null && z['high'] != null &&
                   price! >= (z['low'] as num) && price! <= (z['high'] as num)),
-        if (stop != null)
+        // 공통 규칙: 1차 목표 뒤엔 손절가 대신 매수가(본전) — 닿으면 남은 수량 전량 매도 ('손절'로 표시하지 않음)
+        if (be)
+          row('본전', '${num0(entry)}  (1차 목표 뒤 · 닿으면 전량 매도)',
+              color: Colors.orange, here: price != null && price! <= entry!)
+        else if (stop != null)
           row('손절', '${num0(stop)}${price != null && price! > 0 ? '  (지금보다 ${((stop / price! - 1) * 100).toStringAsFixed(1)}%)' : ''}',
               color: downColor, here: price != null && price! <= stop),
       ]),

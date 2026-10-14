@@ -224,6 +224,14 @@ def main():
             return finish_day(sb, kis, report["date"])
         step("당일매매 추적 마무리 (PC 꺼짐 대비)", _intraday_finish, errors)
 
+        # NXT(넥스트레이드) 기록: 오늘 산 종가배팅의 애프터마켓 가격(지금) · 어제 종가배팅 결과 + 애프터·프리마켓 → 검증
+        def _nxt():
+            from stockeye.analysis import nxt_ctx
+            from stockeye.data.sources import naver_live
+            n = nxt_ctx.record_after(sb, report["date"], naver_live.stocks)
+            return {"after": n, **nxt_ctx.publish_cb(sb, report["date"])}
+        step("NXT 애프터·프리마켓 기록 (종가배팅)", _nxt, errors)
+
         # 당일매매 시장·업종 기록: 오늘 당일단타 매수→청산 구간의 시장·업종 흐름 누적 → 앱 '검증 > 시장·업종' (시장 필터·진입 시간 조절 근거)
         def _intraday_ctx():
             from stockeye.analysis.intraday_ctx import run as ctx_run

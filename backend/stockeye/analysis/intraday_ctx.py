@@ -124,7 +124,8 @@ def ctx_rows(bars_fn, tracks: list[dict], listing: pd.DataFrame, sectors: pd.Dat
             "corr_sec": _r(corr(s_stock, s_sec) if len(s_sec) else None), "corr_mkt": _r(corr(s_stock, s_mkt)),
             "mkt_pre30": _r(ret(mb, pre30, t0)), "mkt_pre10": _r(ret(mb, pre10, t0)),
             "mkt_open": _r(ret(mb, open_, t0)), "sec_pre30": _r(float(s_pre.iloc[-1] - 100) if len(s_pre) else None),
-            "hold_min": int((t1 - t0).total_seconds() // 60), "score": t.get("score")})
+            "hold_min": int((t1 - t0).total_seconds() // 60), "score": t.get("score"),
+            "nxt_pre": (t.get("nxt_pre") or [None, None])[1] if isinstance(t.get("nxt_pre"), list) else None})
     return out
 
 
@@ -135,6 +136,8 @@ GROUPS = [
     ("장 시작~진입 시장", "mkt_open", [("하락", None, 0), ("0 ~ +1%", 0, 1), ("+1% 이상", 1, None)]),
     ("시장 상관", "corr_mkt", [("낮음 (0.4 미만)", None, 0.4), ("높음 (0.4 이상)", 0.4, None)]),
     ("진입 전 30분 업종", "sec_pre30", [("하락 (0 미만)", None, 0), ("0 ~ +1%", 0, 1), ("+1% 이상", 1, None)]),
+    ("NXT 프리마켓 (08:00~08:50, 전일 종가 대비)", "nxt_pre",
+     [("하락 (0 미만)", None, 0), ("0 ~ +3%", 0, 3), ("+3 ~ +7%", 3, 7), ("+7% 이상", 7, None)]),
 ]
 
 

@@ -46,6 +46,21 @@ class Api {
         if (m.isEmpty) _stockInfo = null; // 못 받았으면 다음에 다시
         return {for (final e in m.entries) if (e.value is List) e.key: e.value as List};
       }();
+  /// 당일 잠정 수급 {code: [외인 억, 기관 억, '11:20']} — 오늘 것만 · 1분 캐시 (PC 22 가 하루 5번 갱신)
+  static Future<Map<String, List>>? _flowLive;
+  static DateTime _flowAt = DateTime(2000);
+  static Future<Map<String, List>> flowLive() {
+    if (_flowLive != null && DateTime.now().difference(_flowAt).inSeconds < 60) return _flowLive!;
+    _flowAt = DateTime.now();
+    return _flowLive = () async {
+      final d = useCloud ? await _Cloud.statusOf('flow_live') : <String, dynamic>{};
+      final n = DateTime.now();
+      final today = '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+      if ('${d['date']}' != today) return <String, List>{};
+      final m = asMap(d['flows']);
+      return {for (final e in m.entries) if (e.value is List) e.key: e.value as List};
+    }();
+  }
   static Json? _secMembers;
   static Future<Json> sectorMembers() async {
     if (_secMembers != null) return _secMembers!;

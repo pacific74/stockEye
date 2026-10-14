@@ -15,7 +15,8 @@ class IntradayCtxTab extends StatefulWidget {
 }
 
 class _IntradayCtxTabState extends State<IntradayCtxTab> with AutomaticKeepAliveClientMixin {
-  late Future<Json> _f = Api.statusKey('intraday_ctx');
+  late Future<List<Json>> _f = _load();
+  static Future<List<Json>> _load() => Future.wait([Api.statusKey('intraday_ctx'), Api.statusKey('closingbet_nxt')]);
 
   @override
   bool get wantKeepAlive => true;
@@ -25,12 +26,13 @@ class _IntradayCtxTabState extends State<IntradayCtxTab> with AutomaticKeepAlive
     super.build(context);
     final t = Theme.of(context).textTheme;
     return RefreshIndicator(
-      onRefresh: () async => setState(() => _f = Api.statusKey('intraday_ctx')),
-      child: FutureBuilder<Json>(
+      onRefresh: () async => setState(() => _f = _load()),
+      child: FutureBuilder<List<Json>>(
         future: _f,
         builder: (context, snap) {
           if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-          final d = snap.data!;
+          final d = snap.data![0];
+          final nx = snap.data![1]; // 종가배팅 × NXT (애프터·프리마켓)
           final st = asMap(d['stats']);
           final all = asMap(st['all']);
           final rows = asList(d['rows']).reversed.toList(); // 최근 것 위
@@ -118,6 +120,8 @@ class _IntradayCtxTabState extends State<IntradayCtxTab> with AutomaticKeepAlive
                   ),
                 ),
               ),
+              const SizedBox(height: 12),
+              _cbNxt(context, nx),
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
@@ -130,6 +134,64 @@ class _IntradayCtxTabState extends State<IntradayCtxTab> with AutomaticKeepAlive
         },
       ),
     );
+  }
+
+  /// 종가배팅 × NXT: 산 날 저녁 애프터마켓(종가 대비) · 다음 날 아침 프리마켓(전일 종가 대비) 구간별 결과
+  Widget _cbNxt(BuildContext context, Json nx) {
+    final t = Theme.of(context).textTheme;
+    final st = asMap(nx['stats']);
+    final all = asMap(st['all']);
+    final rows = asList(nx['rows']).reversed.toList();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('종가배팅 × 넥스트레이드(NXT)', style: t.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+      Text('산 날 저녁 애프터마켓(15:30~20:00) 가격과 다음 날 프리마켓(08:00~08:50) 가격이 결과와 관계있는지 — '
+          '관계가 보이면 저녁·08시대 조기 매도 규칙을 넣어요',
+          style: t.bodySmall?.copyWith(color: Colors.grey)),
+      const SizedBox(height: 6),
+      if ((all['n'] ?? 0) == 0)
+        const Padding(padding: EdgeInsets.all(16), child: Text('아직 기록이 없어요. 종가배팅을 산 다음 날 저녁부터 쌓여요.'))
+      else ...[
+        Text('끝난 ${all['n']}건 · 승률 ${all['win']}% · 평균 ${_p(all['pnl'])}', style: t.titleSmall),
+        _grid(context, [
+          for (final g in asList(st['groups']))
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${g['title']}', style: t.titleSmall),
+                  StatTable(header: const ['구간', '건수', '승률', '평균 손익', '합계'], boldFirst: false, firstFlex: 2, rows: [
+                    for (final r in asList(g['rows']))
+                      [
+                        StatCell('${r['label']}'),
+                        StatCell('${r['n'] ?? 0}'),
+                        StatCell((r['n'] ?? 0) == 0 ? '-' : '${r['win']}%'),
+                        pnlCell(r['pnl'] as num?, bold: true),
+                        pnlCell(r['sum'] as num?, d: 1),
+                      ],
+                  ]),
+                ]),
+              ),
+            ),
+        ]),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: StatTable(boldFirst: false, firstFlex: 2.4, header: const ['날짜 · 종목', '매수', '결과', '손익', '애프터', '다음날 프리'], rows: [
+              for (final r in rows.take(60))
+                [
+                  StatCell('${'${r['date'] ?? ''}'.length >= 10 ? '${r['date']}'.substring(5) : ''} ${r['name'] ?? ''}'),
+                  StatCell('${r['buy_time'] ?? '-'}'),
+                  StatCell('${r['result'] ?? ''}',
+                      color: r['result'] == '이익실현' ? upColor : (r['result'] == '손절' ? downColor : null)),
+                  pnlCell(r['pnl'] as num?, bold: true),
+                  pnlCell(r['after'] as num?),
+                  pnlCell(r['pre'] as num?),
+                ],
+            ]),
+          ),
+        ),
+      ],
+    ]);
   }
 
   static String _p(dynamic v) => v == null ? '-' : '${(v as num) >= 0 ? '+' : ''}${v.toStringAsFixed(2)}%';

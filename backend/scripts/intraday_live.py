@@ -213,9 +213,59 @@ def main():
         feed = RealtimeFeed(on_tick, kc.get("env", "prod"))
         if not feed.start():
             feed = None
+    nxt_done = [False]
+
+    def nxt_pre(force_fetch: bool) -> None:
+        """NXT 프리마켓(08:00~08:50) 등락 — 08:50 이후 한 번 전 종목 시세 → 고정 때 기록 · 전날 종가배팅에도 (검증용)"""
+        if nxt_done[0]:
+            return
+        import json as _json
+        from stockeye.analysis import nxt_ctx
+        day = _now().strftime("%Y-%m-%d")
+        pre = {}
+        if sb:
+            try:
+                b = sb.download(f"nxt/pre/{day}.json")
+                pre = _json.loads(b) if b else {}
+            except Exception:  # noqa: BLE001
+                pre = {}
+        if not pre and force_fetch:
+            try:
+                pre = nxt_ctx.pre_snapshot(naver_live.stocks(dt.codes))   # 하루 한 번 전 종목
+                if sb and pre:
+                    nxt_ctx.save_pre(sb, day, pre)
+                print(f"NXT 프리마켓 {len(pre)}종목 기록")
+            except Exception as e:  # noqa: BLE001
+                print(f"⚠ NXT 프리마켓 기록 실패: {e}")
+        nxt_done[0] = True
+        for tr in (dt.track, lc.track):
+            tr.nxt_pre = pre
+        hit = False
+        for c, t in cb.carry.items():
+            if c in pre:
+                t["nxt_pre"] = pre[c]
+                hit = True
+        if hit:
+            cb.save()
+
     while _now().strftime("%H:%M") < "08:59":
+        if _now().strftime("%H:%M") >= "08:51":
+            nxt_pre(True)
         print(f"{_now():%H:%M:%S} 장 시작 대기..."); time.sleep(20)
+    nxt_pre(False)                                                     # 늦게 켰으면 아침에 저장된 것만
     dt_closed = False
+    from stockeye.analysis.flow_live import FlowLive
+    import scripts.daytrade as _sd
+
+    def _px(codes):
+        q = naver_live.stocks(list(codes))
+        return {} if q is None or q.empty else {str(r.code): float(r.close) for r in q.itertuples() if r.close}
+    flow = FlowLive(sb, kis, _px)
+    watch = sorted(_sd.watch_codes(sb)) if sb else []                 # 관심 탭 종목 (메인·관심 화면 표시용)
+
+    def flow_codes() -> list[str]:
+        items = [r.get("code") for r in (dt.last_items or []) + (getattr(lc, "last_items", None) or [])]
+        return [c for c in cb.codes() + list(cb.carry) + list(lc.track.tracks) + list(dt.track.tracks) + items + watch if c]
     sector_done: set[str] = set()                                       # 업종/테마 오늘 강도: 09:10 부터 매시 10분 (한 번씩)
 
     def sector_slot(hm: str) -> None:
@@ -268,6 +318,10 @@ def main():
         except Exception as e:  # noqa: BLE001
             print(f"⚠ 종가배팅 추적 실패: {e}")
         sector_slot(hm)
+        try:                                                           # 당일 잠정 수급 (09:35·10:05·11:25·13:25·14:35 + 새 고정 종목)
+            flow.start(now, flow_codes())
+        except Exception as e:  # noqa: BLE001
+            log.debug("잠정수급 실패: %s", e)
         try:                                                           # 앱 카드 1분봉 차트 (오늘 고정 종목 · 1분에 한 번)
             publish_bars(now)
         except Exception as e:  # noqa: BLE001

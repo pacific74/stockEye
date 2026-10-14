@@ -42,7 +42,7 @@ class MemberAlerts:
         self.positions = []
         if ids:
             self.positions = self.sb.select("positions", {
-                "select": "id,user_id,code,name,stop,target1", "status": "eq.open",
+                "select": "id,user_id,code,name,stop,target1,entry_price,max_price", "status": "eq.open",
                 "user_id": f"in.({','.join(ids)})"})
 
     def codes(self) -> list[str]:
@@ -59,8 +59,13 @@ class MemberAlerts:
             q = quotes.get(p["code"])
             if q is None:
                 continue
+            # 공통 규칙: 1차 목표 뒤(보유 중 최고가 ≥ 1차 · 오늘 1차 알림 포함)엔 손절가 대신 매수가(본전) → 전량 매도
+            t1, ep = float(p.get("target1") or 0), float(p.get("entry_price") or 0)
+            be = bool(t1 and ep and (float(p.get("max_price") or 0) >= t1 or (today, p["id"], "target") in self.sent))
             for kind, hit, title, body in (
-                ("stop", p.get("stop") and q.price <= float(p["stop"]), "🔻 손절가 도달",
+                ("even", be and q.price <= ep, "↩ 본전 도달 (1차 목표 뒤)",
+                 f"{p['name']} 현재 {q.price:,.0f}원 ≤ 매수가 {ep:,.0f}원 → 남은 수량 전량 매도 (1차 이익실현 뒤 본전)"),
+                ("stop", not be and p.get("stop") and q.price <= float(p["stop"]), "🔻 손절가 도달",
                  f"{p['name']} 현재 {q.price:,.0f}원 ≤ 손절가 {float(p['stop'] or 0):,.0f}원"),
                 ("target", p.get("target1") and q.price >= float(p["target1"]), "🎯 1차 목표가 도달",
                  f"{p['name']} 현재 {q.price:,.0f}원 ≥ 목표가 {float(p['target1'] or 0):,.0f}원"),

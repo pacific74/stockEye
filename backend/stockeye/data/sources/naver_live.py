@@ -54,7 +54,10 @@ def parse_item(m: dict) -> dict | None:
     h = _num(m.get("highPriceRaw") or m.get("highPrice")) or max(o, price)
     lo = _num(m.get("lowPriceRaw") or m.get("lowPrice")) or min(o, price)
     t = pd.to_datetime(m.get("localTradedAt"), errors="coerce", utc=True)
-    return {"code": str(code), "open": o, "high": max(h, o, price), "low": min(lo, o, price), "close": price,
+    over = m.get("overMarketPriceInfo") if isinstance(m.get("overMarketPriceInfo"), dict) else {}
+    o_px = _num(over.get("overPriceRaw") or over.get("overPrice")) if over else None
+    return {"over_price": o_px, "over_status": over.get("overMarketStatus") if over else None,    # 넥스트레이드 프리·애프터마켓
+            "over_session": over.get("tradingSessionType") if over else None,"code": str(code), "open": o, "high": max(h, o, price), "low": min(lo, o, price), "close": price,
             "volume": vol, "value": price * vol,      # 거래대금: 단위가 불확실한 필드 대신 가격×거래량 근사
             "chg_pct": ratio if ratio is not None else 0.0, "status": m.get("marketStatus"),
             "traded_at": t.tz_convert("Asia/Seoul").tz_localize(None) if pd.notna(t) else None}

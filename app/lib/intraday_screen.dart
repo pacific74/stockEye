@@ -479,14 +479,17 @@ class _TrackCard extends StatelessWidget {
       if (last < (b['low'] as double)) b['low'] = last;
     }
     double? n(String k) => (t[k] as num?)?.toDouble();
+    // 공통 규칙: 1차 목표 뒤엔 손절가 대신 매수가(본전) — 닿으면 남은 몫 전량 매도 ('손절'로 표시하지 않음)
+    final be = t['be'] == true;
+    final lastSt = be ? '본전 매도' : '손절';
     final chart = mb.length < 3
         ? null
         : Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
             SizedBox(
               height: 190,
               child: PriceChart(bars: mb, showMa: false, levels: [
-                if (bought && n('entry') != null) PriceLevel('매수', n('entry')!, Colors.grey),
-                if (n('stop') != null) PriceLevel('손절', n('stop')!, downColor),
+                if (bought && n('entry') != null) PriceLevel(be ? '본전' : '매수', n('entry')!, be ? Colors.orange : Colors.grey),
+                if (!be && n('stop') != null) PriceLevel('손절', n('stop')!, downColor),
                 if (n('t1') != null) PriceLevel('1차', n('t1')!, upColor),
               ]),
             ),
@@ -505,7 +508,7 @@ class _TrackCard extends StatelessWidget {
     String? timeOf(String s) {                       // 그 상태가 처음 생긴 시각
       for (final e in events) {
         final st = '${e['state']}';
-        if (st == s || (s == '손절' && st == '본전 매도')) return '${e['time']}';
+        if (st == s) return '${e['time']}';
       }
       return null;
     }
@@ -542,7 +545,9 @@ class _TrackCard extends StatelessWidget {
             InfoBox('${prevDay ? '${'${t['date']}'.substring(5)} ' : ''}${t['time']} 포착', bold: true, fill: true),
             if (cb && t['buy_time'] != null) InfoBox('${t['buy_time']} 매수', color: upColor, bold: true),
             InfoBox('${cb && !bought ? '매수범위' : '매수 ${num0(t['entry'] as num?)}'} (${num0(lo)}~${num0(hi)})'),
-            InfoBox('손절 ${num0(t['stop'] as num?)}', color: downColor),
+            be
+                ? InfoBox('1차 뒤 본전 ${num0(t['entry'] as num?)} (전량 매도)', color: Colors.orange, bold: true)
+                : InfoBox('손절 ${num0(t['stop'] as num?)}', color: downColor),
             InfoBox('1차 ${num0(t['t1'] as num?)}', color: upColor),
             InfoBox('2차 ${num0(t['t2'] as num?)}', color: upColor),
             if (t['t3'] != null) InfoBox('3차 ${num0(t['t3'] as num?)}', color: upColor),
@@ -576,7 +581,7 @@ class _TrackCard extends StatelessWidget {
                     flex: 6,
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text('현재 상태', style: tx.labelMedium?.copyWith(color: Colors.grey)),
-                      for (final s in [...(cb ? _cbStates : _states), if (closeT != null) '마감 청산', if (noFillT != null) '미체결'])
+                      for (final s in [...(cb ? _cbStates : _states).map((x) => x == '손절' ? lastSt : x), if (closeT != null) '마감 청산', if (noFillT != null) '미체결'])
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 1.5),
                           child: Row(children: [
@@ -585,7 +590,7 @@ class _TrackCard extends StatelessWidget {
                                     on: cur == s && blink,
                                     child: Text(s,
                                         style: tx.bodySmall?.copyWith(
-                                            fontWeight: (cur == s || (s == '손절' && cur == '본전 매도')) ? FontWeight.bold : null,
+                                            fontWeight: cur == s ? FontWeight.bold : null,
                                             color: cur == s && blink
                                                 ? (s == '매도신호포착' ? downColor : upColor)
                                                 : (timeOf(s) == null ? Colors.grey : null))))),

@@ -127,5 +127,18 @@ def test_portfolio_review(result, tmp_path):
     repo.add({"code": code, "name": "t", "qty": 10, "avg_price": px * 0.9, "stop": px * 1.5, "target": px * 0.5,
               "buy_date": "2024-11-01"})
     r = review(repo.list(), result.x, "2024-12-30")[0]
-    assert r["pnl_pct"] > 0 and r["status"] == "손절 검토"
+    assert r["pnl_pct"] > 0 and r["status"] == "익절 검토"          # 1차 목표 뒤엔 손절가를 안 봄 (본전 기준)
     assert any("목표가" in a for a in r["alerts"])
+
+
+def test_review_breakeven_after_t1():
+    """공통 규칙: 1차 목표 뒤 매수가 이탈은 '손절'이 아니라 '본전 매도'"""
+    import pandas as pd
+    from stockeye.portfolio import review
+    x = pd.DataFrame([{"close": 99.0, "low": 98.0, "high": 101.0, "ret1": 0.0, "sma20": float("nan"), "rsi14": 50.0}],
+                     index=["A"])
+    h = {"code": "A", "avg_price": 100.0, "qty": 1, "stop": 95.0, "target": 110.0, "max_price": 111.0}
+    r = review([h], x, "2026-10-14")[0]
+    assert r["status"] == "본전 매도" and not any("손절" in a for a in r["alerts"])
+    r = review([{**h, "max_price": 104.0, "stop": 98.5}], x, "2026-10-14")[0]
+    assert r["status"] == "손절 검토"

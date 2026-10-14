@@ -7,7 +7,8 @@
   신규진입보류  지금 점수가 기준 아래 (당일단타 80 · 상한가포착 75) — 새로 들어가지 말 것 (이미 산 몫은 계속 추적)
   1·2·3차 목표달성
   매도신호포착  산 뒤 매물이 갑자기 쏟아짐: 1분 거래량이 앞 10분 평균의 3배 이상 + 1% 넘는 음봉
-  손절          손절가 닿음 (1차 목표 뒤에는 본전)
+  손절          손절가 닿음 (1차 목표 전만)
+  본전 매도     1차 목표 뒤 매수가로 돌아옴 → 남은 몫 전량 매도 (공통 규칙 · '손절'로 표시하지 않음, 결과는 이익실현)
 매매 결과
   이익실현      1차 목표 이상 달성 (1차 50% · 2차 30% · 3차 20% 매도, 1차 뒤 남은 몫은 본전 이탈 시 · 마감 때 종가)
   매수가매도    1차 목표 전에 매도신호포착으로 매수가 부근에서 판 경우 (또는 마감 때 매수가 이상)
@@ -297,6 +298,7 @@ class Tracker:
         self.lock = threading.RLock()               # 1분 갱신(본 스레드)과 실시간 체결(웹소켓 스레드)이 같이 씀
         self.on_event = None                        # (track, 상태) → 알림·실시간 행 (통합 프로세스가 연결)
         self.realtime: set[str] = set()             # 실시간 체결을 받는 종목 (1분봉으로는 목표·손절을 다시 안 봄)
+        self.nxt_pre: dict[str, list] = {}          # 오늘 NXT 프리마켓 [가격, 전일 종가 대비 %] (22_intraday 가 08:52 에 채움)
         self.load()
 
     # ------------------------------------------------ 저장
@@ -392,6 +394,8 @@ class Tracker:
             if not (_f(r.get("entry")) or _f(r.get("price"))) or not _f(r.get("stop")):
                 continue
             t = Track.new(self.kind, self.day, r, now)
+            if r["code"] in self.nxt_pre:                               # 그날 아침 NXT 프리마켓 등락 (검증용)
+                t["nxt_pre"] = self.nxt_pre[r["code"]]
             with self.lock:
                 self.tracks[r["code"]] = t
                 if t["bought"]:

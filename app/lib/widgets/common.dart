@@ -141,10 +141,11 @@ class StockInfoLine extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<Map<String, List>>(
-        future: Api.stockInfo(),
+  Widget build(BuildContext context) => FutureBuilder<List<Map<String, List>>>(
+        future: Future.wait([Api.stockInfo(), Api.flowLive()]),
         builder: (context, snap) {
-          final r = snap.data?[code];
+          final r = snap.data?[0][code];
+          final t = snap.data?[1][code]; // 당일 잠정 [외인 억, 기관 억, '11:20']
           if (r == null || r.length < 4) return const SizedBox.shrink();
           final m = '${r[0]}', sec = '${r[1]}', th = '${r[2]}';
           final st = Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11, color: Colors.grey.shade400);
@@ -164,6 +165,10 @@ class StockInfoLine extends StatelessWidget {
             // 최근 5거래일 순매수 (외국인·기관, 억원) — 매수 빨강 · 매도 파랑
             if (r.length > 4 && r[4] is num) chip('외인 5일 ${flow(r[4] as num)}', c: flowColor(r[4] as num)),
             if (r.length > 5 && r[5] is num) chip('기관 5일 ${flow(r[5] as num)}', c: flowColor(r[5] as num)),
+            // 오늘 장중 잠정 (증권사 추정 · 09:30/10:00/11:20/13:20/14:30 갱신) — 마감 후 확정치와 다를 수 있음
+            if (t != null && t.length > 2 && t[0] is num) chip('외인 오늘 ${flow(t[0] as num)}', c: flowColor(t[0] as num)),
+            if (t != null && t.length > 2 && t[1] is num)
+              chip('기관 오늘 ${flow(t[1] as num)} · 잠정 ${t[2]}', c: flowColor(t[1] as num)),
           ]);
         },
       );

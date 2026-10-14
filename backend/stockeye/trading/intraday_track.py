@@ -44,6 +44,7 @@ CFG = {
 }
 RESULTS = ("이익실현", "매수가매도", "손절", "미체결")
 LC_STOP = 0.04                    # 상한가포착 손절 = 매수가 −4%
+HOLD_DROP, HOLD_N = 5.0, 3        # 신규진입보류: 기준보다 5점 넘게 낮거나 · 기준 아래 3분 연속
 
 
 def _f(v):
@@ -165,9 +166,12 @@ def step(t: dict, bars: pd.DataFrame | None, price: float | None, score_now: flo
         t["inzone"] = inzone
     if score_now is not None:
         t["score_now"] = score_now
-        if cfg.get("hold") is not None and score_now < cfg["hold"] \
-                and "신규진입보류" not in [x["state"] for x in t["events"]]:
-            _event(t, "신규진입보류", now.strftime("%H:%M"))
+        # 신규진입보류 (2026-10-14): 기준 바로 아래로 1분 출렁인 것까진 안 띄움 →
+        #   기준 −5점 아래로 크게 떨어지거나, 기준 아래가 HOLD_N 번(분) 연속일 때만
+        if cfg.get("hold") is not None and "신규진입보류" not in [x["state"] for x in t["events"]]:
+            t["below_n"] = t.get("below_n", 0) + 1 if score_now < cfg["hold"] else 0
+            if score_now < cfg["hold"] - HOLD_DROP or t["below_n"] >= HOLD_N:
+                _event(t, "신규진입보류", now.strftime("%H:%M"))
     today, hm_now = now.strftime("%Y-%m-%d"), now.strftime("%H:%M")
     if cfg["overnight"]:                                               # 상한가포착: 다음 거래일 09:30
         over = today > t["date"] and hm_now >= cfg["end"]

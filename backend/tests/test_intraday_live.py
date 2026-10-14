@@ -223,3 +223,19 @@ def test_closingbet_buy_window_1450_1520():
     tr2.add([CB], pd.Timestamp("2026-10-13 14:52"))
     tr2.update("000030", None, 10000, None, pd.Timestamp("2026-10-13 14:53"))  # 14:50 뒤 바로 매수
     assert tr2.tracks["000030"]["buy_time"] == "14:53"
+
+
+def test_hold_needs_big_drop_or_three_minutes():
+    tr = it.Tracker(None, "daytrade", "2026-10-14", user_id=None)
+    tr.add([SIG], pd.Timestamp("2026-10-14 09:10"))
+    t = tr.tracks["000010"]
+    st = lambda: [e["state"] for e in t["events"]]  # noqa: E731
+    for m, sc in ((11, 79.5), (12, 81), (13, 78), (14, 79)):                     # 출렁임 · 연속 2번
+        tr.update("000010", None, 10000, sc, pd.Timestamp(f"2026-10-14 09:{m}"))
+    assert "신규진입보류" not in st()
+    tr.update("000010", None, 10000, 78.5, pd.Timestamp("2026-10-14 09:15"))     # 3분 연속
+    assert st()[-1] == "신규진입보류"
+    tr2 = it.Tracker(None, "daytrade", "2026-10-14", user_id=None)
+    tr2.add([SIG], pd.Timestamp("2026-10-14 09:10"))
+    tr2.update("000010", None, 10000, 74, pd.Timestamp("2026-10-14 09:11"))      # 5점 넘게 하락 → 바로
+    assert tr2.tracks["000010"]["events"][-1]["state"] == "신규진입보류"

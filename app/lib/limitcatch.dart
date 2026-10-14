@@ -77,6 +77,7 @@ class LimitcatchTile extends StatelessWidget {
                       TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
                     ])),
                 ]),
+                StockInfoLine('${r['code']}'), // [시장][업종 · 테마][시총]
                 const SizedBox(height: 3),
                 infoBoxes([
                   InfoBox(st, color: col, bold: true, fill: true),

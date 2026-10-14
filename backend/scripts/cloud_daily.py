@@ -153,6 +153,12 @@ def main():
     step("리포트 → Storage", lambda: (sync.put_json("reports/latest.json", report),
                                        sync.put_json(f"reports/{report['date']}.json", report)), errors)
     step("리포트 발행", lambda: pub.publish_report(sb, report), errors, required=True)
+    def _stock_info():                                               # 앱 카드 [시장][업종 · 테마][시총] 한 줄
+        from stockeye.analysis.market import stock_info, load_themes
+        info = stock_info(pit.listing, getattr(pit, "sectors", None), load_themes())
+        pub.publish_status(sb, "stock_info", {"date": report["date"], "info": info})
+        return len(info)
+    step("종목 정보 발행 (시장·업종·테마·시총)", _stock_info, errors)
     if report.get("sector_members"):                                # 앱 업종 상세 '전체 종목' (업종마다 전 종목 등락)
         step("업종 전체 종목 발행", lambda: pub.publish_status(sb, "sector_members", {
             "date": report["date"], **report["sector_members"]}), errors)

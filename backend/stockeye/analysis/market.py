@@ -200,3 +200,24 @@ def group_members(x: pd.DataFrame, groups: dict[str, dict], names: pd.DataFrame 
         rows.sort(key=lambda t: -(t[2] if t[2] is not None else -999))
         out[gname] = rows
     return out
+
+
+def stock_info(names: pd.DataFrame, sectors: pd.DataFrame | None, themes: dict[str, list[str]]) -> dict[str, list]:
+    """앱 카드의 [시장][업종 · 테마][시총] 한 줄용 — 종목코드 → [시장(KOSPI/KOSDAQ), 업종, 테마(최대 2개), 시총(억)]
+    (2026-10-14) 저녁 배치가 system_status 'stock_info' 로 발행 · 앱은 한 번 받아 캐시"""
+    name2code = dict(zip(names["name"], names["code"])) if names is not None and not names.empty else {}
+    th: dict[str, list[str]] = {}
+    for t, members in (themes or {}).items():
+        for n in members:
+            c = name2code.get(n)
+            if c and t not in th.setdefault(c, []):
+                th[c].append(t)
+    sec = dict(zip(sectors["code"], sectors["sector"])) if sectors is not None and not sectors.empty else {}
+    caps = cap_map(sectors)
+    mk = dict(zip(names["code"], names["market"])) if names is not None and "market" in names else {}
+    out = {}
+    for c in names["code"] if names is not None and not names.empty else []:
+        cap = caps.get(c)
+        out[str(c)] = [mk.get(c) or "", sec.get(c) or "", " · ".join(th.get(c, [])[:2]),
+                       int(round(cap / 1e8)) if cap else None]
+    return out

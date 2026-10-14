@@ -121,6 +121,43 @@ class StockName extends StatelessWidget {
       ]);
 }
 
+/// 종목 한 줄 정보: [코스피/코스닥] [업종 · 테마] [시총] — 당일매매·메인·관심 카드의 종목명 바로 아래 (2026-10-14)
+class StockInfoLine extends StatelessWidget {
+  const StockInfoLine(this.code, {super.key});
+  final String code;
+
+  static String cap(num? eok) {
+    if (eok == null || eok <= 0) return '';
+    if (eok >= 10000) return '시총 ${(eok / 10000).toStringAsFixed(eok >= 100000 ? 0 : 1)}조';
+    return '시총 ${eok.round()}억';
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<Map<String, List>>(
+        future: Api.stockInfo(),
+        builder: (context, snap) {
+          final r = snap.data?[code];
+          if (r == null || r.length < 4) return const SizedBox.shrink();
+          final m = '${r[0]}', sec = '${r[1]}', th = '${r[2]}';
+          final st = Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11, color: Colors.grey.shade400);
+          Widget chip(String s, {Color? c}) => Container(
+                margin: const EdgeInsets.only(right: 4, top: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                    border: Border.all(color: (c ?? Colors.grey).withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(4)),
+                child: Text(s, style: st?.copyWith(color: c)),
+              );
+          return Wrap(children: [
+            if (m.isNotEmpty)
+              chip(m == 'KOSPI' ? '코스피' : (m == 'KOSDAQ' ? '코스닥' : m),
+                  c: m == 'KOSPI' ? Colors.blueGrey.shade200 : Colors.purple.shade200),
+            if (sec.isNotEmpty || th.isNotEmpty) chip([if (sec.isNotEmpty) sec, if (th.isNotEmpty) th].join(' · ')),
+            if (cap(r[3] as num?).isNotEmpty) chip(cap(r[3] as num?)),
+          ]);
+        },
+      );
+}
+
 /// 점수 배지 (V3B 100점 환산) — 80↑ 빨강 / 65↑ 주황 / 50↑ 청록 / 그 아래 회색
 class ScoreBadge extends StatelessWidget {
   const ScoreBadge(this.score, {super.key, this.label, this.digits = 0});

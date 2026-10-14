@@ -171,6 +171,7 @@ class WatchTile extends StatelessWidget {
                       TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
                     ])),
                 ]),
+                StockInfoLine('${c['code']}'),
                 PlanLine(c: c, price: price, live: price != null, tab: tab),
                 if (extra != null) extra!,
               ]),

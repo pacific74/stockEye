@@ -38,6 +38,14 @@ class Api {
   static Future<List<Json>> allCandidates() => useCloud ? _Cloud.allCandidates() : _Http.allCandidates();
   /// 업종/테마 '오늘' 강도 (GitHub sector-live 가 장중 1시간마다 · 업종 전체 종목 거래대금 가중)
   /// 업종(테마)별 전체 종목 [code, name, 전일 등락%, 거래대금(억), 시가총액(억)] (저녁 배치 · system_status 'sector_members')
+  /// 종목 정보 (시장·업종·테마·시총억) — 저녁 배치가 system_status 'stock_info' 로 발행 · 앱 실행 중 한 번만 받음
+  static Future<Map<String, List>>? _stockInfo;
+  static Future<Map<String, List>> stockInfo() => _stockInfo ??= () async {
+        final d = useCloud ? await _Cloud.statusOf('stock_info') : <String, dynamic>{};
+        final m = asMap(d['info']);
+        if (m.isEmpty) _stockInfo = null; // 못 받았으면 다음에 다시
+        return {for (final e in m.entries) if (e.value is List) e.key: e.value as List};
+      }();
   static Json? _secMembers;
   static Future<Json> sectorMembers() async {
     if (_secMembers != null) return _secMembers!;

@@ -28,3 +28,12 @@ def test_all_members_cap_weighted():
     assert abs(sum(m["w"] for m in g["live"]) - 1) < 1e-3
     mem = group_members(x, {"비금속": {"type": "sector", "codes": codes}}, None, caps)["비금속"]
     assert len(mem) == 10 and mem[0][0] == "000000" and mem[0][2] == 30.0 and mem[0][4] == 100
+
+
+def test_stock_info_line():
+    import pandas as pd
+    from stockeye.analysis.market import stock_info
+    names = pd.DataFrame({"code": ["A", "B"], "name": ["에이", "비"], "market": ["KOSPI", "KOSDAQ"]})
+    sectors = pd.DataFrame({"code": ["A", "B"], "sector": ["화학", "전기·전자"], "marcap": [1.23e12, 5e10]})
+    out = stock_info(names, sectors, {"2차전지": ["에이", "비"], "리튬": ["에이"], "반도체": ["에이"]})
+    assert out["A"] == ["KOSPI", "화학", "2차전지 · 리튬", 12300] and out["B"] == ["KOSDAQ", "전기·전자", "2차전지", 500]

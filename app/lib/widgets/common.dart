@@ -121,10 +121,18 @@ class StockName extends StatelessWidget {
       ]);
 }
 
-/// 종목 한 줄 정보: [코스피/코스닥] [업종 · 테마] [시총] — 당일매매·메인·관심 카드의 종목명 바로 아래 (2026-10-14)
+/// 종목 한 줄 정보: [코스피/코스닥] [업종 · 테마] [시총] [외인·기관 5일 순매수] — 당일매매·메인·관심 카드의 종목명 바로 아래 (2026-10-14)
 class StockInfoLine extends StatelessWidget {
   const StockInfoLine(this.code, {super.key});
   final String code;
+
+  static String flow(num eok) {
+    final a = eok.abs();
+    final s = a >= 10000 ? '${(a / 10000).toStringAsFixed(1)}조' : (a >= 100 ? '${a.round()}억' : '${a.toStringAsFixed(1)}억');
+    return eok > 0 ? '+$s 매수' : (eok < 0 ? '−$s 매도' : '0');
+  }
+
+  static Color flowColor(num eok) => eok > 0 ? upColor : (eok < 0 ? downColor : Colors.grey);
 
   static String cap(num? eok) {
     if (eok == null || eok <= 0) return '';
@@ -153,6 +161,9 @@ class StockInfoLine extends StatelessWidget {
                   c: m == 'KOSPI' ? Colors.blueGrey.shade200 : Colors.purple.shade200),
             if (sec.isNotEmpty || th.isNotEmpty) chip([if (sec.isNotEmpty) sec, if (th.isNotEmpty) th].join(' · ')),
             if (cap(r[3] as num?).isNotEmpty) chip(cap(r[3] as num?)),
+            // 최근 5거래일 순매수 (외국인·기관, 억원) — 매수 빨강 · 매도 파랑
+            if (r.length > 4 && r[4] is num) chip('외인 5일 ${flow(r[4] as num)}', c: flowColor(r[4] as num)),
+            if (r.length > 5 && r[5] is num) chip('기관 5일 ${flow(r[5] as num)}', c: flowColor(r[5] as num)),
           ]);
         },
       );

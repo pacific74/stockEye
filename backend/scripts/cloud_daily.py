@@ -155,7 +155,7 @@ def main():
     step("리포트 발행", lambda: pub.publish_report(sb, report), errors, required=True)
     def _stock_info():                                               # 앱 카드 [시장][업종 · 테마][시총] 한 줄
         from stockeye.analysis.market import stock_info, load_themes
-        info = stock_info(pit.listing, getattr(pit, "sectors", None), load_themes())
+        info = stock_info(pit.listing, getattr(pit, "sectors", None), load_themes(), getattr(pit, "flows", None))
         pub.publish_status(sb, "stock_info", {"date": report["date"], "info": info})
         return len(info)
     step("종목 정보 발행 (시장·업종·테마·시총)", _stock_info, errors)

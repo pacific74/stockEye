@@ -36,4 +36,8 @@ def test_stock_info_line():
     names = pd.DataFrame({"code": ["A", "B"], "name": ["에이", "비"], "market": ["KOSPI", "KOSDAQ"]})
     sectors = pd.DataFrame({"code": ["A", "B"], "sector": ["화학", "전기·전자"], "marcap": [1.23e12, 5e10]})
     out = stock_info(names, sectors, {"2차전지": ["에이", "비"], "리튬": ["에이"], "반도체": ["에이"]})
-    assert out["A"] == ["KOSPI", "화학", "2차전지 · 리튬", 12300] and out["B"] == ["KOSDAQ", "전기·전자", "2차전지", 500]
+    assert out["A"] == ["KOSPI", "화학", "2차전지 · 리튬", 12300, None, None] and out["B"][:4] == ["KOSDAQ", "전기·전자", "2차전지", 500]
+    d = pd.date_range("2026-10-01", periods=7, freq="B")
+    flows = pd.DataFrame({"date": list(d) * 1, "code": ["A"] * 7, "foreign": [1e9] * 7, "institution": [-2e8] * 7})
+    out = stock_info(names, sectors, {}, flows)
+    assert out["A"][4:] == [50.0, -10.0] and out["B"][4:] == [None, None]          # 최근 5일 합 (억)

@@ -202,9 +202,26 @@ def group_members(x: pd.DataFrame, groups: dict[str, dict], names: pd.DataFrame 
     return out
 
 
-def stock_info(names: pd.DataFrame, sectors: pd.DataFrame | None, themes: dict[str, list[str]]) -> dict[str, list]:
-    """앱 카드의 [시장][업종 · 테마][시총] 한 줄용 — 종목코드 → [시장(KOSPI/KOSDAQ), 업종, 테마(최대 2개), 시총(억)]
+def flow_sums(flows: pd.DataFrame | None, days: int = 5) -> dict[str, tuple[float | None, float | None]]:
+    """최근 days 거래일 순매수 합 (억원) — 종목 → (외국인, 기관). flows: date·code·foreign·institution (원)"""
+    if flows is None or flows.empty or "date" not in flows:
+        return {}
+    last = sorted(pd.to_datetime(flows["date"]).unique())[-days:]
+    f = flows[pd.to_datetime(flows["date"]).isin(last)]
+    g = f.groupby("code")[[c for c in ("foreign", "institution") if c in f]].sum(min_count=1)
+    out = {}
+    for code, r in g.iterrows():
+        fo, ins = r.get("foreign"), r.get("institution")
+        out[str(code)] = (None if pd.isna(fo) else round(float(fo) / 1e8, 1), None if pd.isna(ins) else round(float(ins) / 1e8, 1))
+    return out
+
+
+def stock_info(names: pd.DataFrame, sectors: pd.DataFrame | None, themes: dict[str, list[str]],
+               flows: pd.DataFrame | None = None) -> dict[str, list]:
+    """앱 카드의 [시장][업종 · 테마][시총][외인·기관] 한 줄용 — 종목코드 →
+    [시장(KOSPI/KOSDAQ), 업종, 테마(최대 2개), 시총(억), 외국인 5일 순매수(억), 기관 5일 순매수(억)]
     (2026-10-14) 저녁 배치가 system_status 'stock_info' 로 발행 · 앱은 한 번 받아 캐시"""
+    fl = flow_sums(flows)
     name2code = dict(zip(names["name"], names["code"])) if names is not None and not names.empty else {}
     th: dict[str, list[str]] = {}
     for t, members in (themes or {}).items():
@@ -218,6 +235,7 @@ def stock_info(names: pd.DataFrame, sectors: pd.DataFrame | None, themes: dict[s
     out = {}
     for c in names["code"] if names is not None and not names.empty else []:
         cap = caps.get(c)
+        fo, ins = fl.get(str(c), (None, None))
         out[str(c)] = [mk.get(c) or "", sec.get(c) or "", " · ".join(th.get(c, [])[:2]),
-                       int(round(cap / 1e8)) if cap else None]
+                       int(round(cap / 1e8)) if cap else None, fo, ins]
     return out

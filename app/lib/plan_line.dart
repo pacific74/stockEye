@@ -160,19 +160,35 @@ class WatchTile extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                // 종목명 [시장] [점수]  ·····  현재가
-                Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                  Expanded(
-                      child: StockName('${c['name']}',
-                          market: c['market'] as String?, score: score, scoreDigits: scoreDigits, style: t.titleMedium)),
-                  const SizedBox(width: 6),
-                  if (px != null)
-                    Text.rich(TextSpan(children: [
-                      TextSpan(text: price != null ? '현재가 ' : '기준가 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
-                      TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                    ])),
-                  ChgBadge(Live.last['${c['code']}']?.ratio), // 오늘 등락률
-                ]),
+                // 종목명 [시장] [점수]  ·····  현재가 [등락률]
+                //   종목명은 크게 (2026-10-14: 이름이 '셀…' 처럼 잘려 안 보였음)
+                //   좁은 화면(폰): 1줄 = 종목명·시장·점수, 2줄 = 현재가·등락률 / 넓은 화면: 한 줄
+                LayoutBuilder(builder: (context, box) {
+                  final name = StockName('${c['name']}',
+                      market: c['market'] as String?,
+                      score: score,
+                      scoreDigits: scoreDigits,
+                      style: t.titleMedium?.copyWith(fontSize: 17, fontWeight: FontWeight.bold));
+                  final priceW = Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (px != null)
+                      Text.rich(TextSpan(children: [
+                        TextSpan(text: price != null ? '현재가 ' : '기준가 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
+                        TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      ])),
+                    ChgBadge(Live.last['${c['code']}']?.ratio), // 오늘 등락률
+                  ]);
+                  if (box.maxWidth < 520) {
+                    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      name,
+                      Padding(padding: const EdgeInsets.only(top: 2), child: priceW),
+                    ]);
+                  }
+                  return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                    Expanded(child: name),
+                    const SizedBox(width: 6),
+                    priceW,
+                  ]);
+                }),
                 StockInfoLine('${c['code']}'),
                 PlanLine(c: c, price: price, live: price != null, tab: tab),
                 if (extra != null) extra!,

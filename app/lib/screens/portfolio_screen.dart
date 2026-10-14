@@ -513,7 +513,7 @@ class _OriginBox extends StatelessWidget {
                   price! >= (z['low'] as num) && price! <= (z['high'] as num)),
         // 공통 규칙: 1차 목표 뒤엔 손절가 대신 매수가(본전) — 닿으면 남은 수량 전량 매도 ('손절'로 표시하지 않음)
         if (be)
-          row('본전', '${num0(entry)}  (1차 목표 뒤 · 닿으면 전량 매도)',
+          row('매수가', '${num0(entry)}  (1차 목표 뒤 · 닿으면 매수가매도 전량)',
               color: Colors.orange, here: price != null && price! <= entry!)
         else if (stop != null)
           row('손절', '${num0(stop)}${price != null && price! > 0 ? '  (지금보다 ${((stop / price! - 1) * 100).toStringAsFixed(1)}%)' : ''}',

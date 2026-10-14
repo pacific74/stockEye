@@ -63,8 +63,8 @@ class MemberAlerts:
             t1, ep = float(p.get("target1") or 0), float(p.get("entry_price") or 0)
             be = bool(t1 and ep and (float(p.get("max_price") or 0) >= t1 or (today, p["id"], "target") in self.sent))
             for kind, hit, title, body in (
-                ("even", be and q.price <= ep, "↩ 본전 도달 (1차 목표 뒤)",
-                 f"{p['name']} 현재 {q.price:,.0f}원 ≤ 매수가 {ep:,.0f}원 → 남은 수량 전량 매도 (1차 이익실현 뒤 본전)"),
+                ("even", be and q.price <= ep, "↩ 매수가매도 (1차 목표 뒤)",
+                 f"{p['name']} 현재 {q.price:,.0f}원 ≤ 매수가 {ep:,.0f}원 → 남은 수량 전량 매도 (1차 이익실현 뒤 매수가 복귀)"),
                 ("stop", not be and p.get("stop") and q.price <= float(p["stop"]), "🔻 손절가 도달",
                  f"{p['name']} 현재 {q.price:,.0f}원 ≤ 손절가 {float(p['stop'] or 0):,.0f}원"),
                 ("target", p.get("target1") and q.price >= float(p["target1"]), "🎯 1차 목표가 도달",

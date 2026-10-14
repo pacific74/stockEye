@@ -80,8 +80,8 @@ def review(holdings: list[dict], x: pd.DataFrame, as_of_date, report_index: dict
         if target and hi_max >= float(target):
             # 공통 규칙: 1차 목표 뒤엔 손절가 대신 매수가(본전) — 닿으면 남은 수량 전량 매도 ('손절'로 표시하지 않음)
             if float(r["low"]) <= avg:
-                item["alerts"].append(f"1차 목표 뒤 매수가(본전) {int(avg):,}원 이탈 → 남은 수량 전량 매도 (저가 {int(r['low']):,}원)")
-                item["status"] = "본전 매도"
+                item["alerts"].append(f"1차 목표 뒤 매수가 {int(avg):,}원 이탈 → 매수가매도 (남은 수량 전량) (저가 {int(r['low']):,}원)")
+                item["status"] = "매수가매도"
         elif stop and float(r["low"]) <= float(stop):
             item["alerts"].append(f"손절가 {int(stop):,}원 이탈 (저가 {int(r['low']):,}원)")
             item["status"] = "손절 검토"

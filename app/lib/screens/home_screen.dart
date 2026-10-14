@@ -647,7 +647,7 @@ class _HoldingsTable extends StatelessWidget {
       final entry = (h['entry_price'] as num?)?.toDouble();
       final be = t1 != null && entry != null && (((h['max_price'] as num?)?.toDouble() ?? 0) >= t1 || price >= t1);
       if (be && price <= entry) {
-        out.add('1차 뒤 본전 ${num0(entry)} 이탈 · 전량 매도');
+        out.add('1차 뒤 매수가 ${num0(entry)} 이탈 · 매수가매도');
       } else if (!be && stop != null && price <= stop) {
         out.add('손절가 ${num0(stop)} 아래');
       } else {

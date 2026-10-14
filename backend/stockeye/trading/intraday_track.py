@@ -8,7 +8,7 @@
   1·2·3차 목표달성
   매도신호포착  산 뒤 매물이 갑자기 쏟아짐: 1분 거래량이 앞 10분 평균의 3배 이상 + 1% 넘는 음봉
   손절          손절가 닿음 (1차 목표 전만)
-  본전 매도     1차 목표 뒤 매수가로 돌아옴 → 남은 몫 전량 매도 (공통 규칙 · '손절'로 표시하지 않음, 결과는 이익실현)
+  매수가매도    1차 목표 뒤 매수가로 돌아옴 → 남은 몫 전량 매도 (공통 규칙 · '손절'로 표시하지 않음, 결과는 이익실현)
 매매 결과
   이익실현      1차 목표 이상 달성 (1차 50% · 2차 30% · 3차 20% 매도, 1차 뒤 남은 몫은 본전 이탈 시 · 마감 때 종가)
   매수가매도    1차 목표 전에 매도신호포착으로 매수가 부근에서 판 경우 (또는 마감 때 매수가 이상)
@@ -141,7 +141,7 @@ def step(t: dict, bars: pd.DataFrame | None, price: float | None, score_now: flo
                 pass
             elif st and lo <= st:                                      # 손절 (1차 뒤엔 본전) · 시초가가 이미 아래면 시초가
                 _sell(t, min(op, st), t["rest"])
-                _event(t, "손절" if not t["be"] else "본전 매도", hm)
+                _event(t, "손절" if not t["be"] else "매수가매도", hm)
                 return _finish(t, hm, now)
             for k, tp in enumerate(tg if not ticks else []):
                 key = f"t{k + 1}"
@@ -240,7 +240,7 @@ def tick(t: dict, price: float, now: pd.Timestamp, cfg: dict | None = None) -> b
     st = t["entry"] if t["be"] else t["stop"]
     if st and price <= st:
         _sell(t, price, t["rest"])                                       # 실제 체결가 (손절가보다 낮을 수 있음)
-        _event(t, "손절" if not t["be"] else "본전 매도", hm)
+        _event(t, "손절" if not t["be"] else "매수가매도", hm)
         _finish(t, hm, now)
         return True
     for k, tp in enumerate([t.get("t1"), t.get("t2"), t.get("t3")]):

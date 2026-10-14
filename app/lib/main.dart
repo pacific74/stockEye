@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'api.dart';
@@ -11,6 +12,7 @@ import 'screens/home_screen.dart';
 import 'screens/journal_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/portfolio_screen.dart';
+import 'screens/stats_screen.dart';
 import 'update_check.dart';
 import 'widgets/nav.dart';
 
@@ -59,8 +61,13 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   // 탭을 누를 때마다 그 탭 화면을 새로 만들어서 최신 데이터를 다시 불러온다 (메인·관심·보유·일지·검증 모두)
-  final _gen = List<int>.filled(6, 0);
+  final _gen = List<int>.filled(7, 0);
   int _lastTap = 0;
+  // 뒤로가기 (폰 뒤로 버튼 · 브라우저 뒤로): 앱 밖으로 나가지 않고 직전 탭으로 → 메인 → 메인에서 2초 안에 한 번 더 누르면 종료
+  final _hist = <int>[];
+  int _cur = 0;
+  bool _backNav = false;
+  DateTime? _exitAt;
 
   @override
   void initState() {
@@ -83,7 +90,42 @@ class _HomeShellState extends State<HomeShell> {
     super.dispose();
   }
 
-  void _changed() => setState(() {});
+  void _changed() {
+    final i = tabIndex.value;
+    if (i != _cur) {
+      if (!_backNav) {
+        _hist.add(_cur);
+        if (_hist.length > 20) _hist.removeAt(0);
+      }
+      _cur = i;
+    }
+    setState(() {});
+  }
+
+  void _goBack(int i) {
+    _backNav = true;
+    tabIndex.value = i;
+    _backNav = false;
+  }
+
+  void _onBack() {
+    while (_hist.isNotEmpty && _hist.last == tabIndex.value) {
+      _hist.removeLast();
+    }
+    if (_hist.isNotEmpty || tabIndex.value != 0) {
+      _goBack(_hist.isNotEmpty ? _hist.removeLast() : 0);
+      return;
+    }
+    final now = DateTime.now();
+    if (_exitAt != null && now.difference(_exitAt!) < const Duration(seconds: 2)) {
+      SystemNavigator.pop();
+      return;
+    }
+    _exitAt = now;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('뒤로 버튼을 한 번 더 누르면 종료돼요'), duration: Duration(seconds: 2)));
+  }
 
   void _tapped() {
     if (tabTap.value == _lastTap) return;
@@ -103,10 +145,17 @@ class _HomeShellState extends State<HomeShell> {
       JournalScreen(key: ValueKey('j${_gen[3]}')),
       if (canSeeBacktest) BacktestScreen(key: ValueKey('b${_gen[4]}')), // 관리자만
       if (canSeeBacktest) IntradayScreen(key: ValueKey('i${_gen[5]}')), // 관리자만: 당일단타·상한가포착
+      if (canSeeBacktest) StatsScreen(key: ValueKey('s${_gen[6]}')), // 관리자만: 추천주 · 시장·업종 통계
     ];
-    return Scaffold(
-      body: IndexedStack(index: tabIndex.value < pages.length ? tabIndex.value : 0, children: pages),
-      bottomNavigationBar: const MainNavBar(),
+    return PopScope(
+      canPop: false, // 하위 화면(종목 상세 등)은 평소대로 닫히고, 탭 화면에서만 여기로 옴
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _onBack();
+      },
+      child: Scaffold(
+        body: IndexedStack(index: tabIndex.value < pages.length ? tabIndex.value : 0, children: pages),
+        bottomNavigationBar: const MainNavBar(),
+      ),
     );
   }
 }

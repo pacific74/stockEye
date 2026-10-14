@@ -45,7 +45,7 @@ def test_tick_stop_targets_breakeven():
     assert tr.on_tick("000010", 10300, pd.Timestamp("2026-10-13 09:12")) is True
     assert t["hits"] == {"t1": "09:12"} and t["be"] and abs(t["rest"] - 0.5) < 1e-9
     assert tr.on_tick("000010", 9990, pd.Timestamp("2026-10-13 09:20")) is True   # 1차 뒤 본전 이탈
-    assert t["done"] and t["state"] == "본전 매도" and t["result"] == "이익실현"
+    assert t["done"] and t["state"] == "매수가매도" and t["result"] == "이익실현"
     assert t["sold"][-1] == [9990, 0.5]                                 # 실제 체결가로 매도
     assert tr.on_tick("000010", 9000, now) is False                    # 끝난 뒤엔 무시
 

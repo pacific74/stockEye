@@ -407,6 +407,9 @@ class _ClosingSection extends StatelessWidget {
 const _states = ['매수구간', '신규진입보류', '1차목표달성', '2차목표달성', '3차목표달성', '매도신호포착', '손절'];
 const _cbStates = ['매수대기', '매수', '1차목표달성', '2차목표달성', '손절']; // 종가배팅
 
+/// 예전 기록의 '본전 매도' → '매수가매도' (2026-10-14 이름 바꿈)
+String _st(String s) => s == '본전 매도' ? '매수가매도' : s;
+
 Color _resultColor(String? r) => switch (r) {
       '이익실현' => upColor,
       '매수가매도' => Colors.orange,
@@ -427,7 +430,7 @@ class _TrackCard extends StatelessWidget {
   String? _where(double p) {
     double? n(String k) => (t[k] as num?)?.toDouble();
     final stop = t['be'] == true ? n('entry') : n('stop');
-    if (stop != null && p <= stop) return t['be'] == true ? '본전 아래' : '손절가 아래';
+    if (stop != null && p <= stop) return t['be'] == true ? '매수가 아래' : '손절가 아래';
     for (final k in ['t3', 't2', 't1']) {
       final v = n(k);
       if (v != null && p >= v) return '${k.substring(1)}차 목표 위';
@@ -451,7 +454,7 @@ class _TrackCard extends StatelessWidget {
     // '매수구간' 은 들어온 시각 기록일 뿐 → 지금가가 구간 밖이면 '매수구간 이탈'로 보여 주고 깜빡이지 않음
     final lo = (t['buy_lo'] as num?)?.toDouble(), hi = (t['buy_hi'] as num?)?.toDouble();
     final inZone = last != null && lo != null && hi != null && last >= lo && last <= hi;
-    final rawCur = '${t['state'] ?? ''}';
+    final rawCur = _st('${t['state'] ?? ''}');
     final cur = (rawCur == '매수구간' && !done && !inZone) ? '매수구간 이탈' : rawCur;
     final prevDay = !dtIsToday({'date': t['date']});
     // 매수구간·매도신호포착 상태면 깜빡임 (끝난 종목은 끝난 뒤 10분까지만)
@@ -480,15 +483,16 @@ class _TrackCard extends StatelessWidget {
     }
     double? n(String k) => (t[k] as num?)?.toDouble();
     // 공통 규칙: 1차 목표 뒤엔 손절가 대신 매수가(본전) — 닿으면 남은 몫 전량 매도 ('손절'로 표시하지 않음)
-    final be = t['be'] == true;
-    final lastSt = be ? '본전 매도' : '손절';
+    // 단, 3차(종가배팅은 2차)까지 가서 전량 매도로 끝난 종목은 본전 매도가 없음 → 보유 중이거나 실제로 본전 매도로 끝난 것만
+    final be = t['be'] == true && (!done || events.any((e) => _st('${e['state']}') == '매수가매도'));
+    final lastSt = be ? '매수가매도' : '손절';
     final chart = mb.length < 3
         ? null
         : Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
             SizedBox(
               height: 190,
               child: PriceChart(bars: mb, showMa: false, levels: [
-                if (bought && n('entry') != null) PriceLevel(be ? '본전' : '매수', n('entry')!, be ? Colors.orange : Colors.grey),
+                if (bought && n('entry') != null) PriceLevel(be ? '매수가매도' : '매수', n('entry')!, be ? Colors.orange : Colors.grey),
                 if (!be && n('stop') != null) PriceLevel('손절', n('stop')!, downColor),
                 if (n('t1') != null) PriceLevel('1차', n('t1')!, upColor),
               ]),
@@ -508,7 +512,7 @@ class _TrackCard extends StatelessWidget {
     String? timeOf(String s) {                       // 그 상태가 처음 생긴 시각
       for (final e in events) {
         final st = '${e['state']}';
-        if (st == s) return '${e['time']}';
+        if (_st(st) == s) return '${e['time']}';
       }
       return null;
     }
@@ -546,7 +550,7 @@ class _TrackCard extends StatelessWidget {
             if (cb && t['buy_time'] != null) InfoBox('${t['buy_time']} 매수', color: upColor, bold: true),
             InfoBox('${cb && !bought ? '매수범위' : '매수 ${num0(t['entry'] as num?)}'} (${num0(lo)}~${num0(hi)})'),
             be
-                ? InfoBox('1차 뒤 본전 ${num0(t['entry'] as num?)} (전량 매도)', color: Colors.orange, bold: true)
+                ? InfoBox('1차 뒤 매수가매도 ${num0(t['entry'] as num?)} (전량)', color: Colors.orange, bold: true)
                 : InfoBox('손절 ${num0(t['stop'] as num?)}', color: downColor),
             InfoBox('1차 ${num0(t['t1'] as num?)}', color: upColor),
             InfoBox('2차 ${num0(t['t2'] as num?)}', color: upColor),

@@ -160,10 +160,8 @@ def step(t: dict, bars: pd.DataFrame | None, price: float | None, score_now: flo
         t["seen"] = pd.Timestamp(b["time"].iloc[-1]).strftime("%Y-%m-%d %H:%M") if len(b) else t["seen"]
     if price:
         t["last"] = price
-        inzone = t["buy_lo"] <= price <= t["buy_hi"]
-        if inzone and not t.get("inzone", True) and not t["hits"] and not cfg.get("wait_buy"):  # 벗어났다 다시 들어올 때만
-            _event(t, "매수구간", now.strftime("%H:%M"))
-        t["inzone"] = inzone
+        # 매수구간 들어오고 나감은 기록하지 않음 (2026-10-14: 실시간 체결로 구간 경계에서 수십 번 쌓였음) — 앱이 지금가로 판단
+        t["inzone"] = t["buy_lo"] <= price <= t["buy_hi"]
     if score_now is not None:
         t["score_now"] = score_now
         # 신규진입보류 (2026-10-14): 기준 바로 아래로 1분 출렁인 것까진 안 띄움 →
@@ -254,10 +252,7 @@ def tick(t: dict, price: float, now: pd.Timestamp, cfg: dict | None = None) -> b
     if t["rest"] <= 1e-9:
         _finish(t, hm, now)
         return True
-    inzone = t["buy_lo"] <= price <= t["buy_hi"]
-    if inzone and not t.get("inzone", True) and not t["hits"] and not cfg.get("wait_buy"):
-        _event(t, "매수구간", hm)
-    t["inzone"] = inzone
+    t["inzone"] = t["buy_lo"] <= price <= t["buy_hi"]              # 구간 들어오고 나감은 기록 안 함
     return len(t["events"]) != n0
 
 

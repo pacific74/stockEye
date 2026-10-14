@@ -373,6 +373,9 @@ class _ClosingSection extends StatelessWidget {
 }
 
 
+const _states = ['매수구간', '신규진입보류', '1차목표달성', '2차목표달성', '3차목표달성', '매도신호포착', '손절'];
+const _cbStates = ['매수대기', '매수', '1차목표달성', '2차목표달성', '손절']; // 종가배팅
+
 Color _resultColor(String? r) => switch (r) {
       '이익실현' => upColor,
       '매수가매도' => Colors.orange,
@@ -424,99 +427,55 @@ class _TrackCard extends StatelessWidget {
     final ended = DateTime.tryParse('${t['exit_time'] ?? ''}'.replaceFirst(' ', 'T'));
     final blink = (cur == '매수구간' || cur == '매도신호포착' || cur == '매수대기') &&
         (!done || (ended != null && DateTime.now().difference(ended).inMinutes < 10));
-    // ---- 한 줄 요약 (PC 넓은 화면은 한 줄, 좁으면 두 줄) ----
-    final nameW = InkWell(
-      onTap: () => Navigator.push(context,
-          MaterialPageRoute(builder: (_) => StockDetailScreen(
-              code: '${t['code']}', name: '${t['name']}', news: asList(asMap(t['card'])['news'])))),
-      child: StockName('${t['name']}', score: t['score'] as num?, scoreDigits: 1, style: tx.titleSmall),
-    );
-    final boxes = infoBoxes([
-      InfoBox('${prevDay ? '${'${t['date']}'.substring(5)} ' : ''}${t['time']} 포착', bold: true, fill: true),
-      if (cb && t['buy_time'] != null) InfoBox('${t['buy_time']} 매수', color: upColor, bold: true),
-      InfoBox('${cb && !bought ? '매수범위' : '매수 ${num0(t['entry'] as num?)}'} (${num0(lo)}~${num0(hi)})'),
-      InfoBox('손절 ${num0(t['stop'] as num?)}', color: downColor),
-      InfoBox('1차 ${num0(t['t1'] as num?)}', color: upColor),
-      InfoBox('2차 ${num0(t['t2'] as num?)}', color: upColor),
-      if (t['t3'] != null) InfoBox('3차 ${num0(t['t3'] as num?)}', color: upColor),
-    ]);
-    final priceW = Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
-      Text(won(last), style: tx.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-      Text(bought ? (pnl == null ? '-' : pct(pnl)) : (done ? '미체결' : '매수 전'),
-          style: tx.bodySmall?.copyWith(color: (pnl ?? 0) >= 0 ? upColor : downColor)),
-    ]);
-    final resultW = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: done
-        ? [
-            Text('${t['result']} ${pnl == null ? '' : pct(pnl)}',
-                style: tx.bodyMedium?.copyWith(fontWeight: FontWeight.bold, color: _resultColor(t['result'] as String?))),
-            Text('${'${t['exit_time'] ?? ''}'.length >= 16 ? '${'${t['exit_time']}'.substring(11, 16)} ' : ''}'
-                '${t['exit_price'] == null ? '' : '평균 ${num0(t['exit_price'] as num?)}'}',
-                style: tx.bodySmall?.copyWith(color: Colors.grey)),
-          ]
-        : [
-            Blink(
-                on: blink,
-                child: Text(cur,
-                    style: tx.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: blink ? (cur == '매도신호포착' ? downColor : upColor) : null))),
-            Text(
-                cur == '매수구간 이탈' && last != null
-                    ? '지금가 구간 ${last > (hi ?? 0) ? '위' : '아래'}'
-                    : (cb ? (bought ? '다음 날 10:30 까지' : '15:20 까지 매수 대기') : lc ? '다음 날 09:30 까지' : '15:20 까지'),
-                style: tx.bodySmall?.copyWith(color: Colors.grey)),
-            if (quote != null)
-              Text('지금가 기준${where == null ? '' : ' $where'} · 저녁 확정', style: tx.bodySmall?.copyWith(color: Colors.orange)),
-          ]);
-    // ---- 상태 기록: 일어난 것만 시간 순 (매수구간 09:16 → 1차목표달성 09:32 ...) ----
-    Color evColor(String s) => s.contains('목표') || s == '매수구간' || s == '매수'
-        ? upColor
-        : (s == '손절' || s == '본전 매도' || s == '매도신호포착')
-            ? downColor
-            : Colors.grey;
-    final timeline = Wrap(spacing: 4, runSpacing: 2, crossAxisAlignment: WrapCrossAlignment.center, children: [
-      for (final (i, e) in events.indexed) ...[
-        if (i > 0) Icon(Icons.chevron_right, size: 14, color: Colors.grey.shade600),
-        Text('${e['state']} ${e['time']}', style: tx.bodySmall?.copyWith(color: evColor('${e['state']}'))),
-      ],
-    ]);
+    String? timeOf(String s) {                       // 그 상태가 처음 생긴 시각
+      for (final e in events) {
+        final st = '${e['state']}';
+        if (st == s || (s == '손절' && st == '본전 매도')) return '${e['time']}';
+      }
+      return null;
+    }
+    final closeT = timeOf('마감 청산');
+    final noFillT = timeOf('미체결');
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 3),
+      margin: const EdgeInsets.symmetric(vertical: 4),
       shape: RoundedRectangleBorder(
-          side: BorderSide(color: done ? _resultColor(t['result'] as String?) : Colors.blueGrey, width: 1.0),
-          borderRadius: BorderRadius.circular(10)),
+          side: BorderSide(color: done ? _resultColor(t['result'] as String?) : Colors.blueGrey, width: 1.2),
+          borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 6, 4, 2),
+        padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          LayoutBuilder(builder: (context, c) {
-            if (c.maxWidth >= 900) {
-              return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                SizedBox(width: 190, child: nameW),
-                Expanded(child: boxes),
-                const SizedBox(width: 8),
-                SizedBox(width: 92, child: Align(alignment: Alignment.centerRight, child: priceW)),
-                const SizedBox(width: 12),
-                SizedBox(width: 150, child: resultW),
-              ]);
-            }
-            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [Expanded(child: nameW), priceW]),
-              const SizedBox(height: 3),
-              boxes,
-              const SizedBox(height: 3),
-              resultW,
-            ]);
-          }),
-          // 상태 기록 + 기존 상태설명(충족 순간 카드)은 펼쳐서
+          InkWell(
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => StockDetailScreen(
+                    code: '${t['code']}', name: '${t['name']}', news: asList(asMap(t['card'])['news'])))),
+            child: Row(children: [
+              Expanded(
+                  child: StockName('${t['name']}', score: t['score'] as num?, scoreDigits: 1, style: tx.titleMedium)),
+              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                Text(won(last), style: tx.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                Text(bought ? '매수가 대비 ${pnl == null ? '-' : pct(pnl)}' : (done ? '미체결' : '매수 전'),
+                    style: tx.bodySmall?.copyWith(color: (pnl ?? 0) >= 0 ? upColor : downColor)),
+              ]),
+            ]),
+          ),
+          const SizedBox(height: 4),
+          infoBoxes([
+            InfoBox('${prevDay ? '${'${t['date']}'.substring(5)} ' : ''}${t['time']} 포착', bold: true, fill: true),
+            if (cb && t['buy_time'] != null) InfoBox('${t['buy_time']} 매수', color: upColor, bold: true),
+            InfoBox('${cb && !bought ? '매수범위' : '매수 ${num0(t['entry'] as num?)}'} (${num0(lo)}~${num0(hi)})'),
+            InfoBox('손절 ${num0(t['stop'] as num?)}', color: downColor),
+            InfoBox('1차 ${num0(t['t1'] as num?)}', color: upColor),
+            InfoBox('2차 ${num0(t['t2'] as num?)}', color: upColor),
+            if (t['t3'] != null) InfoBox('3차 ${num0(t['t3'] as num?)}', color: upColor),
+          ]),
+          // 기존 상태설명: 충족 순간의 카드 그대로
           Theme(
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
               dense: true,
-              visualDensity: VisualDensity.compact,
-              tilePadding: const EdgeInsets.only(right: 4),
+              tilePadding: EdgeInsets.zero,
               childrenPadding: EdgeInsets.zero,
-              title: timeline,
-              trailing: Text('상태설명', style: tx.bodySmall?.copyWith(color: Colors.grey)),
+              title: Text('기존 상태설명 (${t['time']} 충족 때)', style: tx.bodyMedium),
               children: [
                 cb
                     ? ClosingbetTile(r: card, rank: 1, showRules: true)
@@ -526,12 +485,61 @@ class _TrackCard extends StatelessWidget {
               ],
             ),
           ),
+          // 현재 상태 (상태마다 처음 생긴 시각) | 매매 결과
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(
+              flex: 6,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('현재 상태', style: tx.labelMedium?.copyWith(color: Colors.grey)),
+                for (final s in [...(cb ? _cbStates : _states), if (closeT != null) '마감 청산', if (noFillT != null) '미체결'])
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 1.5),
+                    child: Row(children: [
+                      Expanded(
+                          child: Blink(
+                              on: cur == s && blink,
+                              child: Text(s,
+                                  style: tx.bodySmall?.copyWith(
+                                      fontWeight: (cur == s || (s == '손절' && cur == '본전 매도')) ? FontWeight.bold : null,
+                                      color: cur == s && blink
+                                          ? (s == '매도신호포착' ? downColor : upColor)
+                                          : (timeOf(s) == null ? Colors.grey : null))))),
+                      SizedBox(width: 46, child: Text(timeOf(s) ?? '-', textAlign: TextAlign.right, style: tx.bodySmall)),
+                    ]),
+                  ),
+              ]),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 4,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('매매 결과', style: tx.labelMedium?.copyWith(color: Colors.grey)),
+                const SizedBox(height: 4),
+                if (done) ...[
+                  Text('${t['result']}',
+                      style: tx.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: _resultColor(t['result'] as String?))),
+                  if (pnl != null) Text(pct(pnl), style: tx.titleSmall?.copyWith(color: pnl >= 0 ? upColor : downColor)),
+                  if (t['exit_price'] != null) Text('평균 매도 ${num0(t['exit_price'] as num?)}', style: tx.bodySmall),
+                  Text('${'${t['exit_time'] ?? ''}'.length >= 16 ? '${t['exit_time']}'.substring(11, 16) : ''} 끝',
+                      style: tx.bodySmall?.copyWith(color: Colors.grey)),
+                ] else ...[
+                  Text('진행중', style: tx.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                  Blink(on: blink, child: Text(cur, style: tx.bodySmall?.copyWith(fontWeight: FontWeight.bold))),
+                  if (cur == '매수구간 이탈' && last != null)
+                    Text('지금가가 구간 ${last > (hi ?? 0) ? '위' : '아래'}', style: tx.bodySmall?.copyWith(color: Colors.grey)),
+                  Text(cb ? (bought ? '다음 날 10:30 까지' : '오늘 15:20 까지 매수 범위 대기') : lc ? '다음 날 09:30 까지' : '15:20 까지',
+                      style: tx.bodySmall?.copyWith(color: Colors.grey)),
+                  if (quote != null)
+                    Text('지금가 기준${where == null ? '' : ' $where'} · 저녁 확정', style: tx.bodySmall?.copyWith(color: Colors.orange)),
+                ],
+              ]),
+            ),
+          ]),
         ]),
       ),
     );
   }
 }
-
 
 /// 카드 배치: 종목 카드 폭을 정해(약 460) 옆으로 붙이고, 화면이 좁아지면 아래로 내림
 ///   한 줄에 들어가는 개수만큼 남는 폭을 고르게 나눔 (휴대폰처럼 좁으면 한 줄에 하나 · 전체 폭)

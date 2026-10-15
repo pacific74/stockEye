@@ -1,11 +1,11 @@
 {
-    "name": "濡쒕삉??,
-    "short_name": "濡쒕삉??,
+    "name": "로또픽",
+    "short_name": "로또픽",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0C52D6",
     "theme_color": "#0C52D6",
-    "description": "A new Flutter project.",
+    "description": "로또 당첨번호 통계와 다음 회차 번호 생성",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

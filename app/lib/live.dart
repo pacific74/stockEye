@@ -39,6 +39,12 @@ class LiveQuote {
 
   bool get isOpen => status == 'OPEN';
 
+  /// 넥스트레이드 프리마켓(08:00~08:50)·애프터마켓(15:40~20:00) 거래 중이고 정규장은 닫힘 → 현재가로 NXT 가격을 씀 (2026-10-16)
+  bool get nxtOn => overStatus == 'OPEN' && (overPrice ?? 0) > 0 && status != 'OPEN';
+
+  /// NXT 가격의 정규장 가격 대비 % (프리마켓 = 전일 종가 대비 · 애프터마켓 = 오늘 종가 대비)
+  double? get nxtRatio => !nxtOn || price <= 0 ? null : (overPrice! / price - 1) * 100;
+
   /// 네이버 응답의 한 종목을 해석 (숫자는 '71,200' 같은 문자열, 부호는 compareToPreviousPrice.code 로)
   static LiveQuote? fromNaver(Map<String, dynamic> m) {
     final code = (m['itemCode'] ?? m['reutersCode'] ?? m['symbolCode'])?.toString();
@@ -195,17 +201,20 @@ class MarketClock {
 
   bool get open => indexStatus == 'OPEN' || (indexStatus == null && !holiday && _hm >= 900 && _hm < 1530);
 
+  /// 넥스트레이드 프리마켓 08:00~08:50 · 애프터마켓 15:40~20:00 (평일, 휴장일 아님)
+  bool get nxtHours => !holiday && !open && ((_hm >= 800 && _hm < 850) || (_hm >= 1530 && _hm < 2000));
+
   String get label {
     if (holiday) return '휴장';
     if (open) return '장중';
-    if (_hm < 900) return '장 시작 전';
-    return '장 마감';
+    if (_hm < 900) return nxtHours ? '장 시작 전 · NXT 프리마켓' : '장 시작 전';
+    return nxtHours ? '장 마감 · NXT 애프터마켓' : '장 마감';
   }
 
-  /// 자동 새로고침 간격 (장중 1분, 장 전후 5분, 그 밖엔 안 함)
+  /// 자동 새로고침 간격 (장중·넥스트레이드 거래 시간 1분, 장 전후 5분, 그 밖엔 안 함)
   Duration? get refreshEvery {
     if (holiday) return null;
-    if (open) return const Duration(minutes: 1);
+    if (open || nxtHours) return const Duration(minutes: 1);
     if (_hm >= 800 && _hm < 2000) return const Duration(minutes: 5);
     return null;
   }

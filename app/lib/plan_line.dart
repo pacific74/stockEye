@@ -147,7 +147,11 @@ class WatchTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
-    final px = price ?? (asMap(c['plan'])['price'] as num?)?.toDouble();
+    // 정규장 밖 넥스트레이드 거래 중(08:00~08:50 · 15:40~20:00)이면 현재가 = NXT 가격 (2026-10-16)
+    final lq = Live.last['${c['code']}'];
+    final nxt = lq?.nxtOn ?? false;
+    final px = nxt ? lq!.overPrice : (price ?? (asMap(c['plan'])['price'] as num?)?.toDouble());
+    final livePx = nxt ? lq!.overPrice : price;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: InkWell(
@@ -172,10 +176,18 @@ class WatchTile extends StatelessWidget {
                   final priceW = Row(mainAxisSize: MainAxisSize.min, children: [
                     if (px != null)
                       Text.rich(TextSpan(children: [
-                        TextSpan(text: price != null ? '현재가 ' : '기준가 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
+                        TextSpan(
+                            text: nxt ? 'NXT ' : (price != null ? '현재가 ' : '기준가 '),
+                            style: t.bodySmall?.copyWith(color: nxt ? Colors.purple.shade200 : Colors.grey)),
                         TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
                       ])),
-                    ChgBadge(Live.last['${c['code']}']?.ratio), // 오늘 등락률
+                    // 오늘 등락률 (NXT 중이면 정규장 가격 대비 NXT 등락 + 정규장 가격)
+                    ChgBadge(nxt ? lq!.nxtRatio : lq?.ratio),
+                    if (nxt)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Text('${num0(lq!.price)} 대비', style: t.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
+                      ),
                   ]);
                   if (box.maxWidth < 520) {
                     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -190,7 +202,7 @@ class WatchTile extends StatelessWidget {
                   ]);
                 }),
                 StockInfoLine('${c['code']}'),
-                PlanLine(c: c, price: price, live: price != null, tab: tab),
+                PlanLine(c: c, price: livePx, live: livePx != null, tab: tab),
                 if (extra != null) extra!,
               ]),
             ),

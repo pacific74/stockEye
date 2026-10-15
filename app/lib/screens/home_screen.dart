@@ -549,9 +549,7 @@ class _LiveCandidateTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
     final tab = c['_tab'] as String?;
-    final nxt = q != null && !clock.open && q!.overStatus == 'OPEN' && q!.overPrice != null;
     // 관심 목록(WatchTile)과 같은 모양: 순위 · 종목명 · 현재가 · 점수 · 경고 · 매수구간 · 목표/손절/손익비
     return WatchTile(
       c: c,
@@ -560,11 +558,7 @@ class _LiveCandidateTile extends StatelessWidget {
       leading: CircleAvatar(child: Text('${c['rank']}')),
       score: _score(c, tab),
       scoreDigits: tab == 'v3' ? 0 : 1,
-      extra: nxt
-          ? Padding(
-              padding: const EdgeInsets.only(top: 3),
-              child: Text('넥스트레이드 ${num0(q!.overPrice)} (${pct(q!.overRatio)})', style: t.bodySmall))
-          : null,
+      // 넥스트레이드 가격은 WatchTile 이 현재가 자리에 바로 보여 줌 (2026-10-16)
       onTap: () => Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => StockDetailScreen(code: c['code'] as String, name: c['name'] as String, source: tab))),
     );

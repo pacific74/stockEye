@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>로또픽 다운로드</title>
+<link rel="icon" href="icon.png">
+<style>
+  :root { --bg:#f6f7fb; --card:#fff; --text:#1d1f27; --sub:#666; --accent:#0c52d6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14151a; --card:#1f2128; --text:#eee; --sub:#aaa; --accent:#3b7bff; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font-family:-apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+         display:flex; min-height:100vh; align-items:center; justify-content:center; padding:16px; }
+  .card { background:var(--card); border-radius:20px; padding:32px 24px; max-width:420px; width:100%;
+          text-align:center; box-shadow:0 6px 24px rgba(0,0,0,.08); }
+  img.icon { width:120px; height:120px; border-radius:26px; margin-bottom:16px; }
+  h1 { font-size:24px; margin:0 0 6px; }
+  .ver { color:var(--sub); font-size:14px; margin-bottom:24px; min-height:1.4em; }
+  .btn { display:block; background:var(--accent); color:#fff; text-decoration:none; font-size:18px;
+         font-weight:700; padding:16px; border-radius:14px; }
+  .btn:active { opacity:.85; }
+  .note { text-align:left; color:var(--sub); font-size:13px; line-height:1.6; margin-top:24px; }
+  .note b { color:var(--text); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <img class="icon" src="icon.png" alt="로또픽">
+    <h1>로또픽</h1>
+    <div class="ver" id="ver">Android</div>
+    <a class="btn" href="lotto.apk" download="lotto.apk">APK 다운로드</a>
+    <a href="./" style="display:block;margin-top:12px;color:var(--sub);font-size:14px">← 웹에서 바로 보기</a>
+    <div class="note">
+      <b>설치 방법</b><br>
+      1. 버튼을 눌러 APK를 받습니다.<br>
+      2. 다운로드한 파일을 엽니다.<br>
+      3. "출처를 알 수 없는 앱" 경고가 나오면 사용 중인 브라우저(크롬 등)에 설치 허용을 켭니다.<br>
+      4. 설치를 누르면 끝입니다. 새 버전도 같은 방법으로 덮어 설치하면 됩니다.
+    </div>
+  </div>
+  <script>
+    fetch('version.json', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(v => { if (v) document.getElementById('ver').textContent =
+        '버전 ' + v.version + (v.build ? ' (' + v.build + ')' : '') + ' · ' + v.time + ' · Android'; })
+      .catch(() => {});
+  </script>
+</body>
+</html>

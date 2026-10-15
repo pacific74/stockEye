@@ -65,6 +65,7 @@ class Live:
         from stockeye.trading.notify import Notifier
         self.sb, self.topics, self.nt = sb, topics, Notifier()
         self.last_push: dict[str, float] = {}
+        self.snap = None                                  # IndexSnap: 매수·매도 순간 종합·업종지수 기록 (main 에서 연결)
         self.q: "queue.Queue" = queue.Queue()
         self.sent = 0
         if background:
@@ -119,6 +120,27 @@ class Live:
     def on_event(self, tracker, t: dict, state: str) -> None:
         self.push(tracker, t)
         self.notify(tracker, t, state)
+        self.record_index(tracker, t, state)
+
+    def record_index(self, tracker, t: dict, state: str) -> None:
+        """매수·1·2·3차·매수가매도·손절·마감 순간의 종합지수·업종지수 → t['ix'][키] (따로 스레드에서 받아 저장)"""
+        from stockeye.analysis.index_snap import KEY
+        key = KEY.get(state)
+        if not key or not self.snap:
+            return
+        hm = (t.get("buy_time") or t.get("time")) if key == "buy" else (t["events"][-1]["time"] if t.get("events") else "")
+
+        def job():
+            v = self.snap.snap(t["code"])
+            if not v:
+                return
+            with tracker.lock:
+                ix = t.setdefault("ix", {})
+                if key not in ix:
+                    ix[key] = [v[0], v[1], hm, v[2]]
+            tracker.save()
+            self.push(tracker, t)
+        self.q.put(job)
 
 
 def main():
@@ -157,6 +179,11 @@ def main():
     from stockeye.trading.intraday_track import Tracker
     cb = Tracker(sb, "closingbet", _now().strftime("%Y-%m-%d"), carry_only=True)   # 전날 종가배팅 → 오늘 10:30 까지
     live = Live(sb, admin_topics(sb))
+    try:
+        from stockeye.analysis.index_snap import IndexSnap
+        live.snap = IndexSnap(listing, sectors)                       # 매수·매도 순간 종합·업종지수
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠ 지수 기록 준비 실패 (계속 진행): {e}")
     print(f"관리자 알림 토픽 {len(live.topics)}개" + ("" if live.topics else " — 없음 (알림 설정에서 토픽 저장 또는 setx NTFY_TOPIC)"))
     trackers = (dt.track, lc.track, cb)
 

@@ -260,10 +260,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   return _SectorCompare(
                     today: today,
                     todayLabel: liveToday ? '오늘 ${_secLive['time']}' : (_liveAt == null ? '오늘' : '오늘 ${_hm(_liveAt!)}'),
-                    todaySub: liveToday ? '업종 전체 종목 · 시가총액 가중 · 1시간마다' : '09:10부터 1시간마다 업종 전체 집계 (아직 전)',
+                    todaySub: liveToday ? '' : '09:10부터 1시간마다 집계 (아직 전)',
                     prev: prev,
                     prevLabel: pl.startsWith('오늘') ? '$pl 마감' : '전일($pl) 마감',
-                    prevSub: '업종 전체 종목 · 시가총액 가중',
+                    prevSub: '',
                   );
                 }(),
                 if (_stk?.error != null && quotes.isEmpty)
@@ -607,14 +607,18 @@ class _SectorCompare extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                // '업종 상위' 와 날짜·시간 사이를 붙여 폰에서도 날짜·시간이 안 잘리게 (2026-10-15)
                 Row(children: [
                   Text('업종 상위', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                  Flexible(
+                  const SizedBox(width: 6),
+                  Expanded(
                       child: Text(title,
-                          overflow: TextOverflow.ellipsis, style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold))),
+                          textAlign: TextAlign.right,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold))),
                 ]),
-                Text(sub, style: t.bodySmall?.copyWith(color: Colors.grey)),
+                if (sub.isNotEmpty) Text(sub, style: t.bodySmall?.copyWith(color: Colors.grey)),
                 const SizedBox(height: 4),
                 if (rows.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('-', style: t.bodySmall)),
                 for (final (i, r) in rows.take(6).indexed) row(i + 1, r.$1, r.$2),

@@ -117,3 +117,33 @@ def test_grid_time():
             {"rec_date": "2026-10-15", "kind": "v3", "score": 85, "rec_time": "마감", "res_status": "손절", "res_done": True}]
     g = re_.grid_time(rows)
     assert g == {"2026-10-15": {"09:20|80": {"d": {"n": 1, "f": 1, "p": 1.5, "t1": [1, 1]}}}}
+
+
+def test_grid_time_index():
+    from stockeye.analysis import rec_eval as re_
+    from stockeye.analysis.index_snap import since, weighted, members
+    assert since(1.0, 2.0) == round((1.02 / 1.01 - 1) * 100, 2) and since(None, 1) is None
+    assert weighted({"a": 1.0, "b": 3.0}, {"a": 1, "b": 3}, ["a", "b", "c"]) == 2.5
+    assert members("x", {"x": "S", "a": "S", "b": "S", "c": "T"}, {"a": 5, "b": 1}) == ["a", "b"]
+    rows = [{"rec_date": "2026-10-16", "kind": "daytrade", "code": "A", "score": 91, "rec_time": "09:12",
+             "res_status": "1차 목표", "res_done": True, "res_pnl": 1.0, "res_days": 1},
+            {"rec_date": "2026-10-16", "kind": "daytrade", "code": "B", "score": 92, "rec_time": "09:15",
+             "res_status": "손절", "res_done": True, "res_pnl": -1.5, "res_days": 1}]
+    ix = {"2026-10-16": {"A": {"buy": [0.5, -0.2, "09:12", "KOSPI"], "t1": [0.8, 0.3, "09:30", "KOSPI"]},
+                         "B": {"buy": [-0.3, None, "09:15", "KOSDAQ"], "stop": [-0.9, None, "09:40", "KOSDAQ"]}}}
+    m = re_.grid_time(rows, ix=ix)["2026-10-16"]["09:10|90"]["d"]
+    assert m["ib"] == [2, 1, 1, 0]
+    assert m["t1"][:2] == [1, 1] and m["t1"][3] == 1 and m["t1"][5] == 1
+    assert m["stop"][3] == 1 and m["stop"][5] == 0 and m["stop"][2] < 0
+
+
+def test_grid_nx():
+    from stockeye.analysis import rec_eval as re_
+    assert re_.nx_of({"nxt_after": {"chg": 1.2}, "nxt_pre": [100, -0.5]}) == {"a": 1.2, "p": -0.5}
+    assert re_.nx_of({}) is None
+    rows = [{"rec_date": "2026-10-15", "kind": "closingbet", "code": "A", "score": 88, "res_pnl": 1.0, "res_done": True},
+            {"rec_date": "2026-10-15", "kind": "closingbet", "code": "B", "score": 91, "res_pnl": None, "res_done": True},
+            {"rec_date": "2026-10-15", "kind": "closingbet", "code": "C", "score": 85, "res_pnl": -1.0, "res_done": True}]
+    nx = {"2026-10-15": {"A": {"a": 1.2, "p": -0.5}, "B": {"a": 2, "p": 2}, "C": {"a": -0.3, "p": None}}}
+    assert re_.grid_nx(rows, nx) == {"2026-10-15": {"80": {"d": [2, 1, 1, 0]}}}
+

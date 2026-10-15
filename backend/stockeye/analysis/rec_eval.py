@@ -231,7 +231,7 @@ def stats(rows: list[dict]) -> dict:
             **win_loss(pn)}
 
 
-def summarize(rows: list[dict]) -> dict:
+def summarize(rows: list[dict], ix: dict | None = None, nx: dict | None = None) -> dict:
     cnt: dict[tuple, int] = {}
     for r in rows:
         k = (str(r["rec_date"])[:10], r["code"])
@@ -245,7 +245,8 @@ def summarize(rows: list[dict]) -> dict:
             "by_overlap": grp(lambda r: "여러 구분 겹침" if cnt[(str(r["rec_date"])[:10], r["code"])] > 1 else "한 구분만"),
             "by_score": grp(lambda r: score_bucket(r.get("score"))),
             "grid": grid(rows),
-            "dt_time": grid_time(rows),
+            "dt_time": grid_time(rows, ix=ix),
+            "cb_nx": grid_nx(rows, nx or {}),
             "by_day": {d: stats([r for r in rows if str(r["rec_date"])[:10] == d]) for d in dates[-60:]}}
 
 
@@ -315,8 +316,12 @@ def time_bucket(t) -> str | None:
     return "10:00" if s[:5] >= "10:00" else s[:4] + "0"
 
 
-def grid_time(rows: list[dict], kind: str = "daytrade") -> dict:
-    """당일단타 매수시간별: {날짜: {"09:10|90": {"d": …, "h": …}}} (칸 모양은 grid 와 같음)"""
+def grid_time(rows: list[dict], kind: str = "daytrade", ix: dict | None = None) -> dict:
+    """당일단타 매수시간별: {날짜: {"09:10|90": {"d": …, "h": …}}} (칸 모양은 grid 와 같음)
+    ix = {날짜: {종목: {"buy": [종합%, 업종%, …], "t1": …}}} (당일매매 추적의 매수·매도 순간 지수) 가 있으면 칸에 더 붙임:
+      "ib": [종합 있는 수, 매수 때 종합 + 수, 업종 있는 수, 매수 때 업종 + 수]
+      결과 칸 [건수, 보유일 합, 종합 매수대비 합, 종합 수, 업종 매수대비 합, 업종 수]"""
+    from .index_snap import since
     out: dict[str, dict] = {}
     for r in rows:
         if r.get("kind") != kind:
@@ -324,7 +329,104 @@ def grid_time(rows: list[dict], kind: str = "daytrade") -> dict:
         b, c, tb = band_of(r.get("score")), cat_of(r.get("res_status")), time_bucket(r.get("rec_time"))
         if b is None or c is None or tb is None:
             continue
-        _add(out.setdefault(str(r["rec_date"])[:10], {}).setdefault(f"{tb}|{b}", {}), r, c)
+        d = str(r["rec_date"])[:10]
+        cell = out.setdefault(d, {}).setdefault(f"{tb}|{b}", {})
+        _add(cell, r, c)
+        x = ((ix or {}).get(d) or {}).get(r.get("code")) or {}
+        buy = x.get("buy")
+        if not buy:
+            continue
+        m = cell["d" if r.get("res_done") else "h"]
+        ib = m.setdefault("ib", [0, 0, 0, 0])
+        if buy[0] is not None:
+            ib[0] += 1
+            ib[1] += int(buy[0] > 0)
+        if len(buy) > 1 and buy[1] is not None:
+            ib[2] += 1
+            ib[3] += int(buy[1] > 0)
+        if c not in m or not isinstance(m.get(c), list):
+            continue
+        ev = x.get(c if c in ("t1", "t2", "t3", "even", "stop") else "close")
+        if not ev:
+            continue
+        cc = m[c]
+        cc += [0.0, 0, 0.0, 0][len(cc) - 2:] if len(cc) < 6 else []
+        dm, ds = since(buy[0], ev[0]), since(buy[1] if len(buy) > 1 else None, ev[1] if len(ev) > 1 else None)
+        if dm is not None:
+            cc[2] = round(cc[2] + dm, 3)
+            cc[3] += 1
+        if ds is not None:
+            cc[4] = round(cc[4] + ds, 3)
+            cc[5] += 1
+    return out
+
+
+IX_FILE = "stats/dt_ix.json"
+
+
+def track_extra(sb, kind: str, today: str, pick, file: str, days: int = 10) -> dict:
+    """당일매매 추적 기록에서 종목마다 pick(t) 값 → {날짜: {종목: 값}} (Storage file 에 모아 둠 · 최근 days 일만 새로 읽음)"""
+    try:
+        b = sb.download(file)
+        out = json.loads(b) if b else {}
+    except Exception:  # noqa: BLE001
+        out = {}
+    changed = False
+    for i in range(days):
+        d = (pd.Timestamp(today) - pd.Timedelta(days=i)).strftime("%Y-%m-%d")
+        try:
+            b = sb.download(f"track/{kind}/{d}.json")
+            tracks = (json.loads(b) if b else {}).get("tracks") or {}
+        except Exception:  # noqa: BLE001
+            continue
+        m = {c: v for c, t in tracks.items() if isinstance(t, dict) and (v := pick(t))}
+        if m and out.get(d) != m:
+            out[d] = m
+            changed = True
+    if changed:
+        try:
+            sb.upload(file, json.dumps(out, ensure_ascii=False).encode(), "application/json")
+        except Exception as e:  # noqa: BLE001
+            log.warning("추적 기록 모음 저장 실패 (%s): %s", file, e)
+    return out
+
+
+def dt_ix(sb, today: str, days: int = 10) -> dict:
+    """당일단타 매수·매도 순간 지수 → {날짜: {종목: ix}} (stats/dt_ix.json)"""
+    return track_extra(sb, "daytrade", today, lambda t: t.get("ix"), IX_FILE, days)
+
+
+NX_FILE = "stats/cb_nxt.json"
+
+
+def nx_of(t: dict) -> dict | None:
+    """종가배팅 추적 1종목 → {"a": 매수 날 저녁 NXT 애프터 % (종가 대비), "p": 다음 날 프리마켓 % (전일 종가 대비)}"""
+    a = (t.get("nxt_after") or {}).get("chg") if isinstance(t.get("nxt_after"), dict) else None
+    p = t["nxt_pre"][1] if isinstance(t.get("nxt_pre"), list) and len(t["nxt_pre"]) > 1 else None
+    return None if a is None and p is None else {"a": a, "p": p}
+
+
+def cb_nx(sb, today: str, days: int = 10) -> dict:
+    return track_extra(sb, "closingbet", today, nx_of, NX_FILE, days)
+
+
+def grid_nx(rows: list[dict], nx: dict) -> dict:
+    """종가배팅 점수대별 NXT: {날짜: {"90": {"d": [애프터 수, 애프터 +, 프리 수, 프리 +], "h": …}}} (체결된 것만)"""
+    out: dict[str, dict] = {}
+    for r in rows:
+        if r.get("kind") != "closingbet" or _f(r.get("res_pnl")) is None:
+            continue
+        b, d = band_of(r.get("score")), str(r["rec_date"])[:10]
+        x = (nx.get(d) or {}).get(r.get("code"))
+        if b is None or not x:
+            continue
+        m = out.setdefault(d, {}).setdefault(str(b), {}).setdefault("d" if r.get("res_done") else "h", [0, 0, 0, 0])
+        if x.get("a") is not None:
+            m[0] += 1
+            m[1] += int(x["a"] > 0)
+        if x.get("p") is not None:
+            m[2] += 1
+            m[3] += int(x["p"] > 0)
     return out
 
 
@@ -335,15 +437,26 @@ def _group(rows, f):
     return out
 
 
-def publish(sb) -> dict:
+def publish(sb, today: str | None = None) -> dict:
     from ..cloud import publish as pub
     rows = select_all(sb, {"select": "rec_date,kind,code,score,rec_time," + ",".join(RES_COLS)})
-    out = summarize(rows)
+    day = today or pd.Timestamp.now(tz="Asia/Seoul").strftime("%Y-%m-%d")
+    try:
+        ix = dt_ix(sb, day)
+    except Exception as e:  # noqa: BLE001
+        log.warning("당일단타 지수 기록 읽기 실패: %s", e)
+        ix = {}
+    try:
+        nx = cb_nx(sb, day)
+    except Exception as e:  # noqa: BLE001
+        log.warning("종가배팅 NXT 기록 읽기 실패: %s", e)
+        nx = {}
+    out = summarize(rows, ix, nx)
     pub.publish_backtest(sb, KEY, "추천주 검증", out)
     return out
 
 
 def run(sb, ohlcv: pd.DataFrame, today: str) -> int:
     n = grade_open(sb, ohlcv, today)
-    publish(sb)
+    publish(sb, today)
     return n

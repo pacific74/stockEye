@@ -421,6 +421,50 @@ Color _resultColor(String? r) => switch (r) {
       _ => Colors.grey,
     };
 
+/// 매수·1·2·3차·매수가매도·손절 순간의 종합지수(코스피/코스닥)·업종지수 (PC 22 가 기록: t['ix'][키] = [종합%, 업종%, 시각, 시장])
+///   매수: 전일 대비 등락 · 그 뒤: 매수 때보다 얼마나 움직였나
+Widget? _ixLine(BuildContext context, Json t) {
+  final ix = asMap(t['ix']);
+  if (ix.isEmpty) return null;
+  num? at(String k, int i) {
+    final l = ix[k];
+    return l is List && l.length > i && l[i] is num ? l[i] as num : null;
+  }
+
+  String sg(num? v) => v == null ? '-' : '${v > 0 ? '+' : (v < 0 ? '−' : '')}${v.abs().toStringAsFixed(2)}%';
+  num? since(num? b, num? e) => b == null || e == null ? null : ((1 + e / 100) / (1 + b / 100) - 1) * 100;
+  Color? col(num? v) => v == null ? null : (v > 0 ? upColor : (v < 0 ? downColor : null));
+  final anyKey = ix.values.firstWhere((v) => v is List && v.length > 3, orElse: () => const []) as List;
+  final mk = anyKey.length > 3 && '${anyKey[3]}' == 'KOSDAQ' ? '코스닥' : '코스피';
+  final st = Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11.5);
+  final spans = <InlineSpan>[];
+  for (final (k, label) in const [
+    ('buy', '매수'), ('t1', '1차'), ('t2', '2차'), ('t3', '3차'), ('even', '매수가매도'), ('stop', '손절'), ('close', '마감'),
+  ]) {
+    if (ix[k] is! List) continue;
+    final hm = (ix[k] as List).length > 2 ? '${(ix[k] as List)[2]}' : '';
+    final m = k == 'buy' ? at(k, 0) : since(at('buy', 0), at(k, 0));
+    final sc = k == 'buy' ? at(k, 1) : since(at('buy', 1), at(k, 1));
+    if (spans.isNotEmpty) spans.add(TextSpan(text: '   ·   ', style: st?.copyWith(color: Colors.grey)));
+    spans.addAll([
+      TextSpan(text: '$label $hm ', style: st?.copyWith(fontWeight: FontWeight.bold)),
+      TextSpan(text: '$mk ', style: st?.copyWith(color: Colors.grey)),
+      TextSpan(text: sg(m), style: st?.copyWith(color: col(m))),
+      TextSpan(text: ' 업종 ', style: st?.copyWith(color: Colors.grey)),
+      TextSpan(text: sg(sc), style: st?.copyWith(color: col(sc))),
+    ]);
+  }
+  if (spans.isEmpty) return null;
+  return Padding(
+    padding: const EdgeInsets.only(top: 4),
+    child: Text.rich(TextSpan(children: [
+      TextSpan(text: '지수  ', style: st?.copyWith(color: Colors.grey)),
+      ...spans,
+      TextSpan(text: '  (매수 = 전일 대비 · 그 뒤 = 매수 대비)', style: st?.copyWith(color: Colors.grey, fontSize: 10.5)),
+    ])),
+  );
+}
+
 /// 진입조건충족 한 종목: 종목명·점수·현재가 / 기존 상태설명(고정 카드) / 상태별 시각 / 매매 결과
 class _TrackCard extends StatelessWidget {
   const _TrackCard({required this.t, required this.kind, this.quote});
@@ -561,6 +605,7 @@ class _TrackCard extends StatelessWidget {
             if (t['t3'] != null) InfoBox('3차 ${num0(t['t3'] as num?)}', color: upColor),
             if (rrBox(t['entry'] as num?, t['stop'] as num?, t['t1'] as num?, t['t2'] as num?) case final rr?) rr,
           ]),
+          if (_ixLine(context, t) case final ix?) ix, // 매수·매도 순간 종합지수·업종지수
           // 왼쪽: 기존 상태설명 · 현재 상태 | 매매 결과   /   오른쪽: 1분봉 차트 (최근 2시간 · 현재가 실시간)
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(

@@ -12,8 +12,9 @@ import 'format.dart';
 ///   데이터: 저녁 배치 RECS 의 grid {날짜: {"90|v3": {"d": 완료, "h": 보유중}}} · dt_time {날짜: {"09:10|90": …}}
 ///   → 고른 기간만 더함
 class OverviewTab extends StatefulWidget {
-  const OverviewTab({super.key, this.daytrade = false});
+  const OverviewTab({super.key, this.daytrade = false, this.closingbet = false});
   final bool daytrade; // true = 통계 > 당일단타 탭
+  final bool closingbet; // true = 통계 > 종가배팅 탭
   @override
   State<OverviewTab> createState() => _OverviewTabState();
 }
@@ -29,12 +30,14 @@ const _kinds = [
   ('limitcatch', '상한가포착'),
 ];
 const _bands = [90, 80, 70, 60];
+const _dtBands = [90, 80]; // 통계 > 당일단타는 80점 이상만 (2026-10-15)
 const _cats = ['t1', 't2', 't3', 'even', 'stop'];
 const _times = ['09:00', '09:10', '09:20', '09:30', '09:40', '09:50'];
 
 // 칸 너비: 점수 · 구분 · 추천건수 · 체결율 · 1차 · 2차 · 3차 · 매수가매도 · 손절 · 평균손익 · 누적손익
 const _wScore = 48.0, _wKind = 84.0, _wTime = 96.0, _wN = 64.0, _wFill = 60.0, _wCat = 84.0, _wAvg = 68.0, _wSum = 72.0;
 const _rowH = 28.0;
+const _wNx = 104.0; // 종가배팅: NXT 상승 · 프리마켓 상승
 const _metricsW = _wN + _wCat * 5 + _wAvg + _wSum; // 체결율 빼고
 
 typedef _Sum = Map<String, dynamic>; // {n, f, p, t1: [건수, 보유일 합], …}
@@ -62,11 +65,15 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
           s['n'] = (s['n'] as int) + ((m['n'] as num?)?.toInt() ?? 0);
           s['f'] = (s['f'] as int) + ((m['f'] as num?)?.toInt() ?? 0);
           s['p'] = (s['p'] as double) + ((m['p'] as num?)?.toDouble() ?? 0);
-          for (final c in _cats) {
+          // 결과 칸 [건수, 보유일 합, (종합 매수대비 합, 종합 수, 업종 매수대비 합, 업종 수)] · ib [종합 수, 종합+, 업종 수, 업종+]
+          for (final c in [..._cats, 'ib']) {
             final x = m[c];
             if (x is List && x.length >= 2) {
-              final cur = (s[c] as List<num>?) ?? <num>[0, 0];
-              s[c] = <num>[cur[0] + (x[0] as num), cur[1] + (x[1] as num)];
+              final cur = (s[c] as List<num>?) ?? <num>[];
+              s[c] = <num>[
+                for (var j = 0; j < (x.length > cur.length ? x.length : cur.length); j++)
+                  (j < cur.length ? cur[j] : 0) + (j < x.length ? x[j] as num : 0)
+              ];
             }
           }
         }
@@ -117,6 +124,7 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
             ]),
           );
           final filters = _filters(context, years, months, dates);
+          if (widget.closingbet) return _closingbet(context, filters, empty, dates.isEmpty, sum, asMap(data['cb_nx']), inPeriod);
           if (!widget.daytrade) {
             // 틀 고정: 검색 줄 + 표 머리는 그대로, 아래 표만 위아래로 스크롤 (옆으로는 머리·표가 같이 움직임)
             const tableW = _wScore + _wKind + _wFill + _metricsW;
@@ -159,7 +167,10 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
           }
           // ---- 통계 > 당일단타: 점수별 + 매수시간별 (검색 줄 고정, 두 표는 함께 스크롤)
           // 매수시간별 (키 '09:10|90' → 그 키 + '09:10|all')
-          final tsum = _sumUp(tgrid, tgrid.keys.where(inPeriod), (k) => [k, '${k.split('|').first}|all']);
+          final tsum = _sumUp(tgrid, tgrid.keys.where(inPeriod), (k) {
+            final p = k.split('|');
+            return [k, if (_dtBands.contains(int.tryParse(p.last))) '${p.first}|all'];
+          });
           final t = Theme.of(context).textTheme;
           Widget title(String s, String note) => Padding(
                 padding: const EdgeInsets.fromLTRB(0, 12, 0, 6),
@@ -181,27 +192,43 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.only(bottom: 32),
                     children: [
-                      title('점수별', '당일단타만'),
+                      title('점수별', '당일단타만 (80점 이상)'),
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           _header(context, [('점수', _wScore)], fill: true),
-                          for (final (i, (b, name)) in [(0, '전체'), for (final b in _bands) (b, '$b~')].indexed)
+                          for (final (i, (b, name)) in [(0, '전체'), for (final b in _dtBands) (b, '$b~')].indexed)
                             _row(context, [(name, _wScore, false)], b == 0 ? _total(sum, 'daytrade') : sum['$b|daytrade'], i,
                                 b == 0,
                                 fill: true),
                         ]),
                       ),
-                      title('매수시간별', '포착(매수) 시각 10분 단위 × 점수'),
+                      title('매수시간별', '포착(매수) 시각 10분 단위 × 점수 (80점 이상)'),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                            '둘째 줄 — 추천건수 밑: 매수 때 종합지수가 + 였던 비율 | 업종지수가 + 였던 비율 · '
+                            '결과 칸 밑: 매수 때보다 그 순간(1·2·3차 · 매수가매도 · 손절) 종합지수 | 업종지수가 몇 % 움직였나 (평균). '
+                            '종합지수 = 코스피 종목은 코스피, 코스닥 종목은 코스닥 · 2026-10-16 부터 기록',
+                            style: t.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
+                      ),
+                      if (tgrid.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text('매수시간별 집계가 아직 없어요 — 다음 저녁 배치(또는 daily-batch 수동 실행) 뒤부터 보여요',
+                              style: t.bodySmall?.copyWith(color: Colors.orange)),
+                        )
+                      else
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           _header(context, [('매수시간', _wTime), ('점수', _wScore)]),
                           for (final tb in [..._times, if (tsum.keys.any((k) => k.startsWith('10:00'))) '10:00'])
                             _group(context, tb == '10:00' ? '10:00~' : '$tb~${_next(tb)}', _wTime, [
-                              for (final (i, (b, name)) in [(0, '전체'), for (final b in _bands) (b, '$b~')].indexed)
-                                _row(context, [(name, _wScore, false)], b == 0 ? tsum['$tb|all'] : tsum['$tb|$b'], i, b == 0),
-                            ]),
+                              for (final (i, (b, name)) in [(0, '전체'), for (final b in _dtBands) (b, '$b~')].indexed)
+                                _row(context, [(name, _wScore, false)], b == 0 ? tsum['$tb|all'] : tsum['$tb|$b'], i, b == 0,
+                                    ix: true),
+                            ], rowH: _rowH * 2),
                         ]),
                       ),
                       const SizedBox(height: 8),
@@ -219,7 +246,7 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
   /// 점수대 합계 (그 구분의 90~·80~·70~·60~ 를 더함)
   _Sum? _total(Map<String, _Sum> sum, String kind) {
     _Sum? out;
-    for (final b in _bands) {
+    for (final b in _dtBands) {
       final s = sum['$b|$kind'];
       if (s == null) continue;
       out ??= {'n': 0, 'f': 0, 'p': 0.0};
@@ -230,7 +257,7 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
         final x = s[c] as List<num>?;
         if (x == null) continue;
         final cur = (out[c] as List<num>?) ?? <num>[0, 0];
-        out[c] = <num>[cur[0] + x[0], cur[1] + x[1]];
+        out[c] = <num>[cur[0] + x[0], cur[1] + x[1]]; // 점수별 표는 지수 칸 없음
       }
     }
     return out;
@@ -310,13 +337,14 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
       );
 
   /// 표 머리: 앞 칸들(이름·너비) + [체결율] + 추천건수 · 이익실현 1·2·3차 · 매수가매도 · 손절 · 평균손익 · 누적손익
-  Widget _header(BuildContext context, List<(String, double)> leads, {bool fill = false}) {
+  Widget _header(BuildContext context, List<(String, double)> leads,
+      {bool fill = false, String count = '추천건수', List<String> extras = const []}) {
     final st = Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold);
     final bg = _headBg(context);
     Widget h(String s, double w) => _box(context, w, _rowH * 2, Text(s, style: st, textAlign: TextAlign.center), bg: bg);
     return Row(children: [
       for (final (s, w) in leads) h(s, w),
-      h('추천건수', _wN),
+      h(count, _wN),
       if (fill) h('체결율', _wFill),
       Column(children: [
         _box(context, _wCat * 3, _rowH, Text('이익실현', style: st), bg: bg),
@@ -329,21 +357,25 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
       h('손절', _wCat),
       h('평균손익', _wAvg),
       h('누적손익', _wSum),
+      for (final e in extras) h(e, _wNx),
     ]);
   }
 
   /// 묶음: 왼쪽에 합친 칸(점수대 · 매수시간) + 오른쪽 행들
-  Widget _group(BuildContext context, String label, double w, List<Widget> rows) => Row(
+  Widget _group(BuildContext context, String label, double w, List<Widget> rows, {double rowH = _rowH}) => Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _box(context, w, _rowH * rows.length,
+          _box(context, w, rowH * rows.length,
               Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold))),
           Column(children: rows),
         ],
       );
 
   /// 한 행: 앞 칸들(글자 · 너비 · 왼쪽정렬?) + 숫자 칸
-  Widget _row(BuildContext context, List<(String, double, bool)> leads, _Sum? s, int i, bool total, {bool fill = false}) {
+  /// ix=true (매수시간별): 2줄 — 둘째 줄 추천건수 밑 '매수 때 종합지수 + 비율 | 업종지수 + 비율',
+  ///   결과 칸 밑 '매수 대비 그 순간 종합 | 업종 변화 (평균 %)'
+  Widget _row(BuildContext context, List<(String, double, bool)> leads, _Sum? s, int i, bool total,
+      {bool fill = false, bool ix = false, bool countFilled = false, List<String> extras = const []}) {
     final base = Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 12, fontWeight: total ? FontWeight.bold : null);
     final bg = total
         ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.10)
@@ -357,20 +389,107 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
       return '${pc(x[0] / f * 100)}(${(x[1] / x[0]).round()}일)';
     }
 
-    Widget c(String text, double w, {Color? color, Alignment al = Alignment.center}) => _box(
-        context, w, _rowH, Text(text, style: base?.copyWith(color: color), maxLines: 1, overflow: TextOverflow.ellipsis),
-        bg: bg, al: al, pad: al == Alignment.centerLeft ? const EdgeInsets.only(left: 8) : EdgeInsets.zero);
+    final subSt = base?.copyWith(fontSize: 10.5, color: Colors.grey, fontWeight: FontWeight.normal);
+    String sg(double v) => '${v > 0 ? '+' : (v < 0 ? '−' : '')}${v.abs().toStringAsFixed(1)}';
+    // 둘째 줄: 매수 때 지수 + 비율 (추천건수 밑)
+    String upRate() {
+      final b = s?['ib'] as List<num>?;
+      if (b == null || b.length < 4 || (b[0] == 0 && b[2] == 0)) return '-';
+      String r(num a, num n) => n == 0 ? '-' : '${(a / n * 100).round()}%';
+      return '${r(b[1], b[0])} | ${r(b[3], b[2])}';
+    }
+
+    // 둘째 줄: 결과 순간 지수 변화 (매수 대비 평균 %)
+    String ixMove(String c) {
+      final x = s?[c] as List<num>?;
+      if (x == null || x.length < 6 || (x[3] == 0 && x[5] == 0)) return '-';
+      return '${x[3] == 0 ? '-' : sg(x[2] / x[3])} | ${x[5] == 0 ? '-' : sg(x[4] / x[5])}';
+    }
+
+    Widget c(String text, double w, {Color? color, Alignment al = Alignment.center, String? sub}) => _box(
+        context,
+        w,
+        ix ? _rowH * 2 : _rowH,
+        ix
+            ? Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center, children: [
+                Text(text, style: base?.copyWith(color: color), maxLines: 1, overflow: TextOverflow.ellipsis),
+                if (sub != null) Text(sub, style: subSt, maxLines: 1, overflow: TextOverflow.ellipsis),
+              ])
+            : Text(text, style: base?.copyWith(color: color), maxLines: 1, overflow: TextOverflow.ellipsis),
+        bg: bg,
+        al: al,
+        pad: al == Alignment.centerLeft ? const EdgeInsets.only(left: 8) : EdgeInsets.zero);
     return Row(children: [
       for (final (text, w, left) in leads) c(text, w, al: left ? Alignment.centerLeft : Alignment.center),
-      c('$n', _wN),
+      c(countFilled ? '$f' : '$n', _wN, sub: ix ? upRate() : null),
       if (fill) c(n == 0 ? '-' : pc(f / n * 100), _wFill),
-      c(cat('t1'), _wCat, color: f > 0 ? upColor : null),
-      c(cat('t2'), _wCat, color: f > 0 ? upColor : null),
-      c(cat('t3'), _wCat, color: f > 0 ? upColor : null),
-      c(cat('even'), _wCat, color: f > 0 ? Colors.orange : null),
-      c(cat('stop'), _wCat, color: f > 0 ? downColor : null),
+      c(cat('t1'), _wCat, color: f > 0 ? upColor : null, sub: ix ? ixMove('t1') : null),
+      c(cat('t2'), _wCat, color: f > 0 ? upColor : null, sub: ix ? ixMove('t2') : null),
+      c(cat('t3'), _wCat, color: f > 0 ? upColor : null, sub: ix ? ixMove('t3') : null),
+      c(cat('even'), _wCat, color: f > 0 ? Colors.orange : null, sub: ix ? ixMove('even') : null),
+      c(cat('stop'), _wCat, color: f > 0 ? downColor : null, sub: ix ? ixMove('stop') : null),
       c(f == 0 ? '-' : '${(p / f).toStringAsFixed(1)}%', _wAvg, color: f == 0 ? null : (p >= 0 ? upColor : downColor)),
       c(f == 0 ? '-' : '${p.toStringAsFixed(1)}%', _wSum, color: f == 0 ? null : (p >= 0 ? upColor : downColor)),
+      for (final e in extras) c(e, _wNx),
     ]);
+  }
+
+  // ---------------------------------------------------------------- 통계 > 종가배팅 (2026-10-15)
+  /// 점수대별 종가배팅(산 것) 결과 + NXT 애프터마켓(매수 날 저녁) · 프리마켓(다음 날 08:00~08:50) 상승 비율
+  Widget _closingbet(BuildContext context, Widget filters, Widget empty, bool noData, Map<String, _Sum> sum, Json nxg,
+      bool Function(String) inPeriod) {
+    // NXT: {날짜: {"90": {"d": [애프터 수, 애프터 +, 프리 수, 프리 +]}}} → 점수대별·전체 합
+    final nx = <String, List<int>>{};
+    for (final d in nxg.keys.where(inPeriod)) {
+      for (final e in asMap(nxg[d]).entries) {
+        final v = asMap(e.value)[_mode];
+        if (v is! List || v.length < 4) continue;
+        if (!_dtBands.contains(int.tryParse(e.key))) continue;
+        for (final k in [e.key, 'all']) {
+          final cur = nx.putIfAbsent(k, () => [0, 0, 0, 0]);
+          for (var j = 0; j < 4; j++) {
+            cur[j] += (v[j] as num).toInt();
+          }
+        }
+      }
+    }
+    String rate(List<int>? v, int i) => v == null || v[i] == 0 ? '-' : '${(v[i + 1] / v[i] * 100).round()}% (${v[i + 1]}/${v[i]})';
+    final t = Theme.of(context).textTheme;
+    final rows = [(0, '전체'), for (final b in _dtBands) (b, '$b~')];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        filters,
+        const SizedBox(height: 8),
+        if (noData)
+          empty
+        else
+          Expanded(
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 32),
+              children: [
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    _header(context, [('점수', _wScore)], count: '종가배팅건수', extras: ['NXT 상승일 경우', '프리마켓 상승일 경우']),
+                    for (final (i, (b, name)) in rows.indexed)
+                      _row(context, [(name, _wScore, false)], b == 0 ? _total(sum, 'closingbet') : sum['$b|closingbet'], i,
+                          b == 0,
+                          countFilled: true,
+                          extras: [rate(nx[b == 0 ? 'all' : '$b'], 0), rate(nx[b == 0 ? 'all' : '$b'], 2)]),
+                  ]),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                    '종가배팅건수 = 14:50~15:20 매수 범위에서 실제로 산 것 (미체결 빼고). 1·2·3차 · 매수가매도 · 손절 = 그중 비율 (괄호 = 보유일, 산 날 포함).\n'
+                    'NXT 상승일 경우 = 산 날 저녁 넥스트레이드 애프터마켓 가격이 그날 종가보다 높았던 비율 (+ 건수/기록 건수).\n'
+                    '프리마켓 상승일 경우 = 다음 날 08:00~08:50 넥스트레이드 프리마켓이 전일 종가보다 높았던 비율. 80점 이상만 매수하므로 80~ · 90~ 만.',
+                    style: t.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
+              ],
+            ),
+          ),
+      ]),
+    );
   }
 }

@@ -591,7 +591,7 @@ class _TrackCard extends StatelessWidget {
               ]),
             ]),
           ),
-          StockInfoLine('${t['code']}'), // [시장][업종 · 테마][시총]
+          StockInfoLine('${t['code']}', sectorIdx: true), // [시장][업종 · 테마][시총]
           const SizedBox(height: 4),
           infoBoxes([
             InfoBox('${prevDay ? '${'${t['date']}'.substring(5)} ' : ''}${t['time']} 포착', bold: true, fill: true),

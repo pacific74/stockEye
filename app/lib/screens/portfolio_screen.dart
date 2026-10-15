@@ -71,10 +71,10 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   }
 
   static Widget _lbl(TextTheme t, String s) =>
-      Padding(padding: const EdgeInsets.only(right: 6, top: 3, bottom: 3), child: Text(s, style: t.bodySmall));
+      Padding(padding: const EdgeInsets.only(right: 6, top: 1, bottom: 1), child: Text(s, style: t.bodySmall));
 
   static Widget _val(String v, {Color? color, String? sub, Color? subColor}) => Padding(
-        padding: const EdgeInsets.only(right: 8, top: 3, bottom: 3),
+        padding: const EdgeInsets.only(right: 8, top: 1, bottom: 1),
         child: Text.rich(TextSpan(children: [
           TextSpan(text: v, style: TextStyle(fontWeight: FontWeight.w600, color: color)),
           if (sub != null) TextSpan(text: ' $sub', style: TextStyle(fontSize: 11, color: subColor)),
@@ -141,7 +141,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                     if (await _deleteHolding(context, h)) _reload();
                   },
                   child: Padding(
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.fromLTRB(12, 8, 8, 8), // 높이 줄임 (2026-10-15)
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
                         Expanded(
@@ -151,16 +151,18 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         ),
                       ]),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 2),
                       Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                        // 매수가 · 현재가 (V3: 손절·목표 없이 20거래일 보유)
+                        // 매수가 / 그 밑에 현재가 (V3: 손절·목표 없이 20거래일 보유)
                         Expanded(
                           child: Table(
-                            columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth(), 2: IntrinsicColumnWidth(), 3: FlexColumnWidth()},
+                            columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth()},
                             children: [
                               TableRow(children: [
                                 _lbl(t, '매수가'),
                                 _val(num0(h['avg_price'] as num?)),
+                              ]),
+                              TableRow(children: [
                                 _lbl(t, h['now_live'] == true ? '현재가' : '최근가'),
                                 _val(num0(h['now_price'] as num?),
                                     sub: Live.last['${h['code']}'] == null
@@ -183,6 +185,34 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                                   fontWeight: FontWeight.bold,
                                   color: (pnl ?? 0) >= 0 ? upColor : downColor)),
                         ]),
+                        // 수익률 옆: 삭제 / 매도 (위아래 2줄 · 2026-10-15)
+                        const SizedBox(width: 8),
+                        Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          TextButton.icon(
+                            icon: const Icon(Icons.delete_outline, size: 16),
+                            label: const Text('삭제'),
+                            style: TextButton.styleFrom(
+                                foregroundColor: Colors.grey,
+                                visualDensity: VisualDensity.compact,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                padding: const EdgeInsets.symmetric(horizontal: 6)),
+                            onPressed: () async {
+                              if (await _deleteHolding(context, h)) _reload();
+                            },
+                          ),
+                          TextButton.icon(
+                            icon: const Icon(Icons.sell_outlined, size: 16),
+                            label: const Text('매도'),
+                            style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                padding: const EdgeInsets.symmetric(horizontal: 6)),
+                            onPressed: () async {
+                              final done = await _closeDialog(context, h);
+                              if (done) _reload();
+                            },
+                          ),
+                        ]),
                       ]),
                       // 관심 탭에서 산 종목: 어느 탭 · 그때 1·2·3차 매수구간 · 손절가
                       if (_originOf(h) != null)
@@ -192,25 +222,6 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                             padding: const EdgeInsets.only(top: 4),
                             child: Text('⚠ $a', style: const TextStyle(color: Colors.orange)),
                           )),
-                      Row(children: [
-                        const Spacer(),
-                        TextButton.icon(
-                          icon: const Icon(Icons.delete_outline, size: 18),
-                          label: const Text('삭제'),
-                          style: TextButton.styleFrom(foregroundColor: Colors.grey),
-                          onPressed: () async {
-                            if (await _deleteHolding(context, h)) _reload();
-                          },
-                        ),
-                        TextButton.icon(
-                          icon: const Icon(Icons.sell_outlined, size: 18),
-                          label: const Text('매도'),
-                          onPressed: () async {
-                            final done = await _closeDialog(context, h);
-                            if (done) _reload();
-                          },
-                        ),
-                      ]),
                     ]),
                   ),
                 ),

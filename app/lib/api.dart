@@ -61,6 +61,23 @@ class Api {
       return {for (final e in m.entries) if (e.value is List) e.key: e.value as List};
     }();
   }
+  /// 업종 오늘 등락 {업종: %} + 'time' — sectors_live (09:10 부터 1시간마다 · 업종 전체 시가총액 가중) · 오늘 것만 · 1분 캐시
+  static Future<Json>? _secIdx;
+  static DateTime _secIdxAt = DateTime(2000);
+  static Future<Json> sectorIdx() {
+    if (_secIdx != null && DateTime.now().difference(_secIdxAt).inSeconds < 60) return _secIdx!;
+    _secIdxAt = DateTime.now();
+    return _secIdx = () async {
+      final d = useCloud ? await _Cloud.statusOf('sectors_live') : <String, dynamic>{};
+      final n = DateTime.now();
+      final today = '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+      if ('${d['date']}' != today) return <String, dynamic>{};
+      return <String, dynamic>{
+        'time': d['time'],
+        'map': {for (final g in asList(d['groups'])) '${g['group']}': g['chg_pct']},
+      };
+    }();
+  }
   static Json? _secMembers;
   static Future<Json> sectorMembers() async {
     if (_secMembers != null) return _secMembers!;
@@ -284,7 +301,7 @@ class _Cloud {
       'name': s['name'] ?? list,
       'description': s['description'],
       'limitation': s['limitation'],
-      'meta': asMap(asMap(r['market'])[list]), // 실험 탭 요약 (예: 익일 유망주 등급 수·어제 후보 결과)
+      'meta': asMap(asMap(r['market'])[list]), // 실험 탭 요약 (예: 유망주 등급 수·어제 후보 결과)
       'candidates': cands,
     };
   }

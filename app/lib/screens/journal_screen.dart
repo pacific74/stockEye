@@ -223,14 +223,20 @@ class _Records extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Row(children: [
-              Expanded(flex: 4, child: Text('종목명', style: head)),
-              Expanded(flex: 3, child: Text('구분', style: head, textAlign: TextAlign.center)),
-              Expanded(flex: 2, child: Text('매수일', style: head, textAlign: TextAlign.center)),
-              Expanded(flex: 3, child: Text('매수가', style: head, textAlign: TextAlign.right)),
-              Expanded(flex: 2, child: Text('매도일', style: head, textAlign: TextAlign.center)),
-              Expanded(flex: 3, child: Text('매도가', style: head, textAlign: TextAlign.right)),
-              Expanded(flex: 3, child: Text('수익률', style: head, textAlign: TextAlign.right)),
+            // 두 줄 머리 (2026-10-15): 종목명 · 매수일 · 매도일 · 수익률 / 구분 · 매수가 · 매도가
+            child: Column(children: [
+              Row(children: [
+                Expanded(flex: 4, child: Text('종목명', style: head)),
+                Expanded(flex: 3, child: Text('매수일', style: head, textAlign: TextAlign.center)),
+                Expanded(flex: 3, child: Text('매도일', style: head, textAlign: TextAlign.center)),
+                Expanded(flex: 3, child: Text('수익률', style: head, textAlign: TextAlign.right)),
+              ]),
+              Row(children: [
+                Expanded(flex: 4, child: Text('구분', style: head)),
+                Expanded(flex: 3, child: Text('매수가', style: head, textAlign: TextAlign.center)),
+                Expanded(flex: 3, child: Text('매도가', style: head, textAlign: TextAlign.center)),
+                const Expanded(flex: 3, child: SizedBox()),
+              ]),
             ]),
           ),
           if (rows.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('조건에 맞는 매매가 없어요'))),
@@ -286,15 +292,28 @@ class _EntryRow extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // 한 줄: 종목명 · 관심구분 · 매수일 · 매수가 · 매도일 · 매도가(보유 중이면 지금가) · 수익률
+          // 두 줄 (2026-10-15): 종목명 · 매수일 · 매도일 · 수익률 / 구분 · 매수가 · 매도가(보유 중이면 지금가)
           Row(children: [
             Expanded(
                 flex: 4,
                 child: Text('${p['name']}',
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis)),
+            Expanded(flex: 3, child: _cell(_d(p['entry_time']), TextAlign.center)),
             Expanded(
                 flex: 3,
-                child: Center(
+                child: _cell(closed ? _d(p['exit_time']) : '보유', TextAlign.center,
+                    color: closed ? null : Colors.teal)),
+            Expanded(
+                flex: 3,
+                child: _cell(pct(ret), TextAlign.right,
+                    bold: true, color: (ret ?? 0) >= 0 ? upColor : downColor)),
+          ]),
+          const SizedBox(height: 3),
+          Row(children: [
+            Expanded(
+                flex: 4,
+                child: Align(
+                  alignment: Alignment.centerLeft,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                     decoration: BoxDecoration(
@@ -303,22 +322,14 @@ class _EntryRow extends StatelessWidget {
                         style: const TextStyle(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
                   ),
                 )),
-            Expanded(flex: 2, child: _cell(_d(p['entry_time']), TextAlign.center)),
-            Expanded(flex: 3, child: _cell(num0(entry), TextAlign.right)),
-            Expanded(
-                flex: 2,
-                child: _cell(closed ? _d(p['exit_time']) : '보유', TextAlign.center,
-                    color: closed ? null : Colors.teal)),
+            Expanded(flex: 3, child: _cell(num0(entry), TextAlign.center)),
             Expanded(
                 flex: 3,
                 child: _cell(
                     closed ? num0((p['exit_price'] as num?)?.toDouble()) : (q != null ? num0(q!.price) : '-'),
-                    TextAlign.right,
+                    TextAlign.center,
                     color: closed ? null : Colors.teal)),
-            Expanded(
-                flex: 3,
-                child: _cell(pct(ret), TextAlign.right,
-                    bold: true, color: (ret ?? 0) >= 0 ? upColor : downColor)),
+            const Expanded(flex: 3, child: SizedBox()),
           ]),
           Padding(
             padding: const EdgeInsets.only(top: 4),

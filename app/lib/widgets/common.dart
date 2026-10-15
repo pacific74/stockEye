@@ -123,8 +123,9 @@ class StockName extends StatelessWidget {
 
 /// 종목 한 줄 정보: [코스피/코스닥] [업종 · 테마] [시총] [외인·기관 5일 순매수] — 당일매매·메인·관심 카드의 종목명 바로 아래 (2026-10-14)
 class StockInfoLine extends StatelessWidget {
-  const StockInfoLine(this.code, {super.key});
+  const StockInfoLine(this.code, {super.key, this.sectorIdx = true});
   final String code;
+  final bool sectorIdx; // 업종 옆에 업종지수(오늘 등락 · 1시간마다) 칩 — 당일매매·메인·추천 모두 (2026-10-15)
 
   static String flow(num eok) {
     final a = eok.abs();
@@ -141,11 +142,11 @@ class StockInfoLine extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<List<Map<String, List>>>(
-        future: Future.wait([Api.stockInfo(), Api.flowLive()]),
+  Widget build(BuildContext context) => FutureBuilder<List<Map<String, dynamic>>>(
+        future: Future.wait<Map<String, dynamic>>([Api.stockInfo(), Api.flowLive(), if (sectorIdx) Api.sectorIdx()]),
         builder: (context, snap) {
-          final r = snap.data?[0][code];
-          final t = snap.data?[1][code]; // 당일 잠정 [외인 억, 기관 억, '11:20']
+          final r = snap.data?[0][code] as List?;
+          final t = snap.data?[1][code] as List?; // 당일 잠정 [외인 억, 기관 억, '11:20']
           if (r == null || r.length < 4) return const SizedBox.shrink();
           final m = '${r[0]}', sec = '${r[1]}', th = '${r[2]}';
           final st = Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11, color: Colors.grey.shade400);
@@ -161,6 +162,13 @@ class StockInfoLine extends StatelessWidget {
               chip(m == 'KOSPI' ? '코스피' : (m == 'KOSDAQ' ? '코스닥' : m),
                   c: m == 'KOSPI' ? Colors.blueGrey.shade200 : Colors.purple.shade200),
             if (sec.isNotEmpty || th.isNotEmpty) chip([if (sec.isNotEmpty) sec, if (th.isNotEmpty) th].join(' · ')),
+            // 업종지수: 그 업종 전체 시가총액 가중 오늘 등락 (09:10 부터 1시간마다)
+            if (sectorIdx && sec.isNotEmpty && snap.data!.length > 2 && asMap(snap.data![2]['map'])[sec] is num)
+              () {
+                final v = asMap(snap.data![2]['map'])[sec] as num;
+                return chip('업종지수 ${v > 0 ? '+' : (v < 0 ? '−' : '')}${v.abs().toStringAsFixed(2)}% (${snap.data![2]['time']})',
+                    c: v > 0 ? upColor : (v < 0 ? downColor : null));
+              }(),
             if (cap(r[3] as num?).isNotEmpty) chip(cap(r[3] as num?)),
             // 최근 5거래일 순매수 (외국인·기관, 억원) — 매수 빨강 · 매도 파랑
             if (r.length > 4 && r[4] is num) chip('외인 5일 ${flow(r[4] as num)}', c: flowColor(r[4] as num)),

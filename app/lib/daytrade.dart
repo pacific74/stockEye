@@ -119,7 +119,7 @@ class DaytradeTile extends StatelessWidget {
                     ])),
                   ChgBadge(Live.last['${r['code']}']?.ratio ?? (r['chg_pct'] as num?)), // 오늘 등락률
                 ]),
-                StockInfoLine('${r['code']}'), // [시장][업종 · 테마][시총]
+                StockInfoLine('${r['code']}', sectorIdx: true), // [시장][업종 · 테마][시총]
                 const SizedBox(height: 3),
                 infoBoxes([
                   InfoBox(st, color: col, bold: true, fill: true),

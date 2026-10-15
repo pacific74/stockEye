@@ -654,9 +654,13 @@ Widget _grid(List<Widget> children, {double width = _cardW}) => LayoutBuilder(bu
       final n = ((c.maxWidth + 8) / (width + 8)).floor().clamp(1, 6);
       if (n == 1) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children);
       final w = (c.maxWidth - 8 * (n - 1)) / n;
-      return Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.start, children: [
-        for (final x in children) SizedBox(width: w, child: x),
-      ]);
+      // 화면 폭 전체를 차지하고 왼쪽부터 채움 (1건만 있어도 가운데로 가지 않게)
+      return SizedBox(
+        width: c.maxWidth,
+        child: Wrap(spacing: 8, alignment: WrapAlignment.start, crossAxisAlignment: WrapCrossAlignment.start, children: [
+          for (final x in children) SizedBox(width: w, child: x),
+        ]),
+      );
     });
 
 /// 깜빡이는 표시 (on 이 false 면 그대로)

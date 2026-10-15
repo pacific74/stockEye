@@ -30,6 +30,7 @@ const _cats = ['t1', 't2', 't3', 'even', 'stop'];
 // 칸 너비: 점수 · 구분 · 추천건수 · 체결율 · 1차 · 2차 · 3차 · 매수가매도 · 손절 · 평균손익 · 누적손익
 const _wScore = 48.0, _wKind = 84.0, _wN = 64.0, _wFill = 60.0, _wCat = 84.0, _wAvg = 68.0, _wSum = 72.0;
 const _rowH = 28.0;
+const _tableW = _wScore + _wKind + _wN + _wFill + _wCat * 5 + _wAvg + _wSum;
 
 class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClientMixin {
   late Future<Json> _f = _load();
@@ -47,6 +48,7 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
     super.build(context);
     return RefreshIndicator(
       onRefresh: () async => setState(() => _f = _load()),
+      notificationPredicate: (n) => n.metrics.axis == Axis.vertical, // 표 안쪽(옆 스크롤 속) 세로 스크롤로 당겨서 새로고침
       child: FutureBuilder<Json>(
         future: _f,
         builder: (context, snap) {
@@ -86,33 +88,51 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
               }
             }
           }
-          return ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 32),
-            children: [
+          final note = Text(
+            '* (괄호) 안은 평균 보유기간 (체결일 포함 거래일). 1·2·3차 · 매수가매도 · 손절 = 체결된 것 중 비율, 나머지는 기간 만료·장 마감 청산.\n'
+            '추천 유효기간은 다음 거래일 하루 — 그날 1차 매수구간에서 체결되면 2·3차 매수·분할 매도를 이어 가고, 못 사면 미체결로 끝.\n'
+            '단타·종가배팅·상한가포착은 당일매매 추적 결과. 평균·누적 손익은 비용 0.25% 뺀 % (누적 = 건별 손익의 합).',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey, fontSize: 11),
+          );
+          // 틀 고정: 검색 줄 + 표 머리는 그대로, 아래 표만 위아래로 스크롤 (옆으로는 머리·표가 같이 움직임)
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               _filters(context, years, months, dates),
               const SizedBox(height: 8),
               if (dates.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: Text('아직 집계가 없어요 — 오늘 저녁 배치 뒤부터 보여요')),
+                Expanded(
+                  child: ListView(physics: const AlwaysScrollableScrollPhysics(), children: const [
+                    Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: Text('아직 집계가 없어요 — 오늘 저녁 배치 뒤부터 보여요')),
+                    ),
+                  ]),
                 )
               else
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    _header(context),
-                    for (final b in _bands) _band(context, b, sum),
-                  ]),
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                      width: _tableW,
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        _header(context),
+                        Expanded(
+                          child: ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.only(bottom: 32),
+                            children: [
+                              for (final b in _bands) _band(context, b, sum),
+                              const SizedBox(height: 8),
+                              note,
+                            ],
+                          ),
+                        ),
+                      ]),
+                    ),
+                  ),
                 ),
-              const SizedBox(height: 8),
-              Text(
-                '* (괄호) 안은 평균 보유기간 (체결일 포함 거래일). 1·2·3차 · 매수가매도 · 손절 = 체결된 것 중 비율, 나머지는 기간 만료·장 마감 청산.\n'
-                '추천 유효기간은 다음 거래일 하루 — 그날 1차 매수구간에서 체결되면 2·3차 매수·분할 매도를 이어 가고, 못 사면 미체결로 끝.\n'
-                '단타·종가배팅·상한가포착은 당일매매 추적 결과. 평균·누적 손익은 비용 0.25% 뺀 % (누적 = 건별 손익의 합).',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey, fontSize: 11),
-              ),
-            ],
+            ]),
           );
         },
       ),

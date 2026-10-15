@@ -35,7 +35,7 @@ const _cats = ['t1', 't2', 't3', 'even', 'stop'];
 const _times = ['09:00', '09:10', '09:20', '09:30', '09:40', '09:50'];
 
 // 칸 너비: 점수 · 구분 · 추천건수 · 체결율 · 1차 · 2차 · 3차 · 매수가매도 · 손절 · 평균손익 · 누적손익
-const _wScore = 48.0, _wKind = 84.0, _wTime = 96.0, _wN = 64.0, _wFill = 60.0, _wCat = 84.0, _wAvg = 68.0, _wSum = 72.0;
+const _wScore = 48.0, _wKind = 84.0, _wTime = 72.0, _wN = 64.0, _wFill = 60.0, _wCat = 84.0, _wAvg = 68.0, _wSum = 72.0;
 const _rowH = 28.0;
 const _wNx = 104.0; // 종가배팅: NXT 상승 · 프리마켓 상승
 const _metricsW = _wN + _wCat * 5 + _wAvg + _wSum; // 체결율 빼고
@@ -224,7 +224,7 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           _header(context, [('매수시간', _wTime), ('점수', _wScore)]),
                           for (final tb in [..._times, if (tsum.keys.any((k) => k.startsWith('10:00'))) '10:00'])
-                            _group(context, tb == '10:00' ? '10:00~' : '$tb~${_next(tb)}', _wTime, [
+                            _group(context, tb == '10:00' ? '10:00\n~' : '$tb\n~\n${_next(tb)}', _wTime, [ // 3줄: 09:00 / ~ / 09:10
                               for (final (i, (b, name)) in [(0, '전체'), for (final b in _dtBands) (b, '$b~')].indexed)
                                 _row(context, [(name, _wScore, false)], b == 0 ? tsum['$tb|all'] : tsum['$tb|$b'], i, b == 0,
                                     ix: true),
@@ -366,7 +366,9 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _box(context, w, rowH * rows.length,
-              Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold))),
+              Text(label,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold, height: 1.2))),
           Column(children: rows),
         ],
       );
@@ -472,7 +474,7 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    _header(context, [('점수', _wScore)], count: '종가배팅건수', extras: ['NXT 상승일 경우', '프리마켓 상승일 경우']),
+                    _header(context, [('점수', _wScore)], count: '종가배팅\n건수', extras: ['NXT상승', '프리마켓상승']),
                     for (final (i, (b, name)) in rows.indexed)
                       _row(context, [(name, _wScore, false)], b == 0 ? _total(sum, 'closingbet') : sum['$b|closingbet'], i,
                           b == 0,
@@ -483,8 +485,8 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
                 const SizedBox(height: 8),
                 Text(
                     '종가배팅건수 = 14:50~15:20 매수 범위에서 실제로 산 것 (미체결 빼고). 1·2·3차 · 매수가매도 · 손절 = 그중 비율 (괄호 = 보유일, 산 날 포함).\n'
-                    'NXT 상승일 경우 = 산 날 저녁 넥스트레이드 애프터마켓 가격이 그날 종가보다 높았던 비율 (+ 건수/기록 건수).\n'
-                    '프리마켓 상승일 경우 = 다음 날 08:00~08:50 넥스트레이드 프리마켓이 전일 종가보다 높았던 비율. 80점 이상만 매수하므로 80~ · 90~ 만.',
+                    'NXT상승 = 산 날 저녁 넥스트레이드 애프터마켓 가격이 그날 종가보다 높았던 비율 (+ 건수/기록 건수).\n'
+                    '프리마켓상승 = 다음 날 08:00~08:50 넥스트레이드 프리마켓이 전일 종가보다 높았던 비율. 80점 이상만 매수하므로 80~ · 90~ 만.',
                     style: t.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
               ],
             ),

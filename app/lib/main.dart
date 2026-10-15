@@ -61,7 +61,7 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   // 탭을 누를 때마다 그 탭 화면을 새로 만들어서 최신 데이터를 다시 불러온다 (메인·관심·보유·일지·검증 모두)
-  final _gen = List<int>.filled(7, 0);
+  final _gen = <String, int>{}; // 탭 이름 → 새로 만든 횟수
   int _lastTap = 0;
   // 뒤로가기 (폰 뒤로 버튼 · 브라우저 뒤로): 앱 밖으로 나가지 않고 직전 탭으로 → 메인 → 메인에서 2초 안에 한 번 더 누르면 종료
   final _hist = <int>[];
@@ -132,21 +132,27 @@ class _HomeShellState extends State<HomeShell> {
     _lastTap = tabTap.value;
     setState(() {
       final i = tabIndex.value;
-      if (i >= 0 && i < _gen.length) _gen[i]++; // 모든 탭: 누를 때마다 새로 만들어 최신 데이터를 다시 불러옴 (보유 매도 → 메인 반영 등)
+      final tabs = visibleTabs;
+      if (i >= 0 && i < tabs.length) _gen[tabs[i]] = (_gen[tabs[i]] ?? 0) + 1; // 모든 탭: 누를 때마다 새로 만들어 최신 데이터를 다시 불러옴 (보유 매도 → 메인 반영 등)
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final pages = <Widget>[
-      HomeScreen(key: ValueKey('h${_gen[0]}')),
-      CandidateListScreen(key: ValueKey('c${candidateListKey.value}-${_gen[1]}'), list: candidateListKey.value),
-      PortfolioScreen(key: ValueKey('p${_gen[2]}')),
-      JournalScreen(key: ValueKey('j${_gen[3]}')),
-      if (canSeeBacktest) BacktestScreen(key: ValueKey('b${_gen[4]}')), // 관리자만
-      if (canSeeBacktest) IntradayScreen(key: ValueKey('i${_gen[5]}')), // 관리자만: 당일단타·상한가포착
-      if (canSeeBacktest) StatsScreen(key: ValueKey('s${_gen[6]}')), // 관리자만: 추천주 · 시장·업종 통계
-    ];
+    // 하단 메뉴 순서(visibleTabs)대로 화면을 만듦 — 당일매매·검증·통계는 관리자만
+    Widget page(String k) {
+      final g = _gen[k] ?? 0;
+      return switch (k) {
+        'rec' => CandidateListScreen(key: ValueKey('c${candidateListKey.value}-$g'), list: candidateListKey.value),
+        'intraday' => IntradayScreen(key: ValueKey('i$g')),
+        'port' => PortfolioScreen(key: ValueKey('p$g')),
+        'journal' => JournalScreen(key: ValueKey('j$g')),
+        'backtest' => BacktestScreen(key: ValueKey('b$g')),
+        'stats' => StatsScreen(key: ValueKey('s$g')),
+        _ => HomeScreen(key: ValueKey('h$g')),
+      };
+    }
+    final pages = [for (final k in visibleTabs) page(k)];
     return PopScope(
       canPop: false, // 하위 화면(종목 상세 등)은 평소대로 닫히고, 탭 화면에서만 여기로 옴
       onPopInvokedWithResult: (didPop, _) {

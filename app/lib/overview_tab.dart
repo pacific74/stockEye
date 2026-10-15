@@ -3,13 +3,17 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'format.dart';
 
-/// 통계 > 전체현황 (2026-10-15) — 점수대(90~ · 80~ · 70~ · 60~) × 구분별 추천 결과 표
+/// 통계 > 전체현황 · 당일단타 (2026-10-15)
+///   전체현황: 점수대(90~ · 80~ · 70~ · 60~) × 구분별 추천 결과 표
+///   당일단타: 점수별 당일단타만 + 매수시간별(09:00~10:00 10분 단위 × 점수별)
 ///   추천 유효기간 = 다음 거래일 하루: 그날 1차 매수구간에서 체결돼야 매수 (못 사면 미체결로 끝)
 ///   체결 뒤 2·3차 매수 · 1차 50% · 2차 30% · 3차 20% 매도 · 1·2차 뒤 매수가로 돌아오면 매수가매도(전량) · 손절
 ///   칸 = 체결된 것 중 비율 (괄호 = 평균 보유기간, 체결일 포함 거래일)
-///   데이터: 저녁 배치 RECS 의 grid {날짜: {"90|v3": {"d": 완료, "h": 보유중}}} → 고른 기간만 더함
+///   데이터: 저녁 배치 RECS 의 grid {날짜: {"90|v3": {"d": 완료, "h": 보유중}}} · dt_time {날짜: {"09:10|90": …}}
+///   → 고른 기간만 더함
 class OverviewTab extends StatefulWidget {
-  const OverviewTab({super.key});
+  const OverviewTab({super.key, this.daytrade = false});
+  final bool daytrade; // true = 통계 > 당일단타 탭
   @override
   State<OverviewTab> createState() => _OverviewTabState();
 }
@@ -26,22 +30,50 @@ const _kinds = [
 ];
 const _bands = [90, 80, 70, 60];
 const _cats = ['t1', 't2', 't3', 'even', 'stop'];
+const _times = ['09:00', '09:10', '09:20', '09:30', '09:40', '09:50'];
 
 // 칸 너비: 점수 · 구분 · 추천건수 · 체결율 · 1차 · 2차 · 3차 · 매수가매도 · 손절 · 평균손익 · 누적손익
-const _wScore = 48.0, _wKind = 84.0, _wN = 64.0, _wFill = 60.0, _wCat = 84.0, _wAvg = 68.0, _wSum = 72.0;
+const _wScore = 48.0, _wKind = 84.0, _wTime = 96.0, _wN = 64.0, _wFill = 60.0, _wCat = 84.0, _wAvg = 68.0, _wSum = 72.0;
 const _rowH = 28.0;
-const _tableW = _wScore + _wKind + _wN + _wFill + _wCat * 5 + _wAvg + _wSum;
+const _metricsW = _wN + _wCat * 5 + _wAvg + _wSum; // 체결율 빼고
+
+typedef _Sum = Map<String, dynamic>; // {n, f, p, t1: [건수, 보유일 합], …}
 
 class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClientMixin {
   late Future<Json> _f = _load();
-  String _period = 'all'; // all · year · month
-  String? _year, _month; // '2026' · '2026-10'
+  String _period = 'all'; // all · year · month · day
+  String? _year, _month, _day; // '2026' · '2026-10' · '2026-10-15'
   String _mode = 'd'; // d 완료 · h 보유중
 
   @override
   bool get wantKeepAlive => true;
 
   static Future<Json> _load() => Api.latestBacktest(strategy: 'RECS').catchError((_) => <String, dynamic>{});
+
+  /// 고른 기간의 날짜 묶음을 키별로 더함 (keyOf: 원래 키 → 더할 키들)
+  Map<String, _Sum> _sumUp(Json grid, Iterable<String> pick, List<String> Function(String key) keyOf) {
+    final sum = <String, _Sum>{};
+    for (final d in pick) {
+      for (final e in asMap(grid[d]).entries) {
+        final m = asMap(asMap(e.value)[_mode]);
+        if (m.isEmpty) continue;
+        for (final key in keyOf(e.key)) {
+          final s = sum.putIfAbsent(key, () => {'n': 0, 'f': 0, 'p': 0.0});
+          s['n'] = (s['n'] as int) + ((m['n'] as num?)?.toInt() ?? 0);
+          s['f'] = (s['f'] as int) + ((m['f'] as num?)?.toInt() ?? 0);
+          s['p'] = (s['p'] as double) + ((m['p'] as num?)?.toDouble() ?? 0);
+          for (final c in _cats) {
+            final x = m[c];
+            if (x is List && x.length >= 2) {
+              final cur = (s[c] as List<num>?) ?? <num>[0, 0];
+              s[c] = <num>[cur[0] + (x[0] as num), cur[1] + (x[1] as num)];
+            }
+          }
+        }
+      }
+    }
+    return sum;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,81 +87,126 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
           if (snap.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           }
-          final grid = asMap((snap.data ?? const {})['grid']);
+          final data = snap.data ?? const <String, dynamic>{};
+          final grid = asMap(data['grid']);
+          final tgrid = asMap(data['dt_time']);
           final dates = grid.keys.toList()..sort();
           final years = {for (final d in dates) d.substring(0, 4)}.toList()..sort((a, b) => b.compareTo(a));
           final months = {for (final d in dates) d.substring(0, 7)}.toList()..sort((a, b) => b.compareTo(a));
           if (_year == null || !years.contains(_year)) _year = years.isEmpty ? null : years.first;
           if (_month == null || !months.contains(_month)) _month = months.isEmpty ? null : months.first;
-          final pick = dates.where((d) => switch (_period) {
+          if (_day == null || !dates.contains(_day)) _day = dates.isEmpty ? null : dates.last; // 가장 최근 날
+          bool inPeriod(String d) => switch (_period) {
                 'year' => _year != null && d.startsWith(_year!),
                 'month' => _month != null && d.startsWith(_month!),
+                'day' => d == _day,
                 _ => true,
-              });
-          // 기간 안 날짜를 점수대·구분별로 더함
-          final sum = <String, Map<String, dynamic>>{};
-          for (final d in pick) {
-            for (final e in asMap(grid[d]).entries) {
-              final m = asMap(asMap(e.value)[_mode]);
-              if (m.isEmpty) continue;
-              final band = e.key.split('|').first;
-              for (final key in [e.key, '$band|all']) {
-                final s = sum.putIfAbsent(key, () => {'n': 0, 'f': 0, 'p': 0.0});
-                s['n'] = (s['n'] as int) + ((m['n'] as num?)?.toInt() ?? 0);
-                s['f'] = (s['f'] as int) + ((m['f'] as num?)?.toInt() ?? 0);
-                s['p'] = (s['p'] as double) + ((m['p'] as num?)?.toDouble() ?? 0);
-                for (final c in _cats) {
-                  final x = m[c];
-                  if (x is List && x.length >= 2) {
-                    final cur = (s[c] as List<num>?) ?? <num>[0, 0];
-                    s[c] = <num>[cur[0] + (x[0] as num), cur[1] + (x[1] as num)];
-                  }
-                }
-              }
-            }
-          }
+              };
+          final pick = dates.where(inPeriod).toList();
+          // 점수대·구분별 (키 '90|v3' → 그 키 + '90|all')
+          final sum = _sumUp(grid, pick, (k) => [k, '${k.split('|').first}|all']);
           final note = Text(
             '* (괄호) 안은 평균 보유기간 (체결일 포함 거래일). 1·2·3차 · 매수가매도 · 손절 = 체결된 것 중 비율, 나머지는 기간 만료·장 마감 청산.\n'
             '추천 유효기간은 다음 거래일 하루 — 그날 1차 매수구간에서 체결되면 2·3차 매수·분할 매도를 이어 가고, 못 사면 미체결로 끝.\n'
-            '단타·종가배팅·상한가포착은 당일매매 추적 결과. 평균·누적 손익은 비용 0.25% 뺀 % (누적 = 건별 손익의 합).',
+            '단타·종가배팅·상한가포착은 당일매매 추적 결과(포착 시각 매수). 평균·누적 손익은 비용 0.25% 뺀 % (누적 = 건별 손익의 합).',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey, fontSize: 11),
           );
-          // 틀 고정: 검색 줄 + 표 머리는 그대로, 아래 표만 위아래로 스크롤 (옆으로는 머리·표가 같이 움직임)
+          final empty = Expanded(
+            child: ListView(physics: const AlwaysScrollableScrollPhysics(), children: const [
+              Padding(padding: EdgeInsets.all(24), child: Center(child: Text('아직 집계가 없어요 — 오늘 저녁 배치 뒤부터 보여요'))),
+            ]),
+          );
+          final filters = _filters(context, years, months, dates);
+          if (!widget.daytrade) {
+            // 틀 고정: 검색 줄 + 표 머리는 그대로, 아래 표만 위아래로 스크롤 (옆으로는 머리·표가 같이 움직임)
+            const tableW = _wScore + _wKind + _wFill + _metricsW;
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                filters,
+                const SizedBox(height: 8),
+                if (dates.isEmpty)
+                  empty
+                else
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: tableW,
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          _header(context, [('점수', _wScore), ('구분', _wKind)], fill: true),
+                          Expanded(
+                            child: ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.only(bottom: 32),
+                              children: [
+                                for (final b in _bands)
+                                  _group(context, '$b~', _wScore, [
+                                    for (final (i, (k, name)) in [('all', '전체'), ..._kinds].indexed)
+                                      _row(context, [(name, _wKind, true)], sum['$b|$k'], i, k == 'all', fill: true),
+                                  ]),
+                                const SizedBox(height: 8),
+                                note,
+                              ],
+                            ),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  ),
+              ]),
+            );
+          }
+          // ---- 통계 > 당일단타: 점수별 + 매수시간별 (검색 줄 고정, 두 표는 함께 스크롤)
+          // 매수시간별 (키 '09:10|90' → 그 키 + '09:10|all')
+          final tsum = _sumUp(tgrid, tgrid.keys.where(inPeriod), (k) => [k, '${k.split('|').first}|all']);
+          final t = Theme.of(context).textTheme;
+          Widget title(String s, String note) => Padding(
+                padding: const EdgeInsets.fromLTRB(0, 12, 0, 6),
+                child: Text.rich(TextSpan(children: [
+                  TextSpan(text: s, style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  TextSpan(text: '  $note', style: t.bodySmall?.copyWith(color: Colors.grey)),
+                ])),
+              );
           return Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              _filters(context, years, months, dates),
-              const SizedBox(height: 8),
-              if (dates.isEmpty)
-                Expanded(
-                  child: ListView(physics: const AlwaysScrollableScrollPhysics(), children: const [
-                    Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: Text('아직 집계가 없어요 — 오늘 저녁 배치 뒤부터 보여요')),
-                    ),
-                  ]),
-                )
+              filters,
+              const SizedBox(height: 4),
+              if (dates.isEmpty && tgrid.isEmpty)
+                empty
               else
                 Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: SizedBox(
-                      width: _tableW,
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        _header(context),
-                        Expanded(
-                          child: ListView(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.only(bottom: 32),
-                            children: [
-                              for (final b in _bands) _band(context, b, sum),
-                              const SizedBox(height: 8),
-                              note,
-                            ],
-                          ),
-                        ),
-                      ]),
-                    ),
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.only(bottom: 32),
+                    children: [
+                      title('점수별', '당일단타만'),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          _header(context, [('점수', _wScore)], fill: true),
+                          for (final (i, (b, name)) in [(0, '전체'), for (final b in _bands) (b, '$b~')].indexed)
+                            _row(context, [(name, _wScore, false)], b == 0 ? _total(sum, 'daytrade') : sum['$b|daytrade'], i,
+                                b == 0,
+                                fill: true),
+                        ]),
+                      ),
+                      title('매수시간별', '포착(매수) 시각 10분 단위 × 점수'),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          _header(context, [('매수시간', _wTime), ('점수', _wScore)]),
+                          for (final tb in [..._times, if (tsum.keys.any((k) => k.startsWith('10:00'))) '10:00'])
+                            _group(context, tb == '10:00' ? '10:00~' : '$tb~${_next(tb)}', _wTime, [
+                              for (final (i, (b, name)) in [(0, '전체'), for (final b in _bands) (b, '$b~')].indexed)
+                                _row(context, [(name, _wScore, false)], b == 0 ? tsum['$tb|all'] : tsum['$tb|$b'], i, b == 0),
+                            ]),
+                        ]),
+                      ),
+                      const SizedBox(height: 8),
+                      note,
+                    ],
                   ),
                 ),
             ]),
@@ -139,7 +216,32 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
     );
   }
 
-  // ---------------------------------------------------------------- 검색 줄: 기간 [전체 · 년 · 월] · 매매구분 [완료 · 보유중]
+  /// 점수대 합계 (그 구분의 90~·80~·70~·60~ 를 더함)
+  _Sum? _total(Map<String, _Sum> sum, String kind) {
+    _Sum? out;
+    for (final b in _bands) {
+      final s = sum['$b|$kind'];
+      if (s == null) continue;
+      out ??= {'n': 0, 'f': 0, 'p': 0.0};
+      out['n'] = (out['n'] as int) + (s['n'] as int);
+      out['f'] = (out['f'] as int) + (s['f'] as int);
+      out['p'] = (out['p'] as double) + (s['p'] as double);
+      for (final c in _cats) {
+        final x = s[c] as List<num>?;
+        if (x == null) continue;
+        final cur = (out[c] as List<num>?) ?? <num>[0, 0];
+        out[c] = <num>[cur[0] + x[0], cur[1] + x[1]];
+      }
+    }
+    return out;
+  }
+
+  static String _next(String hm) {
+    final m = int.parse(hm.substring(3)) + 10;
+    return m >= 60 ? '${(int.parse(hm.substring(0, 2)) + 1).toString().padLeft(2, '0')}:00' : '${hm.substring(0, 3)}$m';
+  }
+
+  // ---------------------------------------------------------------- 검색 줄: 기간 [전체 · 년 · 월 · 일] · 매매구분 [완료 · 보유중]
   Widget _filters(BuildContext context, List<String> years, List<String> months, List<String> dates) {
     final t = Theme.of(context).textTheme;
     Widget label(String s) => Padding(
@@ -166,7 +268,7 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
     return Wrap(spacing: 16, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
       Row(mainAxisSize: MainAxisSize.min, children: [
         label('기간'),
-        seg(const [('all', '전체'), ('year', '년'), ('month', '월')], _period, (v) => _period = v),
+        seg(const [('all', '전체'), ('year', '년'), ('month', '월'), ('day', '일')], _period, (v) => _period = v),
         if (_period == 'year' && years.isNotEmpty) ...[
           const SizedBox(width: 8),
           drop(years, _year, (v) => '$v년', (v) => _year = v),
@@ -175,9 +277,10 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
           const SizedBox(width: 8),
           drop(months, _month, (v) => '${v.substring(0, 4)}년 ${int.parse(v.substring(5))}월', (v) => _month = v),
         ],
-        if (_period == 'all' && dates.isNotEmpty) ...[
+        if (_period == 'day' && dates.isNotEmpty) ...[
           const SizedBox(width: 8),
-          Text('${dates.first} ~', style: t.bodySmall?.copyWith(color: Colors.grey)),
+          drop(dates.reversed.toList(), _day, (v) => '${v.substring(0, 4)}-${v.substring(5, 7)}-${v.substring(8, 10)} (${_wd(v)})',
+              (v) => _day = v),
         ],
       ]),
       Row(mainAxisSize: MainAxisSize.min, children: [
@@ -186,6 +289,8 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
       ]),
     ]);
   }
+
+  static String _wd(String d) => const ['월', '화', '수', '목', '금', '토', '일'][DateTime.parse(d).weekday - 1];
 
   // ---------------------------------------------------------------- 표
   Color _headBg(BuildContext c) => Theme.of(c).colorScheme.primary.withValues(alpha: 0.35);
@@ -204,15 +309,15 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
         child: child,
       );
 
-  Widget _header(BuildContext context) {
+  /// 표 머리: 앞 칸들(이름·너비) + [체결율] + 추천건수 · 이익실현 1·2·3차 · 매수가매도 · 손절 · 평균손익 · 누적손익
+  Widget _header(BuildContext context, List<(String, double)> leads, {bool fill = false}) {
     final st = Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold);
     final bg = _headBg(context);
     Widget h(String s, double w) => _box(context, w, _rowH * 2, Text(s, style: st, textAlign: TextAlign.center), bg: bg);
     return Row(children: [
-      h('점수', _wScore),
-      h('구분', _wKind),
+      for (final (s, w) in leads) h(s, w),
       h('추천건수', _wN),
-      h('체결율', _wFill),
+      if (fill) h('체결율', _wFill),
       Column(children: [
         _box(context, _wCat * 3, _rowH, Text('이익실현', style: st), bg: bg),
         Row(children: [
@@ -227,18 +332,18 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
     ]);
   }
 
-  Widget _band(BuildContext context, int band, Map<String, Map<String, dynamic>> sum) {
-    final rows = [('all', '전체'), ..._kinds];
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _box(context, _wScore, _rowH * rows.length,
-          Text('$band~', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold))),
-      Column(children: [
-        for (final (i, (k, name)) in rows.indexed) _row(context, name, sum['$band|$k'], i, k == 'all'),
-      ]),
-    ]);
-  }
+  /// 묶음: 왼쪽에 합친 칸(점수대 · 매수시간) + 오른쪽 행들
+  Widget _group(BuildContext context, String label, double w, List<Widget> rows) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _box(context, w, _rowH * rows.length,
+              Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold))),
+          Column(children: rows),
+        ],
+      );
 
-  Widget _row(BuildContext context, String name, Map<String, dynamic>? s, int i, bool total) {
+  /// 한 행: 앞 칸들(글자 · 너비 · 왼쪽정렬?) + 숫자 칸
+  Widget _row(BuildContext context, List<(String, double, bool)> leads, _Sum? s, int i, bool total, {bool fill = false}) {
     final base = Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 12, fontWeight: total ? FontWeight.bold : null);
     final bg = total
         ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.10)
@@ -256,9 +361,9 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
         context, w, _rowH, Text(text, style: base?.copyWith(color: color), maxLines: 1, overflow: TextOverflow.ellipsis),
         bg: bg, al: al, pad: al == Alignment.centerLeft ? const EdgeInsets.only(left: 8) : EdgeInsets.zero);
     return Row(children: [
-      c(name, _wKind, al: Alignment.centerLeft),
+      for (final (text, w, left) in leads) c(text, w, al: left ? Alignment.centerLeft : Alignment.center),
       c('$n', _wN),
-      c(n == 0 ? '-' : pc(f / n * 100), _wFill),
+      if (fill) c(n == 0 ? '-' : pc(f / n * 100), _wFill),
       c(cat('t1'), _wCat, color: f > 0 ? upColor : null),
       c(cat('t2'), _wCat, color: f > 0 ? upColor : null),
       c(cat('t3'), _wCat, color: f > 0 ? upColor : null),

@@ -106,3 +106,14 @@ def test_track_result():
          "exit_time": "2026-10-14 09:30", "kind": "x"}
     assert track_result({**t, "result": "손절"})["days"] == 2
     assert track_result({"done": True, "bought": False, "result": "미체결"})["status"] == "미체결"
+
+
+def test_grid_time():
+    from stockeye.analysis import rec_eval as re_
+    assert re_.time_bucket("09:07") == "09:00" and re_.time_bucket("09:59") == "09:50"
+    assert re_.time_bucket("10:02") == "10:00" and re_.time_bucket("08:59") is None and re_.time_bucket(None) is None
+    rows = [{"rec_date": "2026-10-15", "kind": "daytrade", "score": 85, "rec_time": "09:23", "res_status": "1차 목표",
+             "res_done": True, "res_pnl": 1.5, "res_days": 1},
+            {"rec_date": "2026-10-15", "kind": "v3", "score": 85, "rec_time": "마감", "res_status": "손절", "res_done": True}]
+    g = re_.grid_time(rows)
+    assert g == {"2026-10-15": {"09:20|80": {"d": {"n": 1, "f": 1, "p": 1.5, "t1": [1, 1]}}}}

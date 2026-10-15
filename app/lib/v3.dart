@@ -198,7 +198,7 @@ class _V3ScreenState extends State<V3Screen> {
               ),
             ),
             SectionTitle('오늘 V3B 상위 10 (${mdw(today)} 분석)',
-                trailing: TextButton(onPressed: () => goTab(context, 1, list: 'v3'), child: const Text('목록'))),
+                trailing: TextButton(onPressed: () => goTab(context, tabPos('rec'), list: 'v3'), child: const Text('목록'))),
             Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: V3ScheduleLine(v: meta)),
             Padding(
               padding: const EdgeInsets.fromLTRB(4, 2, 4, 4),

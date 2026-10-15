@@ -245,6 +245,7 @@ def summarize(rows: list[dict]) -> dict:
             "by_overlap": grp(lambda r: "여러 구분 겹침" if cnt[(str(r["rec_date"])[:10], r["code"])] > 1 else "한 구분만"),
             "by_score": grp(lambda r: score_bucket(r.get("score"))),
             "grid": grid(rows),
+            "dt_time": grid_time(rows),
             "by_day": {d: stats([r for r in rows if str(r["rec_date"])[:10] == d]) for d in dates[-60:]}}
 
 
@@ -288,19 +289,42 @@ def grid(rows: list[dict]) -> dict:
         c = cat_of(r.get("res_status"))
         if b is None or k not in GRID_KINDS or c is None:
             continue
-        done = bool(r.get("res_done"))
-        cell = out.setdefault(str(r["rec_date"])[:10], {}).setdefault(f"{b}|{k}", {})
-        for mode in ("d" if done else "h",):
-            m = cell.setdefault(mode, {"n": 0, "f": 0, "p": 0.0})
-            m["n"] += 1
-            pnl = _f(r.get("res_pnl"))
-            if c in ("unfilled", "wait") or pnl is None:
-                continue
-            m["f"] += 1
-            m["p"] = round(m["p"] + pnl, 3)
-            x = m.setdefault(c, [0, 0])
-            x[0] += 1
-            x[1] += int(_f(r.get("res_days")) or 1)
+        _add(out.setdefault(str(r["rec_date"])[:10], {}).setdefault(f"{b}|{k}", {}), r, c)
+    return out
+
+
+def _add(cell: dict, r: dict, c: str) -> None:
+    """한 추천을 칸에 더함: 완료(d) / 보유중(h)"""
+    m = cell.setdefault("d" if r.get("res_done") else "h", {"n": 0, "f": 0, "p": 0.0})
+    m["n"] += 1
+    pnl = _f(r.get("res_pnl"))
+    if c in ("unfilled", "wait") or pnl is None:
+        return
+    m["f"] += 1
+    m["p"] = round(m["p"] + pnl, 3)
+    x = m.setdefault(c, [0, 0])
+    x[0] += 1
+    x[1] += int(_f(r.get("res_days")) or 1)
+
+
+def time_bucket(t) -> str | None:
+    """매수(포착) 시각 → 10분 단위 '09:10' (09:00 전은 없음 · 10:00 넘으면 '10:00')"""
+    s = str(t or "").strip()
+    if len(s) < 5 or s[2] != ":" or s[:5] < "09:00":
+        return None
+    return "10:00" if s[:5] >= "10:00" else s[:4] + "0"
+
+
+def grid_time(rows: list[dict], kind: str = "daytrade") -> dict:
+    """당일단타 매수시간별: {날짜: {"09:10|90": {"d": …, "h": …}}} (칸 모양은 grid 와 같음)"""
+    out: dict[str, dict] = {}
+    for r in rows:
+        if r.get("kind") != kind:
+            continue
+        b, c, tb = band_of(r.get("score")), cat_of(r.get("res_status")), time_bucket(r.get("rec_time"))
+        if b is None or c is None or tb is None:
+            continue
+        _add(out.setdefault(str(r["rec_date"])[:10], {}).setdefault(f"{tb}|{b}", {}), r, c)
     return out
 
 
@@ -313,7 +337,7 @@ def _group(rows, f):
 
 def publish(sb) -> dict:
     from ..cloud import publish as pub
-    rows = select_all(sb, {"select": "rec_date,kind,code,score," + ",".join(RES_COLS)})
+    rows = select_all(sb, {"select": "rec_date,kind,code,score,rec_time," + ",".join(RES_COLS)})
     out = summarize(rows)
     pub.publish_backtest(sb, KEY, "추천주 검증", out)
     return out

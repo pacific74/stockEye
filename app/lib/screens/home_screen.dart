@@ -284,7 +284,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       if (k == 'daytrade') DaytradeFindButton(onDone: _reloadDaytrade),
                       if (k == 'closingbet') DaytradeFindButton(closing: true, onDone: _reloadClosingbet),
                       if (k == 'limitcatch') DaytradeFindButton(kind: 'limitcatch', onDone: _reloadLimitcatch),
-                      TextButton(onPressed: () => goTab(context, 1, list: k), child: const Text('전체')),
+                      TextButton(onPressed: () => goTab(context, tabPos('rec'), list: k), child: const Text('전체')),
                     ]),
                   ),
                   if ((_picks[k] ?? (k == 'v3' ? top10.take(3).toList() : const <Json>[])).isEmpty)
@@ -317,7 +317,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
                 if (_holdings.isNotEmpty) ...[
                   SectionTitle('보유종목',
-                      trailing: TextButton(onPressed: () => goTab(context, 2), child: const Text('전체'))),
+                      trailing: TextButton(onPressed: () => goTab(context, tabPos('port')), child: const Text('전체'))),
                   _HoldingsTable(holdings: _holdings, quotes: quotes, meta: _meta),
                 ],
                 const SizedBox(height: 16),

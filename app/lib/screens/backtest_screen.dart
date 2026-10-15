@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
-import '../closingbet.dart';
-import '../daytrade.dart';
-import '../limitcatch.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
 import 'hitrate_screen.dart';
@@ -35,7 +32,7 @@ class _BacktestScreenState extends State<BacktestScreen> {
   }
 }
 
-/// 지난 5년 — 관심종목 적중률 + 당일단타 · 종가배팅 · 상한가포착 검증 (예전 검증 화면 내용)
+/// 지난 5년 — 관심종목 적중률 (2026-10-15 당일단타·종가배팅·상한가포착 검증 뺌)
 class _PastTab extends StatefulWidget {
   const _PastTab({super.key});
 
@@ -45,18 +42,12 @@ class _PastTab extends StatefulWidget {
 
 class _PastTabState extends State<_PastTab> with AutomaticKeepAliveClientMixin {
   late Future<Json> _hit = loadHitRate();
-  late Future<Json> _dt = loadDaytradeValidation();
-  late Future<Json> _cb = loadClosingbetValidation();
-  late Future<Json> _lc = loadLimitcatchValidation();
 
   @override
   bool get wantKeepAlive => true;
 
   void _reload() => setState(() {
         _hit = loadHitRate();
-        _dt = loadDaytradeValidation();
-        _cb = loadClosingbetValidation();
-        _lc = loadLimitcatchValidation();
       });
 
   @override
@@ -73,15 +64,7 @@ class _PastTabState extends State<_PastTab> with AutomaticKeepAliveClientMixin {
         children: [
           HitRunCard(onDone: _reload),
           HitRateSection(future: _hit),
-          const SizedBox(height: 16),
-          // 당일단타: 실전 기록 + 되돌려 보기
-          DaytradeValidation(future: _dt),
-          const SizedBox(height: 16),
-          // 종가배팅: 실전 기록 + 되돌려 보기 (5년 일봉 · 과거 분봉)
-          ClosingbetValidation(future: _cb),
-          const SizedBox(height: 16),
-          // 상한가포착: 실전 기록 + 점수 구간별 유지율 + 되돌려 보기 (과거 분봉 진입 가정 3가지 · 5년 일봉 참고)
-          LimitcatchValidation(future: _lc),
+          // 2026-10-15: 당일단타·종가배팅·상한가포착 검증은 뺌 (결과는 통계 > 전체현황)
         ],
       ),
     );

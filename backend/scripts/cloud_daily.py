@@ -147,7 +147,7 @@ def main():
     step("뉴스 (네이버 API HUB)", _news, errors)
     if report.get("nextday"):
         from stockeye.engine.nextday_report import attach_log
-        step("익일 유망주: 후보 기록·어제 후보 결과",
+        step("유망주: 후보 기록·어제 후보 결과",
              lambda: attach_log(report, pit, sync, record=not args.as_of), errors)
     save_report(report, cfg)
     step("리포트 → Storage", lambda: (sync.put_json("reports/latest.json", report),
@@ -214,6 +214,9 @@ def main():
                 return r.iloc[0].to_dict() if len(r) else None
             return lc_prev(sb, kis, report["date"], row_of)
         step("상한가포착 결과 매기기", _limitcatch, errors)
+        # 상한가 예비 (2026-10-16): 오늘(·최근) 첫 신호를 일봉으로 — 상한가 도달·종가 잠김 → 'limit_pre_stats'
+        step("상한가 예비 결과 매기기", lambda: __import__("stockeye.analysis.limit_pre_eval", fromlist=["run"]).run(
+            sb, pit.ohlcv, report["date"]), errors)
 
         # 당일매매 추적 마무리: PC(실시간)가 꺼졌거나 멈춰 결과가 안 난 고정 종목을 오늘 1분봉으로 마무리 → 관리자 매매일지
         def _intraday_finish():

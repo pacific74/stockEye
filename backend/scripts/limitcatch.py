@@ -40,6 +40,8 @@ BANNER = """==============================================================
   창을 닫으면 멈춤 (닫아도 되는 때: 15:21 이후)
 =============================================================="""
 SHOW = 30
+PRE_MAX_CODES = 20         # 상한가 예비: 1분에 자세히 보는 +10~20% 종목 수 (등락률 높은 순)
+PRE_SHOW = 10              # 앱에 보이는 상한가 예비·관찰 수
 PRE_VALUE = 50e8          # 근사 거래대금(가격×거래량) 50억 미만은 자세히 안 봄 (100억 기준은 KIS 값으로 다시 확인)
 DANGER_STATUS = {"51": "관리종목", "52": "투자위험", "53": "투자경고", "58": "거래정지", "59": "단기과열"}
 DANGER_WARN = {"02": "투자경고", "03": "투자위험"}
@@ -88,6 +90,7 @@ class Runner:
         self.book_hist: dict[str, list[dict]] = {}
         self.news: dict[str, dict | None] = {}
         self.first_buy: dict[str, dict] = {}       # 그날 처음 '매수 검토'가 된 시각·가격
+        self.pre_first: dict[str, dict] = {}       # 상한가 예비 (2026-10-16): 그날 처음 '상한가 예비'가 된 시각·가격 (검증 기록)
         self.ever: set[str] = set()                # 한 번이라도 +20% 이상이었던 종목 (밀려도 '조건 무효' 로 계속 보여줌)
         self.ticks: list[dict] = []
         from stockeye.cloud.recommend import IntradayRecorder
@@ -194,9 +197,64 @@ class Runner:
             log.info("★ 매수 검토 %s %s %s %s원 (점수 %.1f)", r["time"], r["name"], r["group"], f"{r['entry']:,.0f}", r["score"])
         return r
 
+    def discover_pre(self, found: pd.DataFrame) -> pd.DataFrame:
+        """상한가 예비 대상 찾기: 전체 순위(상위 30)는 +20%↑ 가 채우는 날이 많아 코스피·코스닥 순위를 따로 더 받음 (1분에 2번)"""
+        parts = [found]
+        for mk in ("0001", "1001"):
+            try:
+                r = self.kis.fluctuation_rank(mk)
+                if r is not None and len(r):
+                    parts.append(r[r["code"].isin(set(self.codes))].set_index("code"))
+            except Exception as e:  # noqa: BLE001
+                log.debug("등락률 순위(%s) 실패: %s", mk, e)
+        df = pd.concat(parts)
+        return df[~df.index.duplicated(keep="first")]
+
+    def one_pre(self, code: str, now: pd.Timestamp, sec: dict | None) -> dict | None:
+        """상한가 예비 1종목 (+10~20%): 지금 시세 · 호가 · 1분봉 → LP 점수"""
+        from stockeye.engine import limit_pre as lp
+        from stockeye.engine.uplimit import limit_price
+        daily = self.hist.get(code)
+        if daily is None or len(daily) < 20:
+            return None
+        try:
+            q = self.kis.price(code)
+        except Exception:  # noqa: BLE001
+            return None
+        try:
+            book = self.kis.asking(code)
+        except Exception:  # noqa: BLE001
+            book = None
+        bars = self._bars(code, now.strftime("%H%M%S"))
+        hm = now.strftime("%H:%M")
+        nd = None
+        if lp.PRE_MIN <= q["change_pct"] < lp.PRE_MAX and q["value"] >= lp.min_value(hm):
+            try:
+                nd = self._news(code)
+            except Exception:  # noqa: BLE001
+                nd = None
+        ctx = {"news": nd, "sector": sector_of(sec, self.sector.get(code)), "danger": danger_of(q, code in self.admin),
+               "now": now}
+        r = lp.evaluate(daily, q, bars, book, ctx)
+        if r["status"] not in ("상한가 예비", "관찰"):
+            return None
+        lim = q.get("upper_limit") or limit_price(q.get("prev_close") or 0)
+        r.update({"code": code, "name": self.names.get(code, code), "sector": self.sector.get(code), "time": hm,
+                  "prev_close": q.get("prev_close"), "limit": lim,
+                  "news": (nd or {}).get("items") or []})
+        if r["status"] == "상한가 예비":
+            if code not in self.pre_first:
+                self.pre_first[code] = {k: r.get(k) for k in ("code", "name", "time", "price", "chg_pct", "value", "score",
+                                                               "parts", "limit", "prev_close", "accel", "vwap_gap",
+                                                               "book_ratio", "limit_hits60")} | {"date": self.day}
+                log.info("☆ 상한가 예비 %s %s %+.1f%% %s원 (점수 %.1f)", hm, r["name"], r["chg_pct"], f"{r['price']:,.0f}", r["score"])
+            r["first_time"] = self.pre_first[code]["time"]
+        return r
+
     def step(self) -> dict:
         from concurrent.futures import ThreadPoolExecutor
         from stockeye.engine import limitcatch as lc
+        from stockeye.engine import limit_pre as lp
         now = _now()
         found = self.discover()
         sec = self._sectors()
@@ -206,6 +264,19 @@ class Runner:
         cands = list(dict.fromkeys(hot + sorted(self.ever) + self.track.codes()))  # 한 번 잡힌 종목은 밀려도 계속
         with ThreadPoolExecutor(self.workers) as ex:                   # 여러 종목 동시에 (KIS 초당 한도 안에서)
             res = [r for r in ex.map(lambda c: self.one(c, now, sec), cands) if r is not None]
+        # 상한가 예비 (+10~20% 급등 초입 · 09:05~14:30 · 표시+기록만)
+        pre = []
+        if lp.in_window(now.strftime("%H:%M")):
+            try:
+                allf = self.discover_pre(found)
+                v2 = allf["value"] if "value" in allf else allf["close"] * allf["volume"]
+                pc = allf[(allf["chg_pct"] >= lp.PRE_MIN) & (allf["chg_pct"] < lp.PRE_MAX)
+                          & (v2 >= lp.VALUE_AM * 0.8)].sort_values("chg_pct", ascending=False).index.tolist()[:PRE_MAX_CODES]
+                with ThreadPoolExecutor(self.workers) as ex:
+                    pre = [r for r in ex.map(lambda c: self.one_pre(c, now, sec), pc) if r is not None]
+            except Exception as e:  # noqa: BLE001
+                log.warning("상한가 예비 실패: %s", e)
+        pre.sort(key=lambda r: (r["status"] != "상한가 예비", -r["score"]))
         self._write_ticks()
         order = {"매수 검토": 0, "강세 후보": 1, "관찰": 2, "조건 무효": 3, "대상 아님": 4, "제외": 5}
         res.sort(key=lambda r: (order.get(r["status"], 6), -r["score"]))
@@ -229,7 +300,8 @@ class Runner:
                 "counts": counts, "groups": {"도달": sum(r["group"] == "도달" for r in keep),
                                              "미도달": sum(r["group"] == "미도달" for r in keep)},
                 "items": keep, "final": final, "runner": self.runner,
-                "first_buy": list(self.first_buy.values()), "tracked": self.track.view()}
+                "first_buy": list(self.first_buy.values()), "tracked": self.track.view(),
+                "pre": pre[:PRE_SHOW], "pre_version": lp.VERSION, "pre_first": list(self.pre_first.values())}
 
     def _write_ticks(self):
         if not self.log_path or not self.ticks:
@@ -244,6 +316,12 @@ class Runner:
             from stockeye.cloud import publish as pub
             pub.publish_status(self.sb, "limitcatch", p)
             self.rec(self.day, p.get("items") or [], p.get("version"), p.get("time"))
+            if len(p.get("pre_first") or []) != getattr(self, "_pre_saved", 0):   # 상한가 예비 새로 생기면 바로 저장
+                try:
+                    self.save_pre(p)
+                    self._pre_saved = len(p.get("pre_first") or [])
+                except Exception as e:  # noqa: BLE001
+                    log.debug("상한가 예비 기록 저장 실패: %s", e)
 
     def save_signals(self, p):
         """마지막 회차: 처음 '매수 검토' 기록 + 마지막 목록(점수 구간별 검증용) → 다음 날 저녁 배치가 결과를 매김"""
@@ -266,6 +344,22 @@ class Runner:
         out = {"date": self.day, "time": p.get("time"), "first_buy": list(fb.values()), "final": items,
                "is_final": bool(p.get("final") or old.get("is_final"))}
         self.sb.upload(key, json.dumps(out, ensure_ascii=False, default=str).encode("utf-8"), "application/json")
+        self.save_pre(p)
+
+    def save_pre(self, p):
+        """상한가 예비 첫 기록 → Storage limitcatch/pre/날짜.json (저녁 배치가 그날 일봉으로 도달·잠김을 매김)"""
+        if not self.sb or not p.get("pre_first"):
+            return
+        key = f"limitcatch/pre/{self.day}.json"
+        try:
+            old = json.loads(self.sb.download(key) or b"{}")
+        except Exception:  # noqa: BLE001
+            old = {}
+        rows = {r["code"]: r for r in old.get("rows", [])}
+        for r in p["pre_first"]:
+            rows.setdefault(r["code"], r)
+        self.sb.upload(key, json.dumps({"date": self.day, "version": p.get("pre_version"), "rows": list(rows.values())},
+                                       ensure_ascii=False, default=str).encode("utf-8"), "application/json")
 
     def upload_ticks(self):
         """1분 호가 기록 → Storage (gzip, 하루 수백 KB)"""

@@ -289,6 +289,8 @@ class _Section extends StatelessWidget {
         )
       else if (rtAt != null && DateTime.now().difference(rtAt!).inMinutes < 3 && tracked.any((x) => x['done'] != true))
         Text('● 실시간 (체결 때마다 목표·손절 판단)', style: t.bodySmall?.copyWith(color: Colors.green)),
+      // 상한가 예비 (2026-10-16): +10~20% 급등 초입 — 상한가 갈 만한 종목을 미리 (표시+기록만)
+      if (_lc) _PreSection(items: today ? asList(d['pre']) : const []),
       sub('진입조건충족', tracked.length, '충족된 시간 순 · 고정'),
       if (tracked.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('아직 없어요', style: t.bodySmall)),
       _grid([
@@ -708,6 +710,107 @@ Widget _grid(List<Widget> children, {double width = _cardW}) => LayoutBuilder(bu
         ]),
       );
     });
+
+/// 상한가포착 위: '상한가 예비' 목록 + 지난 기록(상한가 도달·종가 잠김 비율)
+class _PreSection extends StatefulWidget {
+  const _PreSection({required this.items});
+  final List<Json> items;
+  @override
+  State<_PreSection> createState() => _PreSectionState();
+}
+
+class _PreSectionState extends State<_PreSection> {
+  static Future<Json>? _stats; // 하루 한 번 바뀜 → 앱 켜 있는 동안 한 번만 받음
+  @override
+  void initState() {
+    super.initState();
+    _stats ??= Api.statusKey('limit_pre_stats').catchError((_) => <String, dynamic>{});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final pre = widget.items.where((r) => r['status'] == '상한가 예비').toList();
+    final watch = widget.items.where((r) => r['status'] == '관찰').toList();
+    Widget chip(String s, Color c) => Container(
+          margin: const EdgeInsets.only(right: 4, top: 3),
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+          decoration: BoxDecoration(border: Border.all(color: c.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(4)),
+          child: Text(s, style: t.bodySmall?.copyWith(fontSize: 11, color: c)),
+        );
+    Widget tile(Json r) => Card(
+          margin: const EdgeInsets.symmetric(vertical: 3),
+          child: InkWell(
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${r['code']}', name: '${r['name']}', news: asList(r['news'])))),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(child: StockName('${r['name']}', score: r['score'] as num?, scoreDigits: 1, style: t.titleSmall)),
+                  Text(won((r['price'] as num?)?.toDouble()), style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  ChgBadge(r['chg_pct'] as num?),
+                ]),
+                StockInfoLine('${r['code']}'),
+                Wrap(children: [
+                  if (r['first_time'] != null) chip('${r['first_time']} 처음 포착', Colors.teal),
+                  if (r['limit'] is num && r['price'] is num)
+                    chip('상한가 ${num0(r['limit'] as num)} (+${(((r['limit'] as num) / (r['price'] as num) - 1) * 100).toStringAsFixed(1)}% 남음)',
+                        Colors.grey),
+                  for (final s in asList(r['reasons']).map((e) => '$e')) chip(s, upColor),
+                  for (final s in (r['warn'] as List? ?? const []).map((e) => '$e')) chip(s, Colors.orange),
+                ]),
+              ]),
+            ),
+          ),
+        );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 2),
+        child: Text.rich(TextSpan(children: [
+          TextSpan(text: '상한가 예비 ${pre.length}', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+          TextSpan(text: '  +10~20% 급등 초입 · 09:05~14:30 · 60점↑ (가설 · 검증 중)', style: t.bodySmall?.copyWith(color: Colors.grey)),
+        ])),
+      ),
+      FutureBuilder<Json>(
+        future: _stats,
+        builder: (context, snap) {
+          final a = asMap(asMap(snap.data?['stats'])['all']);
+          if ((a['n'] as num? ?? 0) == 0) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text('지난 기록 아직 없음 — 쌓이면 상한가 도달·종가 잠김 비율이 여기 나와요',
+                  style: t.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+                '지난 기록 ${a['n']}건 · 그날 상한가 도달 ${a['reached']}% · 종가 잠김 ${a['closed']}%'
+                '${a['close_ret'] is num ? ' · 신호 뒤 종가 ${(a['close_ret'] as num) >= 0 ? '+' : ''}${a['close_ret']}%' : ''}',
+                style: t.bodySmall?.copyWith(color: Colors.teal, fontSize: 11)),
+          );
+        },
+      ),
+      if (pre.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('지금은 없어요', style: t.bodySmall)),
+      _grid([for (final r in pre) tile(r)]),
+      if (watch.isNotEmpty)
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            dense: true,
+            tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+            title: Text.rich(TextSpan(children: [
+              TextSpan(text: '예비 관찰 ${watch.length}', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+              TextSpan(text: '  기본 조건은 맞지만 60점 미만 (눌러서 펼치기)', style: t.bodySmall?.copyWith(color: Colors.grey)),
+            ])),
+            children: [_grid([for (final r in watch) tile(r)])],
+          ),
+        ),
+      const Divider(height: 16),
+    ]);
+  }
+}
 
 /// 깜빡이는 표시 (on 이 false 면 그대로)
 class Blink extends StatefulWidget {

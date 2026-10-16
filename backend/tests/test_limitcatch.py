@@ -199,3 +199,33 @@ def test_discover_falls_back_to_naver_every_5min(monkeypatch):
     live = {"time": "10:10", "groups": [{"group": "전기", "chg_pct": 2.0, "n": 10, "up": 7}]}
     assert sl.sector_of(live, "전기") == {"up_ratio": 0.7, "chg_pct": 2.0, "n": 10, "at": "10:10"}
     assert sl.sector_of(live, "화학") is None
+
+
+def test_runner_pre(monkeypatch, tmp_path):
+    """상한가 예비: +10~20% · 고가 근처 · 거래대금 가속 → 'pre' 목록과 첫 기록"""
+    import scripts.limitcatch as sl
+    d = _daily()
+    oh = d.assign(code="000020")
+    listing = pd.DataFrame({"code": ["000020"], "name": ["나바이오"], "market": ["KOSDAQ"], "is_admin": [False]})
+    snap = pd.DataFrame({"code": ["000020"], "close": [11500], "chg_pct": [15.0], "value": [80e8], "volume": [1e6]})
+
+    class K:
+        def fluctuation_rank(self, market="0000"): return snap.copy()
+        def price(self, c):
+            return {"price": 11500, "change_pct": 15.0, "open": 10100, "high": 11520, "low": 10000, "prev_close": 10000,
+                    "volume": 7e5, "value": 80e8, "upper_limit": 13000, "status_code": "55", "warn_code": "00",
+                    "halted": False}
+        def asking(self, c): return {"total_bid": 3e5, "total_ask": 1e5}
+        def minute_bars_day(self, c, s, e):
+            b = _bars([10000 + 50 * i for i in range(30)])
+            b.loc[b.index[-5:], "volume"] = b["volume"].iloc[0] * 4
+            return b
+        def minute_bars(self, c, e): return self.minute_bars_day(c, None, None).tail(1)
+
+    monkeypatch.setattr(sl, "_now", lambda: pd.Timestamp("2026-10-12 09:40"))
+    run = sl.Runner(None, K(), listing, oh, None, workers=2, log_dir=tmp_path)
+    p = run.step()
+    assert p["pre"] and p["pre"][0]["code"] == "000020" and p["pre"][0]["status"] in ("상한가 예비", "관찰")
+    assert p["pre_version"] == "LP-0.1"
+    if p["pre"][0]["status"] == "상한가 예비":
+        assert p["pre_first"][0]["time"] == "09:40"

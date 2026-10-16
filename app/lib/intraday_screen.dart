@@ -346,8 +346,9 @@ class _ClosingSection extends StatelessWidget {
     final c = asMap(d['counts']);
     final todayT = tracked.where((x) => dtIsToday({'date': x['date']})).toList();
     // 전날 내역: 오늘보다 앞선 날짜 중 가장 최근 하루 (다음 날 10:30 까지 매도 추적)
-    final prevDates = tracked.map((x) => '${x['date']}').where((x) => !dtIsToday({'date': x})).toSet().toList()..sort();
-    final prevT = prevDates.isEmpty ? <Json>[] : tracked.where((x) => x['date'] == prevDates.last).toList();
+    // 전일 종가배팅: 아직 추적 중인 것만 (이익실현·매수가매도·손절·미체결 등 결과가 확정된 것은 안 보임 — 2026-10-16)
+    final prevT = tracked.where((x) => !dtIsToday({'date': x['date']}) && x['done'] != true).toList();
+    final prevDates = prevT.map((x) => '${x['date']}').toSet().toList()..sort();
     // 당일단타·상한가포착과 같은 구분: 진입대기 = 우선 관찰 · 관찰 · 기준 미달(대상 아님·진입 금지)
     final wait = items.where((r) => r['status'] == '우선 관찰').toList();
     final watch = items.where((r) => r['status'] == '관찰').toList();

@@ -154,6 +154,10 @@ jobs:
             echo "- 고정 주소: Vercel 대시보드 → 프로젝트 $PAGES_PROJECT → Domains (보통 https://$PAGES_PROJECT.vercel.app)"
             echo "- 안드로이드: (고정 주소)/stockeye.apk"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Vercel 예전 배포 정리 (3일 지난 것 · 지금 사이트는 그대로)
+        if: env.VERCEL_TOKEN != ''
+        continue-on-error: true            # 정리가 실패해도 배포는 이미 끝났으므로 빌드 실패로 치지 않음
+        run: python3 ../backend/scripts/vercel_cleanup.py --project "$PAGES_PROJECT" --days 3
       - name: Cloudflare Pages 프로젝트 준비
         if: env.CF_TOKEN != '' && env.VERCEL_TOKEN == ''
         env:

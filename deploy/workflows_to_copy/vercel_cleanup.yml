@@ -1,0 +1,34 @@
+# Vercel 예전 배포 정리 (2026-10-17): 배포마다 사이트 전체(APK 포함)가 따로 저장돼 무료 10GB 가 차서
+#   매일 새벽 + 수동 실행. 3일 지난 배포만 지움 (지금 사이트·가장 최근 production 배포는 그대로)
+#   앱 빌드(app.yml)도 배포 직후 같은 정리를 함. 필요한 Secret: VERCEL_TOKEN
+name: vercel-cleanup
+
+on:
+  schedule:
+    - cron: "0 20 * * *"          # UTC 20:00 = 한국 05:00
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "며칠 지난 배포를 지울까"
+        default: "3"
+      dry_run:
+        description: "지우지 않고 목록만 보기"
+        type: boolean
+        default: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      PAGES_PROJECT: ${{ vars.PAGES_PROJECT || 'stockeye' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: backend/scripts/vercel_cleanup.py
+          sparse-checkout-cone-mode: false
+      - name: 정리
+        run: |
+          python3 backend/scripts/vercel_cleanup.py --project "$PAGES_PROJECT" --days "${{ inputs.days || '3' }}" \
+            ${{ inputs.dry_run && '--dry-run' || '' }}

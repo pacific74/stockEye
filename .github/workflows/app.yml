@@ -4,7 +4,7 @@
 #                웹 배포: VERCEL_TOKEN (권장) 또는 CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID
 #                (둘 다 없으면 웹 배포만 건너뜀, APK 는 Actions 결과물로 받기)
 # Variables(선택): PAGES_PROJECT = 웹 주소 이름 (기본 stockeye), WEB_URL = 웹 주소 (인증 메일 링크용)
-# 로또만 바뀐 push (app/web/lotto/ 밖은 그대로, 2026-10-16): 주식눈 빌드 번호를 안 올림
+# 로또만 바뀐 push (지금 배포된 주식눈 커밋 이후 app/web/lotto/ 밖은 그대로, 2026-10-16): 주식눈 빌드 번호를 안 올림
 #   → 지금 배포된 version.json 의 번호·시각을 그대로 쓰고 stockeye.apk 도 배포된 것을 받아 그대로 다시 올림
 #     (주식눈 앱에 '업데이트 있어요' 안내가 안 뜸). 배포된 걸 못 받으면 평소처럼 새 번호로 빌드
 name: app-build
@@ -41,28 +41,30 @@ jobs:
           fetch-depth: 0
       - name: 로또만 바뀌었나 (그러면 주식눈 빌드 번호 그대로)
         env:
-          BEFORE: ${{ github.event.before }}
           SITE: ${{ vars.SITE_URL || 'https://stockeye-pacific74.vercel.app' }}   # 지금 배포된 주소 (Variables SITE_URL 로 바꿀 수 있음)
         run: |
+          # 기준 = 지금 배포된 주식눈의 커밋 (version.json 의 commit) — 이번 push 만이 아니라 그 뒤로 쌓인 변경 전부를 봄
+          #   (주식눈 push 의 빌드가 취소됐거나 실패했어도 그 변경을 놓치지 않게)
           echo "LOTTO_ONLY=0" >> "$GITHUB_ENV"
-          if [ "${{ github.event_name }}" != "push" ] || [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            echo "수동 실행·첫 push → 평소처럼 빌드"; exit 0; fi
-          CHANGED=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- . ../.github/workflows/app.yml || true)
-          echo "바뀐 파일:"; echo "$CHANGED"
-          if [ -z "$CHANGED" ] || echo "$CHANGED" | grep -qv '^app/web/lotto/'; then
-            echo "주식눈 코드도 바뀜 → 평소처럼 빌드"; exit 0; fi
+          if [ "${{ github.event_name }}" != "push" ]; then echo "수동 실행 → 평소처럼 빌드"; exit 0; fi
           SITE="${SITE%/}"
           mkdir -p "$RUNNER_TEMP/keep"
-          if curl -fsSL "$SITE/version.json" -o "$RUNNER_TEMP/keep/version.json" \
-             && curl -fsSL "$SITE/stockeye.apk" -o "$RUNNER_TEMP/keep/stockeye.apk" \
+          if ! curl -fsSL "$SITE/version.json" -o "$RUNNER_TEMP/keep/version.json"; then
+            echo "::warning::배포된 version.json 을 못 받음 → 평소처럼 빌드"; exit 0; fi
+          read OLD_BUILD OLD_COMMIT < <(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(d.get('build',''),d.get('commit',''))" "$RUNNER_TEMP/keep/version.json")
+          OLD_TIME=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('time',''))" "$RUNNER_TEMP/keep/version.json")
+          if [ -z "$OLD_COMMIT" ] || ! git cat-file -e "$OLD_COMMIT^{commit}" 2>/dev/null; then
+            echo "배포된 커밋($OLD_COMMIT)을 못 찾음 → 평소처럼 빌드"; exit 0; fi
+          CHANGED=$(git diff --name-only "$OLD_COMMIT" "$GITHUB_SHA" -- . ../.github/workflows/app.yml || true)
+          echo "배포된 주식눈($OLD_COMMIT · 빌드 $OLD_BUILD) 이후 바뀐 파일:"; echo "$CHANGED"
+          if [ -z "$CHANGED" ] || echo "$CHANGED" | grep -qv '^app/web/lotto/'; then
+            echo "주식눈 코드도 바뀜 → 평소처럼 새 번호로 빌드"; exit 0; fi
+          if curl -fsSL "$SITE/stockeye.apk" -o "$RUNNER_TEMP/keep/stockeye.apk" \
              && [ "$(stat -c %s "$RUNNER_TEMP/keep/stockeye.apk")" -gt 1000000 ]; then
-            OLD_BUILD=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['build'])" "$RUNNER_TEMP/keep/version.json")
-            OLD_TIME=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('time',''))" "$RUNNER_TEMP/keep/version.json")
-            OLD_COMMIT=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('commit',''))" "$RUNNER_TEMP/keep/version.json")
             { echo "LOTTO_ONLY=1"; echo "OLD_BUILD=$OLD_BUILD"; echo "OLD_TIME=$OLD_TIME"; echo "OLD_COMMIT=$OLD_COMMIT"; } >> "$GITHUB_ENV"
             echo "로또만 바뀜 → 주식눈 빌드 번호 $OLD_BUILD 그대로 · APK 는 배포된 것 그대로"
           else
-            echo "::warning::배포된 version.json/stockeye.apk 를 못 받음 → 평소처럼 새 번호로 빌드"
+            echo "::warning::배포된 stockeye.apk 를 못 받음 → 평소처럼 빌드"
           fi
       - name: Supabase 설정 확인
         run: |
@@ -152,6 +154,10 @@ jobs:
             echo "- 고정 주소: Vercel 대시보드 → 프로젝트 $PAGES_PROJECT → Domains (보통 https://$PAGES_PROJECT.vercel.app)"
             echo "- 안드로이드: (고정 주소)/stockeye.apk"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Vercel 예전 배포 정리 (3일 지난 것 · 지금 사이트는 그대로)
+        if: env.VERCEL_TOKEN != ''
+        continue-on-error: true            # 정리가 실패해도 배포는 이미 끝났으므로 빌드 실패로 치지 않음
+        run: python3 ../backend/scripts/vercel_cleanup.py --project "$PAGES_PROJECT" --days 3
       - name: Cloudflare Pages 프로젝트 준비
         if: env.CF_TOKEN != '' && env.VERCEL_TOKEN == ''
         env:

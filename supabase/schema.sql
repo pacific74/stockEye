@@ -54,13 +54,17 @@ end $$;
 -- ntfy 알림 보내기 (서버 내부용, 실패해도 무시)
 create or replace function public._ntfy(p_topic text, p_title text, p_message text) returns void
 language plpgsql security definer set search_path = public as $$
-declare server text;
+declare server text; tok text;
 begin
   if p_topic is null or p_topic = '' then return; end if;
   select value into server from public.app_config where key = 'ntfy_server';
+  select value into tok from public.app_config where key = 'ntfy_token';   -- 선택: ntfy 계정 토큰 (없으면 익명 · 공유 IP 라 429 가 날 수 있음, 2026-10-18)
   begin
     perform net.http_post(url := coalesce(nullif(server, ''), 'https://ntfy.sh'),
-                          body := jsonb_build_object('topic', p_topic, 'title', p_title, 'message', p_message));
+                          body := jsonb_build_object('topic', p_topic, 'title', p_title, 'message', p_message),
+                          headers := case when coalesce(tok, '') <> ''
+                                          then jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || tok)
+                                          else jsonb_build_object('Content-Type', 'application/json') end);
   exception when others then null;
   end;
 end $$;
@@ -77,6 +81,10 @@ begin
   on conflict (user_id) do nothing;
   if not first_user then
     select value into topic from public.app_config where key = 'ntfy_topic';
+    if coalesce(topic, '') = '' then   -- app_config 에 없으면 관리자 본인의 알림 토픽 (2026-10-18)
+      select ntfy_topic into topic from public.profiles where is_admin and coalesce(ntfy_topic, '') <> ''
+       order by created_at limit 1;
+    end if;
     perform public._ntfy(topic, 'StockEye 가입 승인 요청',
                          coalesce(new.email, '') || ' 님이 가입했습니다. 앱 → 회원 관리에서 승인하세요.');
   end if;

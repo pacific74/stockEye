@@ -4,7 +4,7 @@
 #                웹 배포: VERCEL_TOKEN (권장) 또는 CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID
 #                (둘 다 없으면 웹 배포만 건너뜀, APK 는 Actions 결과물로 받기)
 # Variables(선택): PAGES_PROJECT = 웹 주소 이름 (기본 stockeye), WEB_URL = 웹 주소 (인증 메일 링크용)
-# 로또만 바뀐 push (지금 배포된 주식눈 커밋 이후 app/web/lotto/ 밖은 그대로, 2026-10-16): 주식눈 빌드 번호를 안 올림
+# 로또·게임만 바뀐 push (지금 배포된 주식눈 커밋 이후 app/web/lotto/ · app/web/games/ 밖은 그대로, 2026-10-16·10-19): 주식눈 빌드 번호를 안 올림
 #   → 지금 배포된 version.json 의 번호·시각을 그대로 쓰고 stockeye.apk 도 배포된 것을 받아 그대로 다시 올림
 #     (주식눈 앱에 '업데이트 있어요' 안내가 안 뜸). 배포된 걸 못 받으면 평소처럼 새 번호로 빌드
 name: app-build
@@ -57,12 +57,12 @@ jobs:
             echo "배포된 커밋($OLD_COMMIT)을 못 찾음 → 평소처럼 빌드"; exit 0; fi
           CHANGED=$(git diff --name-only "$OLD_COMMIT" "$GITHUB_SHA" -- . ../.github/workflows/app.yml || true)
           echo "배포된 주식눈($OLD_COMMIT · 빌드 $OLD_BUILD) 이후 바뀐 파일:"; echo "$CHANGED"
-          if [ -z "$CHANGED" ] || echo "$CHANGED" | grep -qv '^app/web/lotto/'; then
+          if [ -z "$CHANGED" ] || echo "$CHANGED" | grep -qvE '^app/web/(lotto|games)/'; then
             echo "주식눈 코드도 바뀜 → 평소처럼 새 번호로 빌드"; exit 0; fi
           if curl -fsSL "$SITE/stockeye.apk" -o "$RUNNER_TEMP/keep/stockeye.apk" \
              && [ "$(stat -c %s "$RUNNER_TEMP/keep/stockeye.apk")" -gt 1000000 ]; then
             { echo "LOTTO_ONLY=1"; echo "OLD_BUILD=$OLD_BUILD"; echo "OLD_TIME=$OLD_TIME"; echo "OLD_COMMIT=$OLD_COMMIT"; } >> "$GITHUB_ENV"
-            echo "로또만 바뀜 → 주식눈 빌드 번호 $OLD_BUILD 그대로 · APK 는 배포된 것 그대로"
+            echo "로또·게임만 바뀜 → 주식눈 빌드 번호 $OLD_BUILD 그대로 · APK 는 배포된 것 그대로"
           else
             echo "::warning::배포된 stockeye.apk 를 못 받음 → 평소처럼 빌드"
           fi

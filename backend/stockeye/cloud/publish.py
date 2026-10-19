@@ -194,8 +194,16 @@ def publish_journal(sb: Supabase, cfg: dict, journal, pit=None, report: dict | N
     origins = watch_origins(sb, opens)                    # 관심 탭에서 산 종목: 어느 탭 · 그때 매수구간 · 손절가
     for r in reviews:
         r["origin"] = origins.get(r["id"])
+    try:    # 장마감 리포트 하단 '보유종목 코멘트' (지지선·매물대·업종)
+        from ..engine import levels as _lv
+        from .holding_note import note_for, sector_of
+        lvs = _lv.compute_all(pit.ohlcv[pit.ohlcv["code"].isin([h["code"] for h in holds])], [h["code"] for h in holds])
+        for r in reviews:
+            r["note"] = note_for(float(r.get("price") or 0), r.get("pnl_pct"), lvs.get(r["code"]), sector_of(report, r["code"]))
+    except Exception as e:  # noqa: BLE001
+        log.warning("보유종목 코멘트 계산 실패: %s", e)
     keep = ("price", "pnl_pct", "pnl", "ret1_pct", "alerts", "status", "hold_days", "today_score", "today_tags",
-            "sell_date", "days_left", "origin")
+            "sell_date", "days_left", "origin", "note")
     sb.upsert("position_reviews", [{"position_id": r["id"], "user_id": uid, "payload": {k: r.get(k) for k in keep},
                                     "updated_at": datetime.utcnow().isoformat() + "Z"} for r in reviews],
               "position_id")
@@ -297,6 +305,20 @@ def holding_alerts(sb: Supabase, user_id: str, limit: int = 10) -> list[str]:
     return lines[:limit]
 
 
+def holding_notes(sb: Supabase, user_id: str, limit: int = 5) -> list[tuple[str, str | None]]:
+    """장마감 리포트 하단용: 그 사용자의 열린 포지션 → [(종목명, 코멘트 or None)] (코멘트 있는 것 먼저)"""
+    try:
+        reviews = sb.select("position_reviews", {"select": "position_id,payload", "user_id": f"eq.{user_id}"})
+        names = {p["id"]: p["name"] for p in sb.select("positions", {
+            "select": "id,name", "user_id": f"eq.{user_id}", "status": "eq.open"})}
+    except Exception as e:  # noqa: BLE001
+        log.info("보유종목 코멘트 읽기 생략: %s", e)
+        return []
+    out = [(names[r["position_id"]], (r["payload"] or {}).get("note")) for r in reviews if r["position_id"] in names]
+    out.sort(key=lambda t: t[1] is None)
+    return out[:30]
+
+
 def notify_members(sb: Supabase, report: dict, notifier, skip_topics=(), app_url: str | None = None) -> int:
     """알림 토픽을 등록한 승인 회원에게 각자 알림: 오늘 리포트 요약 + 내 보유종목 경고."""
     try:
@@ -320,7 +342,8 @@ def notify_members(sb: Supabase, report: dict, notifier, skip_topics=(), app_url
                                     priority="high", url=app_url)
                 sent += 1
         if u.get("notify_daily", True):
-            notifier.send_topic(topic, title, summary, url=app_url, markdown=True)
+            t2, s2 = build_digest(report, holdings=holding_notes(sb, u["user_id"]))     # 내 보유종목 코멘트가 하단에
+            notifier.send_topic(topic, t2, s2, url=app_url, markdown=True)
             sent += 1
     log.info("회원 알림 %d건 발송", sent)
     return sent

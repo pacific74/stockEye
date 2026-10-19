@@ -4,6 +4,7 @@
   ■ 금일장 브리핑     — 지수 등락·이평선 위치, 상승/하락 종목, 거래대금, 강한 업종
   ■ 내일장 예상       — 지표 점수(추세·종목 확산·마감 강도·후보 수)로 우호/중립/경계 + 확인할 지수 가격
   ■ 내일 관심주       — 후보 메뉴 탭별 상위 3: 종목명(코드) 점수 · 현재가 · 목표 · 손절
+  ■ 보유종목 코멘트   — (하단) 내 보유종목별 지지선·매물대·업종 흐름 한 줄 (stockeye.cloud.holding_note)
 
 알림 길이: ntfy 본문은 4,096바이트(한글 약 1,300자)를 넘으면 첨부파일로 바뀌므로 3,900바이트 안으로 줄인다.
 텔레그램은 4,096자까지라 같은 본문이면 충분하다.
@@ -183,15 +184,31 @@ def picks(report: dict, per_tab: int = 3) -> list[str]:
     return lines
 
 
-def build(report: dict, per_tab: int = 3, max_bytes: int = MAX_BYTES) -> tuple[str, str]:
-    """(제목, 본문 Markdown). 길면 탭별 종목 수를 줄여 max_bytes 안으로"""
+def holdings_section(holdings: list[tuple[str, str | None]] | None, max_items: int = 5) -> list[str]:
+    """보유종목 코멘트 (하단): 코멘트가 있는 종목 한 줄씩 + 나머지는 '특이사항 없음' 한 줄. 보유종목이 없으면 비움"""
+    if not holdings:
+        return []
+    withn = [(n, t) for n, t in holdings if t]
+    lines = [f"- **{n}** {t}" for n, t in withn[:max_items]]
+    rest = len(holdings) - min(len(withn), max_items)
+    if rest > 0:
+        lines.append(f"- 그 외 {rest}종목 특이사항 없음" if lines else f"- 보유 {len(holdings)}종목 모두 특이사항 없음")
+    lines.append("_※ 지지·매물대·업종 흐름을 정리한 참고이며 매매 권유가 아닙니다._")
+    return lines
+
+
+def build(report: dict, per_tab: int = 3, max_bytes: int = MAX_BYTES,
+          holdings: list[tuple[str, str | None]] | None = None) -> tuple[str, str]:
+    """(제목, 본문 Markdown). 길면 탭별 종목 수를 줄여 max_bytes 안으로 (보유종목 코멘트는 하단에 항상 남김)"""
     title = f"📊 {_md(report['date'])} 장마감 리포트"
     tb, ol = today_brief(report), outlook(report)
+    hs = holdings_section(holdings)
+    tail = ["", "### ■ 보유종목 코멘트", *hs] if hs else []
     body = ""
     for k in range(per_tab, 0, -1):
         body = "\n".join(["### ■ 금일장 브리핑", *tb, "", "### ■ 내일장 예상", *ol, "",
                           "### ■ 내일 관심주", *picks(report, k), "",
-                          "_목표·손절 = 차트 저항·지지(스윙 고저점·매물대·이평선) 기준 참고 가격_"])
+                          "_목표·손절 = 차트 저항·지지(스윙 고저점·매물대·이평선) 기준 참고 가격_", *tail])
         if len(body.encode("utf-8")) <= max_bytes:
             return title, body
     while len(body.encode("utf-8")) > max_bytes and "\n" in body:

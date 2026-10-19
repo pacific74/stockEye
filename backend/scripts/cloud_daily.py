@@ -288,7 +288,13 @@ def main():
     except Exception:  # noqa: BLE001  (예전 스키마)
         pending = 0
     from stockeye.cloud.digest import build as build_digest
-    d_title, d_body = build_digest(report)
+    hn = []
+    if owner and UUID_RE.match(owner):
+        try:
+            hn = pub.holding_notes(sb, owner)
+        except Exception as e:  # noqa: BLE001
+            log.info("관리자 보유종목 코멘트 생략: %s", e)
+    d_title, d_body = build_digest(report, holdings=hn)
     n.send(d_title, d_body
            + (f"\n\n👤 가입 승인 대기 {pending}명 (앱 → 회원 관리)" if pending else "")
            + (f"\n\n⚠ 일부 단계 실패 {len(errors)}건" if errors else ""), markdown=True)

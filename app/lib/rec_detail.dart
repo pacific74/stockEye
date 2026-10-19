@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'format.dart';
+import 'screens/stock_detail_screen.dart';
 
 /// 통계 표의 추천건수를 누르면 → 그 칸에 들어간 종목과 상태 (2026-10-19)
 ///   이익실현 1·2·3차 · 매수가매도 · 손절 · 손익 · 매수/매도 순간 종합·업종지수
@@ -147,7 +148,10 @@ class _RecRow extends StatelessWidget {
           decoration: BoxDecoration(border: Border.all(color: col.withValues(alpha: 0.6)), borderRadius: BorderRadius.circular(4)),
           child: Text(s, style: t.bodySmall?.copyWith(fontSize: 11, color: col)),
         );
-    return Padding(
+    return InkWell(     // 누르면 종목 상세
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => StockDetailScreen(code: '${r['c']}', name: '${r['n']}'))),
+      child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -165,7 +169,7 @@ class _RecRow extends StatelessWidget {
               '${r['d']}${r['t'] != null ? ' ${r['t']}' : ''} · ${_kindName['${r['k']}'] ?? r['k']}'
               '${score != null ? ' · $score점' : ''}${r['dy'] != null ? ' · ${r['dy']}일' : ''}',
               style: t.bodySmall?.copyWith(color: Colors.grey)),
-          chip(st, c),
+          if (st != '보유중' && st != '-') chip(st, c),          // '보유중' 이 두 번(흰색·녹색) 나오던 것 — 보유중이면 녹색 하나만
           if (r['dn'] != true) chip('보유중', Colors.teal),
         ]),
         if (ixl != null)
@@ -174,6 +178,6 @@ class _RecRow extends StatelessWidget {
             child: Text(ixl, style: t.bodySmall?.copyWith(fontSize: 11, color: Colors.grey)),
           ),
       ]),
-    );
+    ));
   }
 }

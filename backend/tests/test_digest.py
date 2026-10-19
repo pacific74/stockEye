@@ -65,3 +65,26 @@ def test_drop_alert_in_digest():
     t, b = digest.build(r)
     assert "⚠ **종합지수 급락 · 매수 주의**" in b and "코스닥 -3.4% · 반도체 -4.2%" in b
     assert "⚠ 업종 급락 (반도체 -4.2%) · 매수 주의" in b
+
+
+def test_holding_note_rules():
+    from stockeye.cloud.holding_note import note_for, sector_of
+    lv = {"supports": [{"price": 9900}, {"price": 9000}], "resistances": [{"price": 10400}, {"price": 10700}]}
+    n = note_for(10000, 3.0, lv, ("반도체", -2.1))
+    assert "지지 9,900 근접" in n and "일부 매도" in n and "반도체 업종 -2.1%" in n
+    assert "이탈" in note_for(8800, -5.0, lv, None)                    # 모든 지지 아래
+    assert note_for(12000, 5.0, {"supports": [{"price": 9000}], "resistances": []}, ("a", 0.5)) is None
+    assert "일부 매도" not in (note_for(10000, -2.0, lv, None) or "")   # 손실 중이면 '일부 매도' 문구 없음
+    rep = {"sectors": [{"group": "g", "ret1_pct": -1.5}], "sector_members": {"groups": {"g": [["000010", "가", -1.0]]}}}
+    assert sector_of(rep, "000010") == ("g", -1.5) and sector_of(rep, "999") is None
+
+
+def test_digest_holdings_section_bottom_and_length():
+    r = _report()
+    hs = [("가나다", "지지 9,900 근접 · 이탈 시 경고"), ("라마바", None), ("사아자", "위 10,400 부근 매물대 저항 → 일부 매도 고려")]
+    t, b = digest.build(r, holdings=hs)
+    assert b.index("보유종목 코멘트") > b.index("내일 관심주")
+    assert "가나다" in b and "그 외 1종목 특이사항 없음" in b and len(b.encode()) <= digest.MAX_BYTES
+    assert "보유종목 코멘트" not in digest.build(r)[1]                  # 보유종목 없으면 구역 없음
+    big = [(f"종목{i}", "x" * 150) for i in range(5)]
+    assert len(digest.build(r, holdings=big)[1].encode()) <= digest.MAX_BYTES

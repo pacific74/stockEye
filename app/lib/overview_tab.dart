@@ -47,7 +47,9 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
   late Future<Json> _f = _load();
   String _period = 'all'; // all · year · month · day
   String? _year, _month, _day; // '2026' · '2026-10' · '2026-10-15'
-  String _mode = 'd'; // d 완료 · h 보유중
+  String _mode = 'd'; // d 완료 · h 보유중 · a 전체(둘 다)
+  List<String> get _modes => _mode == 'a' ? const ['d', 'h'] : [_mode];
+  String get _modeName => switch (_mode) { 'a' => '전체', 'h' => '보유중', _ => '완료' };
 
   @override
   bool get wantKeepAlive => true;
@@ -59,7 +61,8 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
     final sum = <String, _Sum>{};
     for (final d in pick) {
       for (final e in asMap(grid[d]).entries) {
-        final m = asMap(asMap(e.value)[_mode]);
+       for (final md in _modes) {
+        final m = asMap(asMap(e.value)[md]);
         if (m.isEmpty) continue;
         for (final key in keyOf(e.key)) {
           final s = sum.putIfAbsent(key, () => {'n': 0, 'f': 0, 'p': 0.0});
@@ -78,6 +81,7 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
             }
           }
         }
+       }
       }
     }
     return sum;
@@ -123,8 +127,8 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
               _ => '전체 기간',
             };
             showRecDetail(context,
-                title: '$title · $per · ${_mode == 'd' ? '완료' : '보유중'}',
-                test: (r) => inPeriod('${r['d']}') && ((r['dn'] == true) == (_mode == 'd')) && pass(r));
+                title: '$title · $per · $_modeName',
+                test: (r) => inPeriod('${r['d']}') && (_mode == 'a' || (r['dn'] == true) == (_mode == 'd')) && pass(r));
           }
 
           // 점수대·구분별 (키 '90|v3' → 그 키 + '90|all')
@@ -335,7 +339,7 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
       ]),
       Row(mainAxisSize: MainAxisSize.min, children: [
         label('매매구분'),
-        seg(const [('d', '완료'), ('h', '보유중')], _mode, (v) => _mode = v),
+        seg(const [('a', '전체'), ('d', '완료'), ('h', '보유중')], _mode, (v) => _mode = v),
       ]),
     ]);
   }
@@ -474,13 +478,15 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
     final nx = <String, List<int>>{};
     for (final d in nxg.keys.where(inPeriod)) {
       for (final e in asMap(nxg[d]).entries) {
-        final v = asMap(e.value)[_mode];
-        if (v is! List || v.length < 4) continue;
         if (!_dtBands.contains(int.tryParse(e.key))) continue;
-        for (final k in [e.key, 'all']) {
-          final cur = nx.putIfAbsent(k, () => [0, 0, 0, 0]);
-          for (var j = 0; j < 4; j++) {
-            cur[j] += (v[j] as num).toInt();
+        for (final md in _modes) {
+          final v = asMap(e.value)[md];
+          if (v is! List || v.length < 4) continue;
+          for (final k in [e.key, 'all']) {
+            final cur = nx.putIfAbsent(k, () => [0, 0, 0, 0]);
+            for (var j = 0; j < 4; j++) {
+              cur[j] += (v[j] as num).toInt();
+            }
           }
         }
       }

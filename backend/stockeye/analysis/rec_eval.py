@@ -396,6 +396,22 @@ def dt_ix(sb, today: str, days: int = 10) -> dict:
     return track_extra(sb, "daytrade", today, lambda t: t.get("ix"), IX_FILE, days)
 
 
+IX_FILES = {"daytrade": IX_FILE, "closingbet": "stats/cb_ix.json", "limitcatch": "stats/lc_ix.json"}
+
+
+def all_ix(sb, today: str, days: int = 10) -> dict:
+    """장중 3개 탭(당일단타·종가배팅·상한가포착)의 매수·매도 순간 지수 → {구분: {날짜: {종목: ix}}}
+    각각 Storage stats/*_ix.json 에 날마다 모아 둠 (추적 기록이 지워져도 남음)"""
+    out = {}
+    for kind, file in IX_FILES.items():
+        try:
+            out[kind] = track_extra(sb, kind, today, lambda t: t.get("ix"), file, days)
+        except Exception as e:  # noqa: BLE001
+            log.warning("%s 지수 기록 읽기 실패: %s", kind, e)
+            out[kind] = {}
+    return out
+
+
 NX_FILE = "stats/cb_nxt.json"
 
 
@@ -430,6 +446,35 @@ def grid_nx(rows: list[dict], nx: dict) -> dict:
     return out
 
 
+DETAIL_KEY = "RECS_DETAIL"
+DETAIL_DAYS = 150
+
+
+def detail(rows: list[dict], ix_all: dict | None = None, today: str | None = None) -> list[dict]:
+    """통계 표에서 추천건수를 눌렀을 때 보여 줄 종목별 목록 (표에 들어가는 것과 같은 조건: 60점↑ · 표 구분 · 결과 칸 있음)
+    짧은 키: d 날짜 · k 구분 · c 종목코드 · n 이름 · s 점수 · b 점수대 · tb 매수시간대 · t 포착시각 · st 결과 · cat 표 칸 ·
+             p 손익% · dn 끝남 · dy 보유일 · ix 매수·매도 순간 지수"""
+    cut = None
+    if today:
+        cut = (pd.Timestamp(today) - pd.Timedelta(days=DETAIL_DAYS)).strftime("%Y-%m-%d")
+    out = []
+    for r in rows:
+        d = str(r["rec_date"])[:10]
+        b, k, c = band_of(r.get("score")), r.get("kind"), cat_of(r.get("res_status"))
+        if b is None or k not in GRID_KINDS or c is None or (cut and d < cut):
+            continue
+        x = (((ix_all or {}).get(k) or {}).get(d) or {}).get(r.get("code"))
+        row = {"d": d, "k": k, "c": r.get("code"), "n": r.get("name") or r.get("code"), "s": _f(r.get("score")), "b": b,
+               "t": str(r.get("rec_time") or "")[:5] or None,
+               "tb": time_bucket(r.get("rec_time")) if k == "daytrade" else None,
+               "st": (r.get("res_status") or "").split(" · ")[0].strip(), "cat": c, "p": _f(r.get("res_pnl")),
+               "dn": bool(r.get("res_done")), "dy": int(_f(r.get("res_days")) or 0) or None}
+        if x:
+            row["ix"] = x
+        out.append(row)
+    return out
+
+
 def _group(rows, f):
     out: dict[str, list] = {}
     for r in rows:
@@ -439,13 +484,10 @@ def _group(rows, f):
 
 def publish(sb, today: str | None = None) -> dict:
     from ..cloud import publish as pub
-    rows = select_all(sb, {"select": "rec_date,kind,code,score,rec_time," + ",".join(RES_COLS)})
+    rows = select_all(sb, {"select": "rec_date,kind,code,name,score,rec_time," + ",".join(RES_COLS)})
     day = today or pd.Timestamp.now(tz="Asia/Seoul").strftime("%Y-%m-%d")
-    try:
-        ix = dt_ix(sb, day)
-    except Exception as e:  # noqa: BLE001
-        log.warning("당일단타 지수 기록 읽기 실패: %s", e)
-        ix = {}
+    ix_all = all_ix(sb, day)
+    ix = ix_all.get("daytrade") or {}
     try:
         nx = cb_nx(sb, day)
     except Exception as e:  # noqa: BLE001
@@ -453,6 +495,10 @@ def publish(sb, today: str | None = None) -> dict:
         nx = {}
     out = summarize(rows, ix, nx)
     pub.publish_backtest(sb, KEY, "추천주 검증", out)
+    try:   # 표의 추천건수를 눌렀을 때 보는 종목별 목록 (앱이 눌렀을 때만 받음)
+        pub.publish_backtest(sb, DETAIL_KEY, "추천주 상세", {"updated": out["updated"], "rows": detail(rows, ix_all, day)})
+    except Exception as e:  # noqa: BLE001
+        log.warning("추천 상세 목록 올리기 실패: %s", e)
     return out
 
 

@@ -147,3 +147,32 @@ def test_grid_nx():
     nx = {"2026-10-15": {"A": {"a": 1.2, "p": -0.5}, "B": {"a": 2, "p": 2}, "C": {"a": -0.3, "p": None}}}
     assert re_.grid_nx(rows, nx) == {"2026-10-15": {"80": {"d": [2, 1, 1, 0]}}}
 
+
+
+def test_detail_list_and_all_ix():
+    from stockeye.analysis import rec_eval as re_
+    rows = [{"rec_date": "2026-10-16", "kind": "daytrade", "code": "A", "name": "에이", "score": 91, "rec_time": "09:12",
+             "res_status": "1차 목표 · 보유중", "res_done": False, "res_pnl": 1.0, "res_days": 1},
+            {"rec_date": "2026-10-16", "kind": "closingbet", "code": "B", "name": "비", "score": 82, "rec_time": "14:55",
+             "res_status": "손절", "res_done": True, "res_pnl": -1.5, "res_days": 2},
+            {"rec_date": "2026-10-16", "kind": "v3", "code": "C", "name": "씨", "score": 55, "res_status": "손절"},          # 60점 미만 → 제외
+            {"rec_date": "2026-10-16", "kind": "v3", "code": "D", "name": "디", "score": 85, "res_status": "계획 없음"},     # 결과 없음 → 제외
+            {"rec_date": "2025-01-02", "kind": "v3", "code": "E", "name": "이", "score": 85, "res_status": "손절"}]           # 150일 지남 → 제외
+    ix = {"daytrade": {"2026-10-16": {"A": {"buy": [0.5, None, "09:12", "KOSPI"]}}}}
+    d = re_.detail(rows, ix, "2026-10-17")
+    assert [(x["c"], x["st"], x["cat"], x["tb"], x["b"]) for x in d] == [("A", "1차 목표", "t1", "09:10", 90), ("B", "손절", "stop", None, 80)]
+    assert d[0]["ix"]["buy"][0] == 0.5 and "ix" not in d[1] and d[0]["dn"] is False and d[1]["dy"] == 2
+
+    class Sb:
+        def __init__(self): self.files = {}
+        def download(self, f):
+            if f.startswith("track/"):
+                if f.endswith("2026-10-16.json"):
+                    return json.dumps({"tracks": {"B": {"ix": {"buy": [1.0, 2.0, "14:55", "KOSDAQ"]}}, "Z": {}}}).encode()
+                raise FileNotFoundError(f)
+            return self.files.get(f)
+        def upload(self, f, b, ct): self.files[f] = b
+    sb = Sb()
+    out = re_.all_ix(sb, "2026-10-17")
+    assert out["closingbet"]["2026-10-16"] == {"B": {"buy": [1.0, 2.0, "14:55", "KOSDAQ"]}}
+    assert set(sb.files) == {"stats/dt_ix.json", "stats/cb_ix.json", "stats/lc_ix.json"}

@@ -61,6 +61,7 @@ class AppMenu extends StatelessWidget {
         if (useCloud) const PopupMenuItem(value: 'logout', child: Text('로그아웃')),
         const PopupMenuDivider(),
         PopupMenuItem(enabled: false, child: Text(versionText, style: Theme.of(context).textTheme.bodySmall)),
+        PopupMenuItem(enabled: false, height: 24, child: Text(copyrightText, style: Theme.of(context).textTheme.bodySmall)),
       ],
     );
   }

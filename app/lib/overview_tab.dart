@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'format.dart';
+import 'rec_detail.dart';
 
 /// 통계 > 전체현황 · 당일단타 (2026-10-15)
 ///   전체현황: 점수대(90~ · 80~ · 70~ · 60~) × 구분별 추천 결과 표
@@ -86,7 +87,10 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
   Widget build(BuildContext context) {
     super.build(context);
     return RefreshIndicator(
-      onRefresh: () async => setState(() => _f = _load()),
+      onRefresh: () async {
+        RecDetail.reset();
+        setState(() => _f = _load());
+      },
       notificationPredicate: (n) => n.metrics.axis == Axis.vertical, // 표 안쪽(옆 스크롤 속) 세로 스크롤로 당겨서 새로고침
       child: FutureBuilder<Json>(
         future: _f,
@@ -110,6 +114,19 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
                 _ => true,
               };
           final pick = dates.where(inPeriod).toList();
+          // 추천건수를 누르면 그 칸의 종목·상태 목록 (고른 기간 · 완료/보유중 그대로)
+          void open(String title, bool Function(Json r) pass) {
+            final per = switch (_period) {
+              'year' => '${_year ?? ''}년',
+              'month' => _month == null ? '' : '${_month!.substring(0, 4)}년 ${int.parse(_month!.substring(5))}월',
+              'day' => _day ?? '',
+              _ => '전체 기간',
+            };
+            showRecDetail(context,
+                title: '$title · $per · ${_mode == 'd' ? '완료' : '보유중'}',
+                test: (r) => inPeriod('${r['d']}') && ((r['dn'] == true) == (_mode == 'd')) && pass(r));
+          }
+
           // 점수대·구분별 (키 '90|v3' → 그 키 + '90|all')
           final sum = _sumUp(grid, pick, (k) => [k, '${k.split('|').first}|all']);
           final note = Text(
@@ -124,7 +141,7 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
             ]),
           );
           final filters = _filters(context, years, months, dates);
-          if (widget.closingbet) return _closingbet(context, filters, empty, dates.isEmpty, sum, asMap(data['cb_nx']), inPeriod);
+          if (widget.closingbet) return _closingbet(context, filters, empty, dates.isEmpty, sum, asMap(data['cb_nx']), inPeriod, open);
           if (!widget.daytrade) {
             // 틀 고정: 검색 줄 + 표 머리는 그대로, 아래 표만 위아래로 스크롤 (옆으로는 머리·표가 같이 움직임)
             const tableW = _wScore + _wKind + _wFill + _metricsW;
@@ -151,7 +168,9 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
                                 for (final b in _bands)
                                   _group(context, '$b~', _wScore, [
                                     for (final (i, (k, name)) in [('all', '전체'), ..._kinds].indexed)
-                                      _row(context, [(name, _wKind, true)], sum['$b|$k'], i, k == 'all', fill: true),
+                                      _row(context, [(name, _wKind, true)], sum['$b|$k'], i, k == 'all',
+                                          fill: true,
+                                          onCount: () => open('$b~ · $name', (r) => r['b'] == b && (k == 'all' || r['k'] == k))),
                                   ]),
                                 const SizedBox(height: 8),
                                 note,
@@ -200,7 +219,9 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
                           for (final (i, (b, name)) in [(0, '전체'), for (final b in _dtBands) (b, '$b~')].indexed)
                             _row(context, [(name, _wScore, false)], b == 0 ? _total(sum, 'daytrade') : sum['$b|daytrade'], i,
                                 b == 0,
-                                fill: true),
+                                fill: true,
+                                onCount: () => open('당일단타 · $name',
+                                    (r) => r['k'] == 'daytrade' && (b == 0 ? _dtBands.contains(r['b']) : r['b'] == b))),
                         ]),
                       ),
                       title('매수시간별', '포착(매수) 시각 10분 단위 × 점수 (80점 이상)'),
@@ -227,7 +248,9 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
                             _group(context, tb == '10:00' ? '10:00\n~' : '$tb\n~\n${_next(tb)}', _wTime, [ // 3줄: 09:00 / ~ / 09:10
                               for (final (i, (b, name)) in [(0, '전체'), for (final b in _dtBands) (b, '$b~')].indexed)
                                 _row(context, [(name, _wScore, false)], b == 0 ? tsum['$tb|all'] : tsum['$tb|$b'], i, b == 0,
-                                    ix: true),
+                                    ix: true,
+                                    onCount: () => open('당일단타 · $tb~${_next(tb)} · $name',
+                                        (r) => r['k'] == 'daytrade' && r['tb'] == tb && (b == 0 ? _dtBands.contains(r['b']) : r['b'] == b))),
                             ], rowH: _rowH * 2),
                         ]),
                       ),
@@ -377,7 +400,7 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
   /// ix=true (매수시간별): 2줄 — 둘째 줄 추천건수 밑 '매수 때 종합지수 + 비율 | 업종지수 + 비율',
   ///   결과 칸 밑 '매수 대비 그 순간 종합 | 업종 변화 (평균 %)'
   Widget _row(BuildContext context, List<(String, double, bool)> leads, _Sum? s, int i, bool total,
-      {bool fill = false, bool ix = false, bool countFilled = false, List<String> extras = const []}) {
+      {bool fill = false, bool ix = false, bool countFilled = false, List<String> extras = const [], VoidCallback? onCount}) {
     final base = Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 12, fontWeight: total ? FontWeight.bold : null);
     final bg = total
         ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.10)
@@ -408,22 +431,29 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
       return '${x[3] == 0 ? '-' : sg(x[2] / x[3])} | ${x[5] == 0 ? '-' : sg(x[4] / x[5])}';
     }
 
-    Widget c(String text, double w, {Color? color, Alignment al = Alignment.center, String? sub}) => _box(
-        context,
-        w,
-        ix ? _rowH * 2 : _rowH,
-        ix
-            ? Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center, children: [
-                Text(text, style: base?.copyWith(color: color), maxLines: 1, overflow: TextOverflow.ellipsis),
-                if (sub != null) Text(sub, style: subSt, maxLines: 1, overflow: TextOverflow.ellipsis),
-              ])
-            : Text(text, style: base?.copyWith(color: color), maxLines: 1, overflow: TextOverflow.ellipsis),
-        bg: bg,
-        al: al,
-        pad: al == Alignment.centerLeft ? const EdgeInsets.only(left: 8) : EdgeInsets.zero);
+    Widget c(String text, double w, {Color? color, Alignment al = Alignment.center, String? sub, VoidCallback? onTap}) {
+      final tap = onTap != null;
+      final mainSt = base?.copyWith(
+          color: tap ? Theme.of(context).colorScheme.primary : color, decoration: tap ? TextDecoration.underline : null);
+      final box = _box(
+          context,
+          w,
+          ix ? _rowH * 2 : _rowH,
+          ix
+              ? Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.center, children: [
+                  Text(text, style: mainSt, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  if (sub != null) Text(sub, style: subSt, maxLines: 1, overflow: TextOverflow.ellipsis),
+                ])
+              : Text(text, style: mainSt, maxLines: 1, overflow: TextOverflow.ellipsis),
+          bg: bg,
+          al: al,
+          pad: al == Alignment.centerLeft ? const EdgeInsets.only(left: 8) : EdgeInsets.zero);
+      return tap ? InkWell(onTap: onTap, child: box) : box;
+    }
+
     return Row(children: [
       for (final (text, w, left) in leads) c(text, w, al: left ? Alignment.centerLeft : Alignment.center),
-      c(countFilled ? '$f' : '$n', _wN, sub: ix ? upRate() : null),
+      c(countFilled ? '$f' : '$n', _wN, sub: ix ? upRate() : null, onTap: (countFilled ? f : n) > 0 ? onCount : null),
       if (fill) c(n == 0 ? '-' : pc(f / n * 100), _wFill),
       c(cat('t1'), _wCat, color: f > 0 ? upColor : null, sub: ix ? ixMove('t1') : null),
       c(cat('t2'), _wCat, color: f > 0 ? upColor : null, sub: ix ? ixMove('t2') : null),
@@ -439,7 +469,7 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
   // ---------------------------------------------------------------- 통계 > 종가배팅 (2026-10-15)
   /// 점수대별 종가배팅(산 것) 결과 + NXT 애프터마켓(매수 날 저녁) · 프리마켓(다음 날 08:00~08:50) 상승 비율
   Widget _closingbet(BuildContext context, Widget filters, Widget empty, bool noData, Map<String, _Sum> sum, Json nxg,
-      bool Function(String) inPeriod) {
+      bool Function(String) inPeriod, void Function(String, bool Function(Json)) open) {
     // NXT: {날짜: {"90": {"d": [애프터 수, 애프터 +, 프리 수, 프리 +]}}} → 점수대별·전체 합
     final nx = <String, List<int>>{};
     for (final d in nxg.keys.where(inPeriod)) {
@@ -479,6 +509,13 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
                       _row(context, [(name, _wScore, false)], b == 0 ? _total(sum, 'closingbet') : sum['$b|closingbet'], i,
                           b == 0,
                           countFilled: true,
+                          onCount: () => open(
+                              '종가배팅 · $name',
+                              (r) =>
+                                  r['k'] == 'closingbet' &&
+                                  r['cat'] != 'unfilled' &&
+                                  r['cat'] != 'wait' &&
+                                  (b == 0 ? _dtBands.contains(r['b']) : r['b'] == b)),
                           extras: [rate(nx[b == 0 ? 'all' : '$b'], 0), rate(nx[b == 0 ? 'all' : '$b'], 2)]),
                   ]),
                 ),

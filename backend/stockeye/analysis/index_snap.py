@@ -70,6 +70,10 @@ class IndexSnap:
             self._idx = (time.time(), m)
         return m
 
+    def has_sector(self, code: str) -> bool:
+        """업종 지수를 만들 수 있는 종목인가 (업종 표에 있고 같은 업종 종목이 있음)"""
+        return bool(members(code, self.sec_of, self.caps))
+
     def snap(self, code: str) -> list | None:
         """[종합 %, 업종 %, 시장] — 못 받으면 None 칸"""
         mk = str(self.market.get(code) or "KOSPI").upper()

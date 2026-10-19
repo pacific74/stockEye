@@ -10,6 +10,9 @@ const appBuild = String.fromEnvironment('APP_BUILD');
 const appBuildTime = String.fromEnvironment('APP_TIME');
 const appCommit = String.fromEnvironment('APP_COMMIT');
 
+/// 저작권 (프로필 메뉴의 버전 밑 · 앱·웹 공통)
+const copyrightText = '© 왕대박';
+
 /// 예: "v0.1.0 · 빌드 #57 · 10/08 17:30"
 String get versionText {
   if (appBuild.isEmpty) return 'v$appVersion · 개발 빌드';

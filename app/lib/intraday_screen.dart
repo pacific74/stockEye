@@ -757,7 +757,7 @@ class _PreSectionState extends State<_PreSection> {
                   if (r['limit'] is num && r['price'] is num)
                     chip('상한가 ${num0(r['limit'] as num)} (+${(((r['limit'] as num) / (r['price'] as num) - 1) * 100).toStringAsFixed(1)}% 남음)',
                         Colors.grey),
-                  for (final s in asList(r['reasons']).map((e) => '$e')) chip(s, upColor),
+                  for (final s in (r['reasons'] as List? ?? const []).map((e) => '$e')) chip(s, upColor),   // 글자 목록 — asList(맵 변환) 쓰면 오류 → 회색 박스
                   for (final s in (r['warn'] as List? ?? const []).map((e) => '$e')) chip(s, Colors.orange),
                 ]),
               ]),

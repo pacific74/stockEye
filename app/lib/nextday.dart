@@ -7,11 +7,11 @@ import 'reversal.dart';
 import 'screens/stock_detail_screen.dart';
 import 'widgets/common.dart';
 
-/// 익일 유망주 V1 (실험 탭 · 관찰용) — 장 마감 데이터로 다음 거래일 움직임 후보
+/// 유망주 V1 (실험 탭 · 관찰용) — 장 마감 데이터로 다음 거래일 움직임 후보
 ///   A 추세 25 · B 거래량 20 · C 가격 구조 20 · D 변동성 15 · E 시장 대비 10 · F 재료·위험 10
 ///   등급 A 80↑ 우선 관찰 · B 70~79 관심 · C 60~69 보조. 전날 점수와 장중 상태는 따로 보여줌.
 
-const nextdayKind = ExpKind('nextday', '익일 유망주', ['trendA', 'volB', 'priceC', 'movD', 'rsE', 'newsF'],
+const nextdayKind = ExpKind('nextday', '유망주', ['trendA', 'volB', 'priceC', 'movD', 'rsE', 'newsF'],
     '기준 사이를 직선으로 이어 소수점까지 계산 · A 80↑ 우선 관찰 · B 70~79 관심 · C 60~69 보조 · 관찰용 (갭 추격 매수 아님)');
 
 Color gradeColor(String? g) => switch (g) {

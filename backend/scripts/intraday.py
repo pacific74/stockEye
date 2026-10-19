@@ -98,7 +98,7 @@ def main():
             attach_portfolio(report, pit, DataSync(store, sb), record=False, eligible=getattr(res, "v3_eligible", None))
         except Exception as e:  # noqa: BLE001
             log.warning("V3 모의 보유 계산 실패: %s", e)
-    # 익일 유망주: 전날 장 마감 점수는 그대로, 지금 시세로 상태(갭 추격 금지·돌파·무효화)만 따로
+    # 유망주: 전날 장 마감 점수는 그대로, 지금 시세로 상태(갭 추격 금지·돌파·무효화)만 따로
     try:
         from stockeye.engine.nextday_report import carry_over
         carry_over(report, DataSync(store, sb).get_json("reports/latest.json"), bars, hm)
@@ -107,7 +107,7 @@ def main():
         ul_carry(report, DataSync(store, sb).get_json("reports/latest.json"), bars, hm)
         res.uplimit_scores = None
     except Exception as e:  # noqa: BLE001
-        log.warning("익일 유망주 장중 상태 실패: %s", e)
+        log.warning("유망주 장중 상태 실패: %s", e)
         report.get("strategies", {}).pop("nextday", None)
     report["intraday"] = {"time": hm, "coverage": round(cov, 3)}
     try:                                      # 장중 지수·업종 급락 경고 (이어받은 후보에도 다시 붙임)

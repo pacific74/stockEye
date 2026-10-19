@@ -247,3 +247,28 @@ def test_pack_bars_today_last_n():
     out = it.pack_bars(b)
     assert len(out) == it.BARS_KEEP and out[-1] == ["11:09", 10.0, 12.0, 9.0, 11.0, 100]
     assert it.pack_bars(None) == []
+
+
+def test_record_index_retries_until_both(monkeypatch):
+    """지수를 못 받으면(업종 없음) 다시 시도해서 둘 다 받으면 저장"""
+    import threading
+    import scripts.intraday_live as il
+    monkeypatch.setattr(il.time, "sleep", lambda s: None)
+    calls = []
+
+    class Snap:
+        def has_sector(self, c): return True
+        def snap(self, c):
+            calls.append(c)
+            return [0.5, None, "KOSPI"] if len(calls) < 3 else [0.5, 0.2, "KOSPI"]
+
+    class Tr:
+        kind = "daytrade"; lock = threading.Lock()
+        def save(self): pass
+        def live_row(self, t): return {}
+    live = il.Live(None, [], background=False)
+    live.snap = Snap()
+    t = {"code": "A", "date": "2026-10-19", "time": "09:10", "buy_time": "09:10"}
+    live.record_index(Tr(), t, "매수발생")
+    live.q.get()()
+    assert len(calls) == 3 and t["ix"]["buy"] == [0.5, 0.2, "09:10", "KOSPI"]

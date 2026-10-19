@@ -131,7 +131,15 @@ class Live:
         hm = (t.get("buy_time") or t.get("time")) if key == "buy" else (t["events"][-1]["time"] if t.get("events") else "")
 
         def job():
-            v = self.snap.snap(t["code"])
+            # 일시적으로 못 받으면(네이버 한도·끊김) 최대 3번 — 종합·업종 둘 다 받을 때까지 (업종은 업종 종목이 있을 때만)
+            has_sec = getattr(self.snap, "has_sector", lambda c: False)(t["code"])
+            v = None
+            for i in range(3):
+                v = self.snap.snap(t["code"])
+                if v and v[0] is not None and (v[1] is not None or not has_sec):
+                    break
+                if i < 2:
+                    time.sleep(1.5)
             if not v:
                 return
             with tracker.lock:

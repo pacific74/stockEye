@@ -11,7 +11,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15p
 .app{max-width:520px;margin:0 auto;padding-inline:16px;padding-block:calc(28px + env(safe-area-inset-top,0px)) 24px;min-height:100%;display:flex;flex-direction:column;gap:22px}
 h1{margin:0;font-family:var(--serif);font-weight:900;font-size:44px;line-height:1.05;letter-spacing:-.02em}
 h1 span{display:block;font-size:14px;letter-spacing:.3em;color:var(--brass);font-weight:600;margin-bottom:10px}
-.lead{margin:8px 0 0;color:var(--muted);font-size:22px;font-weight:700;line-height:1.4}
+.lead{margin:8px 0 0;color:var(--muted);font-size:30px;font-weight:700;line-height:1.4}
 .games{display:flex;flex-direction:column;gap:14px}
 .card{display:grid;grid-template-columns:96px 1fr;gap:16px;align-items:center;padding:16px;border-radius:16px;border:1px solid var(--line);background:var(--panel);color:inherit;text-decoration:none;transition:border-color .15s}
 .card:active{transform:translateY(1px)}
@@ -60,7 +60,7 @@ h1 span{display:block;font-size:14px;letter-spacing:.3em;color:var(--brass);font
   .info h2{font-size:clamp(26px,2.4vw,40px)!important}
   .info p,.rec{font-size:clamp(14px,1.2vw,19px)!important;justify-content:center}
   h1{font-size:clamp(40px,4vw,68px)!important}
-  .lead{font-size:clamp(20px,2vw,28px)!important}.foot{font-size:clamp(15px,1.3vw,20px)!important}
+  .lead{font-size:clamp(24px,2.6vw,36px)!important}.foot{font-size:clamp(15px,1.3vw,20px)!important}
 }
 @media (min-width:1400px){.art{zoom:1.7}}
 </style></head><body>
@@ -84,7 +84,7 @@ h1 span{display:block;font-size:14px;letter-spacing:.3em;color:var(--brass);font
     <a class="card" href="puzzle.html"><span class="art puz"><span></span><span></span><span></span><span></span><span class="e"></span><span></span><span></span><span></span><span></span></span>
       <span class="info"><h2>퍼즐</h2><p>그림 조각 · 숫자 밀기</p><span class="rec" id="r-puzzle"></span></span></a>
   </nav>
-  <p class="foot">전적은 이 브라우저에만 저장됩니다. 브라우저 방문 기록(사이트 데이터)을 지우면 기록도 함께 지워집니다.<br><span class="ver">버전 4.8 · © 왕대박</span><br><a href="/games/downloads/" style="color:var(--brass,#d3a74d)">다운로드 (APK · 윈도우 · PC)</a></p>
+  <p class="foot">전적은 이 브라우저에만 저장됩니다. 브라우저 방문 기록(사이트 데이터)을 지우면 기록도 함께 지워집니다.<br><span class="ver">버전 4.9 · © 왕대박</span><br><a href="/games/downloads/" style="color:var(--brass,#d3a74d)">다운로드 (APK · 윈도우 · PC)</a></p>
 </div>
 <script>
 function load(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}

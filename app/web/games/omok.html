@@ -1,5 +1,3 @@
-<!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}</style></head><body>
 <title>오목 한판</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -202,7 +200,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
   <div class="hero">
     <div>
       <h1><span>五 目</span>오목 한판</h1>
-      <p>15줄 판에서 다섯 알을 먼저 잇는 쪽이 이깁니다.</p>
+      <p>19줄 판에서 다섯 알을 먼저 잇는 쪽이 이깁니다.</p>
     </div>
     <svg class="mini-board" id="mini" viewBox="0 0 620 620" aria-hidden="true"></svg>
   </div>
@@ -215,7 +213,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
     <button class="btn" id="btn-online"><span class="stone b">網</span><span class="t">온라인 대전 · 인터넷으로 두기<small>방 번호로 멀리 있는 친구와 둡니다</small></span></button>
     <button class="btn" id="btn-stats"><span class="stone w">戰</span><span class="t">전적 · 승률<small>난이도별 기록과 최근 대국</small></span></button>
   </div>
-  <p class="footnote">기록은 이 기기에만 저장됩니다. 앱이나 사이트 데이터를 지우면 함께 지워집니다.<br><span class="ver">버전 4.8 · © 왕대박</span></p>
+  <p class="footnote">기록은 이 기기에만 저장됩니다. 앱이나 사이트 데이터를 지우면 함께 지워집니다.<br><span class="ver">버전 4.9 · © 왕대박</span></p>
 </section>
 
 <section id="setup1" hidden>
@@ -461,7 +459,7 @@ var HINT='한 수에 쓸 수 있는 시간입니다. 시간이 지나면 10초 �
 return {Clock:Clock,seg:seg,label:label,HINT:HINT,speak:speak};
 })();
 </script>
-<script type="text/plain" id="engine-src">var N=15,NN=225,BLACK=1,WHITE=2;
+<script type="text/plain" id="engine-src">var N=19,NN=361,BLACK=1,WHITE=2;
 var DIRS=[[0,1],[1,0],[1,1],[1,-1]];
 var WIN=10000000;
 var WINDOWS=[];
@@ -569,7 +567,7 @@ function think(board,side,level,rule33){
 (function(){
 const SRC=document.getElementById('engine-src').textContent;
 const EN=new Function(SRC+'\nreturn {think:think,isWin:isWin,isForbidden:isForbidden,winLine:winLine,nearEmpties:nearEmpties};')();
-const N=15,BLACK=1,WHITE=2,NAME={1:'흑',2:'백'};
+const N=19,BLACK=1,WHITE=2,NAME={1:'흑',2:'백'};
 const kyu=l=>(11-l)+'급';
 const lvDesc=l=>l<=2?'입문 · 막을 곳을 자주 놓칩니다':l<=4?'초급 · 눈앞의 수만 봅니다':l<=6?'중급 · 공격과 수비를 고릅니다':l<=8?'고급 · 몇 수 앞을 읽습니다':'최상급 · 생각이 오래 걸립니다';
 const $=id=>document.getElementById(id);
@@ -596,34 +594,34 @@ function clack(){if(!prefs.sound)return;try{actx=actx||new(window.AudioContext||
   src.connect(f);f.connect(actx.destination);src.start();}catch(e){}}
 
 /* board drawing */
-const X=c=>30+c*40;
+const SP=560/(N-1),X=c=>30+c*SP,RS=SP*0.4625,RW=SP*0.525;
 function boardSVG(b,o,id){o=o||{};
   let s=`<defs><radialGradient id="${id}B" cx=".35" cy=".3" r=".75"><stop offset="0" stop-color="#666"/><stop offset=".55" stop-color="#1a1a1a"/><stop offset="1" stop-color="#050505"/></radialGradient><radialGradient id="${id}W" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff"/><stop offset=".7" stop-color="#e6e0d2"/><stop offset="1" stop-color="#bdb6a6"/></radialGradient></defs>`;
   s+='<rect x="0" y="0" width="620" height="620" rx="10" fill="#6b4420"/><rect x="5" y="5" width="610" height="610" rx="7" fill="#dcae66"/><path d="M5 150C200 128 420 176 615 146M5 330C180 312 420 356 615 322M5 500C220 484 400 520 615 492" stroke="#c9954f" stroke-width="12" fill="none" opacity=".16"/>';
   let g='';for(let i=0;i<N;i++){g+=`M30 ${X(i)}H590M${X(i)} 30V590`;}
   s+=`<path d="${g}" stroke="#4f3014" stroke-width="1.4" fill="none"/><rect x="30" y="30" width="560" height="560" fill="none" stroke="#4f3014" stroke-width="2.6"/>`;
-  [[3,3],[3,11],[7,7],[11,3],[11,11]].forEach(([r,c])=>s+=`<circle cx="${X(c)}" cy="${X(r)}" r="4.5" fill="#4f3014"/>`);
+  [[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]].forEach(([r,c])=>s+=`<circle cx="${X(c)}" cy="${X(r)}" r="4.5" fill="#4f3014"/>`);
   if(o.forbid)o.forbid.forEach(i=>{const x=X(i%N),y=X(i/N|0);s+=`<path d="M${x-7} ${y-7}L${x+7} ${y+7}M${x+7} ${y-7}L${x-7} ${y+7}" stroke="#b3261e" stroke-width="3" stroke-linecap="round"/>`;});
   const wl=new Set(o.winLine||[]);
-  for(let i=0;i<225;i++){const v=b[i];if(!v)continue;const x=X(i%N),y=X(i/N|0);
-    s+=`<circle cx="${x}" cy="${y+2}" r="18.5" fill="#0005"/><circle cx="${x}" cy="${y}" r="18.5" fill="url(#${id}${v===1?'B':'W'})"/>`;
-    if(wl.has(i))s+=`<circle cx="${x}" cy="${y}" r="21" fill="none" stroke="#d3a74d" stroke-width="3.5"/>`;}
+  for(let i=0;i<N*N;i++){const v=b[i];if(!v)continue;const x=X(i%N),y=X(i/N|0);
+    s+=`<circle cx="${x}" cy="${y+2}" r="${RS}" fill="#0005"/><circle cx="${x}" cy="${y}" r="${RS}" fill="url(#${id}${v===1?'B':'W'})"/>`;
+    if(wl.has(i))s+=`<circle cx="${x}" cy="${y}" r="${RW}" fill="none" stroke="#d3a74d" stroke-width="3.5"/>`;}
   if(o.last!=null&&o.last>=0){const x=X(o.last%N),y=X(o.last/N|0);s+=`<circle cx="${x}" cy="${y}" r="5" fill="#e0402f"/>`;}
-  if(o.ghost!=null&&o.ghost>=0){const x=X(o.ghost%N),y=X(o.ghost/N|0);s+=`<circle cx="${x}" cy="${y}" r="18.5" fill="url(#${id}${o.ghostSide===1?'B':'W'})" opacity=".55"/><circle cx="${x}" cy="${y}" r="21" fill="none" stroke="#1c1507" stroke-width="2.5" stroke-dasharray="5 4"/>`;}
+  if(o.ghost!=null&&o.ghost>=0){const x=X(o.ghost%N),y=X(o.ghost/N|0);s+=`<circle cx="${x}" cy="${y}" r="${RS}" fill="url(#${id}${o.ghostSide===1?'B':'W'})" opacity=".55"/><circle cx="${x}" cy="${y}" r="${RW}" fill="none" stroke="#1c1507" stroke-width="2.5" stroke-dasharray="5 4"/>`;}
   return s;}
 
 /* game */
 let G=null,b=null,hist=[],turn=BLACK,ghost=-1,thinking=false,reqId=0,win=null;
 function startGame(cfg){G={mode:cfg.mode,level:cfg.level||0,human:cfg.human||BLACK,rule33:cfg.rule33,tl:cfg.tl||0,moves:[],t:Date.now(),over:null};
-  b=new Int8Array(225);hist=[];turn=BLACK;ghost=-1;win=null;thinking=false;mkClock();persist();show('game');renderGame();maybeAI();}
+  b=new Int8Array(N*N);hist=[];turn=BLACK;ghost=-1;win=null;thinking=false;mkClock();persist();show('game');renderGame();maybeAI();}
 function persist(){if(G&&G.mode==='online')return;save(KEY.cur,G&&!G.over?{mode:G.mode,level:G.level,human:G.human,rule33:G.rule33,tl:G.tl||0,moves:G.moves,t:G.t}:null);}
-function resume(){const s=load(KEY.cur,null);if(!s)return;G=Object.assign({over:null},s);b=new Int8Array(225);hist=[];turn=BLACK;
+function resume(){const s=load(KEY.cur,null);if(!s)return;G=Object.assign({over:null},s);b=new Int8Array(N*N);hist=[];turn=BLACK;
   G.moves.forEach(m=>{b[m]=turn;hist.push(m);turn=3-turn;});ghost=-1;win=null;thinking=false;mkClock();show('game');renderGame();maybeAI();}
 const isHumanTurn=()=>G&&!G.over&&!G.undoWait&&(G.mode==='2p'||turn===G.human);
 function forbidden(i,side){return G.rule33&&!b[i]&&(b[i]=side,(()=>{const f=EN.isForbidden(b,i,side,true)&&!EN.isWin(b,i);b[i]=0;return f;})());}
 function place(i,remote){const side=turn;b[i]=side;hist.push(i);G.moves.push(i);ghost=-1;clack();if(G.mode==='online'&&!remote)ON.send({p:i});
   if(EN.isWin(b,i)){win=EN.winLine(b,i);return endGame(side,'오목 완성');}
-  if(hist.length>=225)return endGame(0,'판이 가득 참');
+  if(hist.length>=N*N)return endGame(0,'판이 가득 참');
   turn=3-side;persist();renderGame();maybeAI();}
 function endGame(winner,reason){G.over={winner,reason};thinking=false;reqId++;const online=G.mode==='online';if(online&&ON)ON.finish();
   records.push({t:Date.now(),mode:G.mode,level:G.level,human:G.human,winner,reason,moves:G.moves.length,rule33:G.rule33,opp:online?oppName():undefined});
@@ -648,8 +646,8 @@ function tap(i){if(!isHumanTurn()||thinking||b[i])return;
   if(!prefs.tap2||ghost===i){place(i);return;}
   ghost=i;renderGame();}
 $('board').addEventListener('pointerdown',e=>{const svg=$('board');const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;
-  const q=pt.matrixTransform(svg.getScreenCTM().inverse());const c=Math.round((q.x-30)/40),r=Math.round((q.y-30)/40);
-  if(c<0||c>14||r<0||r>14)return;tap(r*N+c);});
+  const q=pt.matrixTransform(svg.getScreenCTM().inverse());const c=Math.round((q.x-30)/SP),r=Math.round((q.y-30)/SP);
+  if(c<0||c>N-1||r<0||r>N-1)return;tap(r*N+c);});
 
 function barHTML(side,name,sub){const cnt=hist.filter((_,k)=>(k%2===0?BLACK:WHITE)===side).length;
   return `<span class="stone ${side===1?'b':'w'}"></span><div class="who"><b>${name}${!G.over&&turn===side&&thinking?' <span class="thinking">생각 중…</span>':''}</b><span>${sub}</span></div><div class="pts num"><b>${cnt}</b>둔 수</div>${clkHTML(side)}`;}
@@ -681,7 +679,7 @@ function oneP(){const rs=records.filter(r=>r.mode==='1p');const w=rs.filter(r=>r
   let cur=0,best=0;rs.forEach(r=>{if(r.winner===r.human){cur++;best=Math.max(best,cur);}else cur=0;});
   const beaten=rs.filter(r=>r.winner===r.human).reduce((m,r)=>Math.max(m,r.level),0);return{n:rs.length,w,d,l:rs.length-w-d,cur,best,beaten};}
 const pct=(w,n)=>n?Math.round(w/n*100)+'%':'–';
-function sample(){const m=new Int8Array(225);[[7,7,1],[7,8,2],[6,8,1],[8,6,2],[5,9,1],[6,7,2],[8,8,1],[4,10,2],[6,6,1]].forEach(([r,c,v])=>m[r*N+c]=v);return m;}
+function sample(){const m=new Int8Array(N*N);[[7,7,1],[7,8,2],[6,8,1],[8,6,2],[5,9,1],[6,7,2],[8,8,1],[4,10,2],[6,6,1]].forEach(([r,c,v])=>m[r*N+c]=v);return m;}
 function renderHome(){$('mini').innerHTML=boardSVG(sample(),{last:6*N+6},'m');
   const s=oneP();const p2=records.filter(r=>r.mode==='2p').length;
   $('home-record').innerHTML=`<div><b class="num">${s.n}전 ${s.w}승 ${s.l}패</b><span>컴퓨터 대국</span></div><div><b class="num">${pct(s.w,s.n)}</b><span>승률</span></div><div><b class="num">${s.beaten?kyu(s.beaten):'–'}</b><span>이겨 본 최고 급수</span></div><div><b class="num">${p2}판</b><span>2인 대국</span></div>`;
@@ -719,7 +717,7 @@ const oppState=()=>OPP[1-G.seat]===false?'<b style="color:var(--red)">연결 끊
 function goOnline(){NET.lobby({game:'omok',timeLimit:{get:()=>prefs.tl||0,set:v=>{prefs.tl=v;savePrefs();}},sizes:[2],makeCfg:()=>({rule33:prefs.rule33,tl:prefs.tl||0}),describe:c=>`시간 제한 ${TMR.label(c.tl)} · 규칙: ${c.rule33?'3·3 금지':'자유룰'} (방 만들기 전 2인용 설정에서 바꿀 수 있습니다) · 방장이 흑으로 먼저 둡니다`}).then(startOnline).catch(()=>{});}
 function startOnline(res){ON=res.room;ONAMES=res.names||['',''];
   G={mode:'online',seat:res.seat,level:0,human:res.seat===0?BLACK:WHITE,rule33:!!(res.cfg&&res.cfg.rule33),tl:(res.cfg&&res.cfg.tl)||0,moves:[],t:Date.now(),over:null};
-  b=new Int8Array(225);hist=[];turn=BLACK;ghost=-1;win=null;thinking=false;mkClock();show('game');renderGame();
+  b=new Int8Array(N*N);hist=[];turn=BLACK;ghost=-1;win=null;thinking=false;mkClock();show('game');renderGame();
   ON.listen((t,v)=>{if(!G||G.mode!=='online'||ON!==res.room)return;
     if(t==='move'&&v.rm!=null){if(v.s!==G.seat&&ON.gotRematch())toast('상대가 한 판 더 하자고 합니다. 한 판 더 버튼을 누르세요',3000);return;}
     if(t==='move'){if(G.over)return;if(onUndoMsg(v))return;if(v.p!=null){if(!b[v.p])place(v.p,true);}else if(v.resign!=null)endGame(v.resign===0?WHITE:BLACK,'상대 기권');}
@@ -729,7 +727,7 @@ function startOnline(res){ON=res.room;ONAMES=res.names||['',''];
 function askRematchOnline(){if(!ON)return;const r=ON.askRematch();if(r==='wait')toast('상대에게 한 판 더를 제안했습니다. 상대가 누르면 시작합니다',2500);}
 function restartOnline(){if(!ON||!G||G.mode!=='online')return;const human=G.human===BLACK?WHITE:BLACK;
   G={mode:'online',seat:G.seat,level:0,human,rule33:G.rule33,tl:G.tl,moves:[],t:Date.now(),over:null};
-  b=new Int8Array(225);hist=[];turn=BLACK;ghost=-1;win=null;thinking=false;undoAnswered={};mkClock();show('game');renderGame();
+  b=new Int8Array(N*N);hist=[];turn=BLACK;ghost=-1;win=null;thinking=false;undoAnswered={};mkClock();show('game');renderGame();
   toast(G.human===BLACK?'새 판: 내가 흑입니다':'새 판: 내가 백입니다',2500);}
 /* ---- 시간 제한 · 초읽기 ---- */
 let CLK=null;
@@ -753,5 +751,3 @@ function onUndoMsg(v){
 show('home');
 })();
 </script>
-
-</body></html>

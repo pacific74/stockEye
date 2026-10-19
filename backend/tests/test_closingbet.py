@@ -102,3 +102,20 @@ def test_runner_step_and_evaluate_prev(monkeypatch):
     n = ce.evaluate_prev(sb, K(), "2026-10-13", lambda code, day: prev * 1.058)
     hist = json.loads(sb.files[ce.RESULTS])
     assert n == 1 and hist[0]["outcome"] in ("t1", "t2") and hist[0]["open_pnl"] > 0
+
+
+def test_closingbet_buy_alerts_admin(monkeypatch):
+    """종가배팅 매수발생 → 관리자 토픽으로 알림 (예전엔 알림 경로가 없었음)"""
+    import scripts.closingbet as sc
+    import scripts.intraday_live as il
+    from stockeye.trading.notify import Notifier
+    sent = []
+    monkeypatch.setattr(Notifier, "send_topic", lambda self, tp, title, body, priority="default": sent.append((tp, title, body)) or True)
+    monkeypatch.setattr(il, "admin_topics", lambda sb: ["adm-topic"])
+    lst = pd.DataFrame({"code": ["000010"], "name": ["가"], "market": ["KOSPI"]})
+    run = sc.Runner(None, None, lst, _daily().assign(code="000010"), None, top=5)
+    assert run.track.on_event is not None
+    t = {"name": "가", "code": "000010", "time": "15:05", "buy_time": "15:05", "entry": 10000.0, "stop": 9800.0, "t1": 10200.0}
+    run.track.on_event(run.track, t, "매수발생")
+    run.track.on_event(run.track, t, "손절")            # 매수발생 말고는 안 보냄
+    assert len(sent) == 1 and sent[0][0] == "adm-topic" and "매수발생" in sent[0][1]

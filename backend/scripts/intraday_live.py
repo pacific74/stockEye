@@ -114,7 +114,10 @@ class Live:
         if not m:
             return
         for tp in self.topics:
-            self.q.put(lambda tp=tp: self.nt.send_topic(tp, m[0], m[1], priority="high"))
+            def job(tp=tp):
+                ok = self.nt.send_topic(tp, m[0], m[1], priority="high")
+                print(f"   알림 {'보냄' if ok else '⚠ 못 보냄 (ntfy 거절·네트워크 — 3번 시도 뒤)'} · {m[0]}", flush=True)   # 실패가 안 보이던 것 (2026-10-19)
+            self.q.put(job)
         self.sent += 1
 
     def on_event(self, tracker, t: dict, state: str) -> None:

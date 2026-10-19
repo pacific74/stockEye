@@ -110,7 +110,7 @@ jobs:
       - name: 안드로이드 APK 빌드
         if: env.LOTTO_ONLY != '1'
         run: |
-          flutter build apk --release --split-per-abi --build-number=${{ github.run_number }} --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=WEB_URL=$WEB_URL $APP_DEFINES "--dart-define=APP_TIME=$APP_TIME"
+          flutter build apk --release --no-shrink --split-per-abi --build-number=${{ github.run_number }} --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=WEB_URL=$WEB_URL $APP_DEFINES "--dart-define=APP_TIME=$APP_TIME"
       - name: APK 고정 키로 서명 (설치된 앱에 덮어쓰기 업데이트 가능)
         if: env.KS_B64 != '' && env.LOTTO_ONLY != '1'
         env:

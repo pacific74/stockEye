@@ -63,6 +63,25 @@ class Runner:
         from stockeye.trading.intraday_track import Tracker
         # 당일매매: '매수 후보' 처음 뜨면 고정 → 매수 범위면 매수(매매일지) · 다음 날 오전은 22_intraday 가 추적
         self.track = Tracker(sb, "closingbet", self.day, write_carry=False)
+        self.track.on_event = self._alert                      # 종가배팅 매수발생 → 관리자 알림 (2026-10-19, 그전엔 없었음)
+        self._topics = None
+
+    def _alert(self, tracker, t: dict, state: str) -> None:
+        """매수발생만 관리자 ntfy 로 (PC·GitHub 둘 다). 실패해도 추적은 계속"""
+        try:
+            from scripts.intraday_live import Live, admin_topics
+            from stockeye.trading.notify import Notifier
+            m = Live.message(tracker, t, state)
+            if not m:
+                return
+            if self._topics is None:
+                self._topics = admin_topics(self.sb)
+            nt = Notifier()
+            for tp in self._topics:
+                ok = nt.send_topic(tp, m[0], m[1], priority="high")
+                print(f"   알림 {'보냄' if ok else '⚠ 못 보냄 (ntfy 거절·네트워크 — 3번 시도 뒤)'} · {m[0]}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            log.warning("종가배팅 알림 실패: %s", e)
 
     def _news(self, code):
         if code not in self.news:

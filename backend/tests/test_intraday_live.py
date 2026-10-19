@@ -272,3 +272,19 @@ def test_record_index_retries_until_both(monkeypatch):
     live.record_index(Tr(), t, "매수발생")
     live.q.get()()
     assert len(calls) == 3 and t["ix"]["buy"] == [0.5, 0.2, "09:10", "KOSPI"]
+
+
+def test_send_topic_retries_on_429(monkeypatch):
+    """ntfy 가 429 로 거절하면 잠깐 뒤 다시 — 세 번째에 받으면 성공"""
+    import requests
+    from stockeye.trading import notify as nt
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    codes = iter([429, 503, 200])
+
+    class R:
+        def __init__(self, c): self.status_code = c
+    monkeypatch.setattr(requests, "post", lambda *a, **k: R(next(codes)))
+    assert nt.Notifier().send_topic("t", "제목", "본문") is True
+    codes2 = iter([403])
+    monkeypatch.setattr(requests, "post", lambda *a, **k: R(next(codes2)))
+    assert nt.Notifier().send_topic("t", "제목", "본문") is False      # 403 은 다시 안 함

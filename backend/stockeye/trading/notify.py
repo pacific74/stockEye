@@ -60,16 +60,25 @@ class Notifier:
         topic = (topic or "").strip().strip("/")
         if not topic:
             return False
-        try:
-            import requests
-            headers = {"Title": title.encode("utf-8"), "Priority": {"high": "4", "urgent": "5"}.get(priority, "3")}
-            if url:
-                headers["Click"] = url
-            if markdown:
-                headers["Markdown"] = "yes"
-            r = requests.post(f"{self.ntfy_server}/{topic}", data=body.encode("utf-8"), headers=headers, timeout=10)
-            return r.status_code < 300
-        except Exception as e:  # noqa: BLE001
-            log.warning("ntfy(%s) 전송 실패: %s", topic[:6], e)
-            return False
+        import time
+        import requests
+        headers = {"Title": title.encode("utf-8"), "Priority": {"high": "4", "urgent": "5"}.get(priority, "3")}
+        if url:
+            headers["Click"] = url
+        if markdown:
+            headers["Markdown"] = "yes"
+        # 429(요청 많음)·5xx·끊김은 잠깐 뒤 다시 (최대 3번) — 이전에는 한 번 거절되면 조용히 사라졌음 (2026-10-19)
+        for i, wait in enumerate((3, 10, 0)):
+            try:
+                r = requests.post(f"{self.ntfy_server}/{topic}", data=body.encode("utf-8"), headers=headers, timeout=10)
+                if r.status_code < 300:
+                    return True
+                log.warning("ntfy(%s) 거절 %s (%d/3)", topic[:6], r.status_code, i + 1)
+                if r.status_code != 429 and r.status_code < 500:
+                    return False                      # 주소·권한 문제 등은 다시 해도 같음
+            except Exception as e:  # noqa: BLE001
+                log.warning("ntfy(%s) 전송 실패 (%d/3): %s", topic[:6], i + 1, e)
+            if wait:
+                time.sleep(wait)
+        return False
 

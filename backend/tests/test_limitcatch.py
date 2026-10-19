@@ -229,3 +229,18 @@ def test_runner_pre(monkeypatch, tmp_path):
     assert p["pre_version"] == "LP-0.1"
     if p["pre"][0]["status"] == "상한가 예비":
         assert p["pre_first"][0]["time"] == "09:40"
+
+
+def test_limitcatch_buy_alerts_admin(monkeypatch):
+    """상한가포착 단독 실행에서도 매수발생 → 관리자 알림"""
+    import scripts.limitcatch as sl
+    import scripts.intraday_live as il
+    from stockeye.trading.notify import Notifier
+    sent = []
+    monkeypatch.setattr(Notifier, "send_topic", lambda self, tp, title, body, priority="default": sent.append((tp, title)) or True)
+    monkeypatch.setattr(il, "admin_topics", lambda sb: ["adm"])
+    listing = pd.DataFrame({"code": ["000010"], "name": ["가"], "market": ["KOSPI"]})
+    run = sl.Runner(None, None, listing, _daily().assign(code="000010"), None)
+    t = {"name": "가", "code": "000010", "time": "10:05", "entry": 10000.0, "stop": 9800.0, "t1": 10200.0}
+    run.track.on_event(run.track, t, "매수발생")
+    assert sent == [("adm", sent[0][1])] and "매수발생" in sent[0][1]

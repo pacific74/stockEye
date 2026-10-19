@@ -97,11 +97,30 @@ class Runner:
         self.rec = IntradayRecorder(sb, "limitcatch", runner)        # 검증용 추천 기록 ('매수 검토' 첫 시점)
         from stockeye.trading.intraday_track import Tracker
         self.track = Tracker(sb, "limitcatch", self.day)             # 당일매매: 매수 검토 종목 고정 → 다음 날 09:30 까지 추적
+        self._topics = None
+        self.track.on_event = self._alert                            # 단독 실행(GitHub·단독 PC) 때도 매수발생 알림 (22번이 돌면 22번이 덮어씀)
+
         self.sec_live, self._sec_at = None, 0.0           # 업종 강도 (10분마다 다시 읽음)
         self._snap_at, self._snap = 0.0, None             # 네이버 전 종목 시세 (순위 조회 실패 때만 · 5분에 한 번)
         self.log_path = (log_dir / f"ticks_{self.day}.jsonl") if log_dir else None
         if self.log_path:
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _alert(self, tracker, t: dict, state: str) -> None:
+        try:
+            from scripts.intraday_live import Live, admin_topics
+            from stockeye.trading.notify import Notifier
+            m = Live.message(tracker, t, state)
+            if not m:
+                return
+            if self._topics is None:
+                self._topics = admin_topics(self.sb)
+            nt = Notifier()
+            for tp in self._topics:
+                ok = nt.send_topic(tp, m[0], m[1], priority="high")
+                print(f"   알림 {'보냄' if ok else '⚠ 못 보냄 (ntfy 거절·네트워크 — 3번 시도 뒤)'} · {m[0]}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            log.warning("상한가포착 알림 실패: %s", e)
 
     def _sectors(self) -> dict | None:
         if self.sb and time.time() - self._sec_at > 600:

@@ -18,15 +18,52 @@ import 'widgets/nav.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 시작 때 Supabase 준비가 멈추면 로고 화면에서 영원히 멈춰 보임 → 12초 안에 안 끝나면 이유를 화면에 보여 주고 다시 시도 (2026-10-19)
+  Object? startError;
   if (useCloud) {
-    await Supabase.initialize(
-      url: supabaseUrl,
-      publishableKey: supabaseAnonKey,
-      // implicit: 인증/재설정 메일을 다른 기기(폰 메일앱 → 브라우저)에서 열어도 동작
-      authOptions: const FlutterAuthClientOptions(authFlowType: AuthFlowType.implicit),
+    try {
+      await Supabase.initialize(
+        url: supabaseUrl,
+        publishableKey: supabaseAnonKey,
+        // implicit: 인증/재설정 메일을 다른 기기(폰 메일앱 → 브라우저)에서 열어도 동작
+        authOptions: const FlutterAuthClientOptions(authFlowType: AuthFlowType.implicit),
+      ).timeout(const Duration(seconds: 12));
+    } catch (e) {
+      startError = e;
+    }
+  }
+  runApp(startError == null ? const StockEyeApp() : _StartError(error: startError));
+}
+
+/// 시작 실패 화면 — 오류 내용을 그대로 보여 줌 (캡처해서 알려 주기 쉽게) + 다시 시도
+class _StartError extends StatelessWidget {
+  const _StartError({required this.error});
+  final Object error;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(brightness: Brightness.dark, useMaterial3: true, scaffoldBackgroundColor: const Color(0xFF050B1C)),
+      home: Scaffold(
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('시작 중 문제가 생겼어요', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              const Text('인터넷 연결을 확인하고 [다시 시도]를 눌러 보세요. 계속 안 되면 이 화면을 캡처해서 알려 주세요.',
+                  style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 16),
+              SelectableText('$error', style: const TextStyle(fontSize: 12, color: Colors.orange)),
+              const SizedBox(height: 20),
+              FilledButton(onPressed: () => main(), child: const Text('다시 시도')),
+            ]),
+          ),
+        ),
+      ),
     );
   }
-  runApp(const StockEyeApp());
 }
 
 class StockEyeApp extends StatelessWidget {

@@ -21,15 +21,28 @@ Future<void> main() async {
   // 시작 때 Supabase 준비가 멈추면 로고 화면에서 영원히 멈춰 보임 → 12초 안에 안 끝나면 이유를 화면에 보여 주고 다시 시도 (2026-10-19)
   Object? startError;
   if (useCloud) {
+    Future<void> init({bool keepLogin = true}) => Supabase.initialize(
+          url: supabaseUrl,
+          publishableKey: supabaseAnonKey,
+          // implicit: 인증/재설정 메일을 다른 기기(폰 메일앱 → 브라우저)에서 열어도 동작
+          authOptions: FlutterAuthClientOptions(
+            authFlowType: AuthFlowType.implicit,
+            // 폰 저장소 플러그인이 깨진 빌드에서는 로그인 저장 없이라도 시작 (그 경우 앱을 켤 때마다 로그인)
+            localStorage: keepLogin ? null : const EmptyLocalStorage(),
+          ),
+        ).timeout(const Duration(seconds: 12));
     try {
-      await Supabase.initialize(
-        url: supabaseUrl,
-        publishableKey: supabaseAnonKey,
-        // implicit: 인증/재설정 메일을 다른 기기(폰 메일앱 → 브라우저)에서 열어도 동작
-        authOptions: const FlutterAuthClientOptions(authFlowType: AuthFlowType.implicit),
-      ).timeout(const Duration(seconds: 12));
+      await init();
     } catch (e) {
       startError = e;
+      if ('$e'.toLowerCase().contains('sharedpreferences')) {
+        try {
+          await init(keepLogin: false);
+          startError = null;
+        } catch (e2) {
+          startError = e2;
+        }
+      }
     }
   }
   runApp(startError == null ? const StockEyeApp() : _StartError(error: startError));

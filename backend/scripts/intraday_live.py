@@ -332,7 +332,8 @@ def main():
         def job():
             try:
                 from stockeye.analysis.market_shock import check
-                check(sb, admin_topics(sb))
+                from stockeye.analysis.market_shock import all_topics
+                check(sb, all_topics(sb, admin_topics(sb)))
             except Exception as e:  # noqa: BLE001
                 print(f"⚠ 시장 급변 확인 실패: {e}")
         import threading

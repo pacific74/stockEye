@@ -109,10 +109,10 @@ def main():
     if not args.dry_run:        # 종합지수 ±3% 이상이면 뉴스와 함께 관리자 알림 (PC 22번이 이미 보냈으면 중복 없음)
         try:
             from stockeye.cloud.client import Supabase
-            from stockeye.analysis.market_shock import check
+            from stockeye.analysis.market_shock import all_topics, check
             from scripts.intraday_live import admin_topics
             sb = Supabase()
-            check(sb, admin_topics(sb))
+            check(sb, all_topics(sb, admin_topics(sb)))
         except Exception as e:  # noqa: BLE001
             print(f"⚠ 시장 급변 확인 실패: {e}")
 

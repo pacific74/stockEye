@@ -50,3 +50,12 @@ def test_failed_send_retries_next_time():
     assert ms.check(sb, ["adm"], ix, lambda *a: False, lambda *a, **k: [], now) == []
     assert ms.check(sb, ["adm"], ix, lambda tp, t, b: sent.append(t) or True, lambda *a, **k: [], now) == ["KOSPI"]
     assert "관련 기사를 찾지 못했어요" in sent[0] or sent
+
+
+def test_all_topics_includes_opted_in_members():
+    class S:
+        def select(self, t, q):
+            return [{"ntfy_topic": "m1", "notify_daily": True}, {"ntfy_topic": "m2", "notify_daily": False},
+                    {"ntfy_topic": "adm", "notify_daily": True}, {"ntfy_topic": " m3/ "}]
+    assert ms.all_topics(S(), ["adm"]) == ["adm", "m1", "m3"]
+    assert ms.all_topics(None, ["adm"]) == ["adm"]

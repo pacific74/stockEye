@@ -1,4 +1,4 @@
-"""시장 급변 알림 — 종합지수(코스피·코스닥)가 하루 등락 ±3% 이상이면 그때 나온 뉴스로 '어떤 이슈인지' 같이 알림 (관리자)
+"""시장 급변 알림 — 종합지수(코스피·코스닥)가 하루 등락 ±3% 이상이면 그때 나온 뉴스로 '어떤 이슈인지' 같이 알림 (관리자 + 알림 토픽을 등록하고 '일일 리포트 알림'을 켠 승인 회원)
 
   단계    3% → 5% → 7% 로 더 벌어질 때마다 한 번씩 (같은 단계는 하루 한 번, 위·아래 방향 따로)
   뉴스    '<지수> 급락/급등' 검색 → 제목에 지수·증시가 들어간 최근 하루 기사 · 비슷한 제목 하나로
@@ -75,6 +75,21 @@ def message(rows: list[dict], news: list[dict], now_hm: str) -> tuple[str, str]:
         lines.append("관련 기사를 찾지 못했어요 (뉴스 키 없음 또는 아직 기사 전)")
     lines.append("※ 기사 제목을 모아 본 참고이며 원인을 확정하는 것이 아닙니다.")
     return title, "\n".join(lines)
+
+
+def all_topics(sb, admin: list[str]) -> list[str]:
+    """관리자 토픽 + 승인 회원 중 알림 토픽이 있고 일일 리포트 알림(notify_daily)을 끄지 않은 사람 (중복 제거)"""
+    out = list(admin)
+    if sb:
+        try:
+            for u in sb.select("profiles", {"select": "ntfy_topic,notify_daily", "status": "eq.approved",
+                                            "ntfy_topic": "not.is.null"}) or []:
+                t = (u.get("ntfy_topic") or "").strip().strip("/")
+                if t and u.get("notify_daily", True):
+                    out.append(t)
+        except Exception as e:  # noqa: BLE001
+            log.warning("회원 알림 토픽 읽기 실패: %s", e)
+    return list(dict.fromkeys(out))
 
 
 def check(sb, topics: list[str], indices=None, send=None, fetch=None, now=None) -> list[str]:

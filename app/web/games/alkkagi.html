@@ -688,14 +688,19 @@ function startOnline(res){ON=res.room;ONAMES=res.names||['',''];const n=(res.cfg
 show('home');
 })();
 </script>
-<!--FS--><style>#fsbtn{position:fixed;right:10px;bottom:10px;z-index:9999;border:1px solid rgba(211,167,77,.55);background:rgba(20,20,20,.6);color:#d3a74d;border-radius:10px;padding:6px 10px;font:600 13px system-ui,sans-serif;cursor:pointer;opacity:.75}#fsbtn:hover{opacity:1}</style>
+<!--FS--><style>#fsbtn{position:fixed;right:10px;bottom:10px;z-index:9999;border:1px solid rgba(211,167,77,.55);background:rgba(20,20,20,.6);color:#d3a74d;border-radius:10px;padding:6px 10px;font:600 13px system-ui,sans-serif;cursor:pointer;opacity:.75;display:none}#fsbtn:hover{opacity:1}#fsbtn.show{display:block}</style>
 <button id="fsbtn" type="button" aria-label="전체화면">⛶ 전체화면</button>
-<script>(function(){var b=document.getElementById('fsbtn'),el=document.documentElement,auto=true;
+<script>(function(){var b=document.getElementById('fsbtn'),el=document.documentElement,pending=false,G=document.getElementById('game');
 function on(){return !!(document.fullscreenElement||document.webkitFullscreenElement);}
-function enter(){try{var p=el.requestFullscreen?el.requestFullscreen():(el.webkitRequestFullscreen&&el.webkitRequestFullscreen());if(p&&p.catch)p.catch(function(){});}catch(e){}}
-function exit(){try{var f=document.exitFullscreen||document.webkitExitFullscreen;if(f)f.call(document);}catch(e){}}
-function sync(){b.textContent=on()?'⧉ 창 모드':'⛶ 전체화면';}
+function inGame(){return !!(G&&!G.hidden);}
+function enter(){if(on())return;try{var p=el.requestFullscreen?el.requestFullscreen():(el.webkitRequestFullscreen&&el.webkitRequestFullscreen());if(p&&p.catch)p.catch(function(){pending=true;});}catch(e){pending=true;}}
+function exit(){try{var f=document.exitFullscreen||document.webkitExitFullscreen;if(on()&&f)f.call(document);}catch(e){}}
+function sync(){b.textContent=on()?'⧉ 창 모드':'⛶ 전체화면';b.classList.toggle('show',inGame());}
 b.onclick=function(){on()?exit():enter();};
 document.addEventListener('fullscreenchange',sync);document.addEventListener('webkitfullscreenchange',sync);
-document.addEventListener('pointerdown',function(e){if(!auto||e.target===b)return;auto=false;if(!on())enter();},true);
+/* 게임 화면에 들어왔을 때만 전체화면 (메인·메뉴·설정은 일반 화면) */
+if(G){new MutationObserver(function(){if(inGame()){pending=true;enter();}else{pending=false;exit();}sync();}).observe(G,{attributes:true,attributeFilter:['hidden']});}
+document.querySelectorAll('#home,#setup,#setup1,#setup2,#setup-pic,#setup-num,#stats').forEach(function(v){new MutationObserver(function(){if(!v.hidden){pending=false;exit();}sync();}).observe(v,{attributes:true,attributeFilter:['hidden']});});
+/* 게임 중 전체화면이 거부됐으면 다음 터치에 한 번 더 시도 */
+document.addEventListener('pointerdown',function(e){if(!pending||e.target===b||!inGame())return;pending=false;enter();},true);
 sync();})();</script>

@@ -1,4 +1,4 @@
-<title>오목 한판</title>
+<title>오목</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@600;900&display=swap">
@@ -39,7 +39,7 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .linkbtn{background:none;border:0;color:var(--muted);padding:6px 4px;font-size:14px;text-decoration:none}
 .linkbtn:hover{color:var(--ink)}
 .hero{display:grid;grid-template-columns:1fr auto;align-items:end;gap:12px;padding-top:6px}
-.hero h1{font-family:var(--serif);font-weight:900;font-size:52px;line-height:1;letter-spacing:-.02em}
+.hero h1{font-family:var(--serif);font-weight:900;font-size:44px;line-height:1;letter-spacing:-.02em;white-space:nowrap}
 .hero h1 span{display:block;font-size:15px;font-weight:600;letter-spacing:.3em;color:var(--brass);margin-bottom:10px}
 .hero p{margin:10px 0 0;color:var(--muted);font-size:14px}
 .mini-board{width:112px;border-radius:6px;box-shadow:0 8px 24px #0008}
@@ -125,7 +125,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
   #home>.record-line{grid-column:1;grid-row:3;align-self:start}
   #home>.menu{grid-column:2;grid-row:2 / 5;align-self:center}
   #home>.footnote{grid-column:1;grid-row:4;align-self:end}
-  #home .hero h1{font-size:clamp(52px,6vw,84px)}
+  #home .hero h1{font-size:clamp(44px,5vw,70px)}
   #home .mini-board{width:clamp(150px,16vw,240px)}
   #home .fan{transform:scale(1.5);transform-origin:right bottom}
   #home .menu .btn{padding:20px 22px;font-size:17px}
@@ -169,7 +169,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
   #game .actions .btn{padding:8px;font-size:14px}
   #game .gauge{height:30px}
   #g-status,#game .topbar .linkbtn{font-size:13px}
-  #home .hero h1{font-size:44px}
+  #home .hero h1{font-size:36px}
   #home .menu .btn{padding:12px 16px;font-size:15px}
 }
 </style>
@@ -199,7 +199,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
 <section id="home">
   <div class="hero">
     <div>
-      <h1><span>五 目</span>오목 한판</h1>
+      <h1><span>五 目</span>오목</h1>
       <p>19줄 판에서 다섯 알을 먼저 잇는 쪽이 이깁니다.</p>
     </div>
     <svg class="mini-board" id="mini" viewBox="0 0 620 620" aria-hidden="true"></svg>
@@ -773,16 +773,14 @@ function onUndoMsg(v){
 show('home');
 })();
 </script>
-
 <!--FS--><style>#fsbtn{position:fixed;right:10px;bottom:10px;z-index:9999;border:1px solid rgba(211,167,77,.55);background:rgba(20,20,20,.6);color:#d3a74d;border-radius:10px;padding:6px 10px;font:600 13px system-ui,sans-serif;cursor:pointer;opacity:.75}#fsbtn:hover{opacity:1}</style>
 <button id="fsbtn" type="button" aria-label="전체화면">⛶ 전체화면</button>
-<script>(function(){var b=document.getElementById('fsbtn'),el=document.documentElement,pending=false;
+<script>(function(){var b=document.getElementById('fsbtn'),el=document.documentElement,auto=true;
 function on(){return !!(document.fullscreenElement||document.webkitFullscreenElement);}
-function enter(){if(on())return;try{var p=el.requestFullscreen?el.requestFullscreen():(el.webkitRequestFullscreen&&el.webkitRequestFullscreen());if(p&&p.catch)p.catch(function(){pending=true;});}catch(e){pending=true;}}
-function exit(){try{var f=document.exitFullscreen||document.webkitExitFullscreen;if(on()&&f)f.call(document);}catch(e){}}
+function enter(){try{var p=el.requestFullscreen?el.requestFullscreen():(el.webkitRequestFullscreen&&el.webkitRequestFullscreen());if(p&&p.catch)p.catch(function(){});}catch(e){}}
+function exit(){try{var f=document.exitFullscreen||document.webkitExitFullscreen;if(f)f.call(document);}catch(e){}}
 function sync(){b.textContent=on()?'⧉ 창 모드':'⛶ 전체화면';}
 b.onclick=function(){on()?exit():enter();};
 document.addEventListener('fullscreenchange',sync);document.addEventListener('webkitfullscreenchange',sync);
-document.addEventListener('pointerdown',function(e){if(!pending||e.target===b)return;pending=false;enter();},true);
-var G_=document.getElementById('game');if(G_){new MutationObserver(function(){if(!G_.hidden)enter();}).observe(G_,{attributes:true,attributeFilter:['hidden']});}document.querySelectorAll('#home,#setup,#setup1,#setup2,#setup-pic,#setup-num,#stats').forEach(function(v){new MutationObserver(function(){if(!v.hidden)exit();}).observe(v,{attributes:true,attributeFilter:['hidden']});});
+document.addEventListener('pointerdown',function(e){if(!auto||e.target===b)return;auto=false;if(!on())enter();},true);
 sync();})();</script>

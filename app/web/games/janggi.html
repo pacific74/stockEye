@@ -721,7 +721,7 @@ function boardSVG(b,o){o=o||{};const f=!!o.flip;
     const col=cl?'#b82e23':'#1a7250';
     if(o.check===i)s+=`<circle cx="${x}" cy="${y}" r="${rr+9}" fill="#e2362a55" stroke="#e2362a" stroke-width="3"/>`;
     if(o.sel===i)s+=`<circle cx="${x}" cy="${y}" r="${rr+8}" fill="#fff4" stroke="#1c1507" stroke-width="3"/>`;
-    s+=`<polygon points="${oct(x,y+3,rr)}" fill="#00000055"/><polygon points="${oct(x,y,rr)}" fill="#f6eedb" stroke="${col}" stroke-width="2.4"/><polygon points="${oct(x,y,rr-4.5)}" fill="none" stroke="${col}" stroke-width="1" opacity=".55"/>`;
+    s+=`<ellipse cx="${x+2}" cy="${y+rr*0.9}" rx="${rr*0.9}" ry="${rr*0.3}" fill="#000" opacity=".28"/><ellipse cx="${x+1}" cy="${y+rr*0.8}" rx="${rr*0.94}" ry="${rr*0.34}" fill="#000" opacity=".16"/><polygon points="${oct(x,y+3.2,rr)}" fill="${col}"/><polygon points="${oct(x,y,rr)}" fill="${col}" stroke="${col}" stroke-width="1.5"/><polygon points="${oct(x,y,rr-2.6)}" fill="#f6ecd2" stroke="#000" stroke-opacity=".3" stroke-width=".9"/><polygon points="${oct(x,y+1.2,rr-3.4)}" fill="#e6d5ab" opacity=".55"/><polygon points="${oct(x,y-0.6,rr-3.8)}" fill="#f6ecd2"/><polygon points="${oct(x,y,rr-6.5)}" fill="none" stroke="${col}" stroke-width="1" opacity=".45"/><ellipse cx="${x-rr*0.32}" cy="${y-rr*0.4}" rx="${rr*0.36}" ry="${rr*0.16}" fill="#fff" opacity=".6" transform="rotate(-28 ${x} ${y})"/>`;
     s+=`<text x="${x}" y="${y+rr*0.36}" font-size="${(rr*1.05).toFixed(1)}" text-anchor="middle" fill="${col}" font-family="Noto Serif KR, serif" font-weight="900">${GL[t][cl]}</text>`;}
   if(o.targets)o.targets.forEach(t=>{const x=X(t%9),y=Y(t/9|0);s+=b[t]?`<circle cx="${x}" cy="${y}" r="${RAD[b[t]&7]+6}" fill="none" stroke="#1c1507" stroke-width="4" stroke-dasharray="7 5"/>`:`<circle cx="${x}" cy="${y}" r="10" fill="#1c1507" opacity=".55"/>`;});
   return s;}
@@ -925,7 +925,6 @@ function onUndoMsg(v){
 show('home');
 })();
 </script>
-
 <!--FS--><style>#fsbtn{position:fixed;right:10px;bottom:10px;z-index:9999;border:1px solid rgba(211,167,77,.55);background:rgba(20,20,20,.6);color:#d3a74d;border-radius:10px;padding:6px 10px;font:600 13px system-ui,sans-serif;cursor:pointer;opacity:.75}#fsbtn:hover{opacity:1}</style>
 <button id="fsbtn" type="button" aria-label="전체화면">⛶ 전체화면</button>
 <script>(function(){var b=document.getElementById('fsbtn'),el=document.documentElement,pending=false;

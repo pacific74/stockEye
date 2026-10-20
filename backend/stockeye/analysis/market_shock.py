@@ -26,7 +26,10 @@ ISSUES = {                                   # 이슈 이름 → 제목에 나�
     "외국인·기관 매매": ["외국인", "기관", "순매도", "순매수", "프로그램"],
     "정치·정책": ["정치", "탄핵", "대통령", "계엄", "정책", "세제", "공매도"],
     "실적": ["실적", "어닝", "영업이익"],
+    "돌발 사건·소문": ["사망", "사망설", "건강이상", "쿠데타", "테러", "폭발", "핵", "도발", "공습", "피격", "화재", "붕괴", "파산", "디폴트"],
 }
+PRICE_ONLY = ("마감", "장중", "종가", "시황", "지수", "급락", "폭락", "하락", "약세", "내림세", "하락세", "급등", "상승", "강세")
+CAUSE_Q = ("속보", "긴급", "충격", "원인 배경", "왜 떨어")        # 가격 얘기 말고 '무슨 일이 있었나' 기사를 찾는 검색어
 
 
 def level(chg: float | None) -> int:
@@ -46,30 +49,75 @@ def issue_tags(titles: list[str], top: int = 3) -> list[str]:
     return [k for k, _ in sorted(cnt.items(), key=lambda kv: -kv[1])[:top]]
 
 
+def is_price_only(title: str) -> bool:
+    """'코스피 3% 급락 마감' 처럼 오른 내렸다만 말하고 이유가 없는 제목 (이슈 단어가 하나도 없으면)"""
+    has_issue = any(w in title for ws in ISSUES.values() for w in ws)
+    return (not has_issue) and any(w in title for w in PRICE_ONLY)
+
+
 def news_for(code: str, down: bool, fetch=None) -> list[dict]:
+    """가격 기사(급락·마감)보다 '이유·사건' 기사를 앞에: 검색 두 갈래 — 지수 급락/급등 + 속보·긴급·원인 검색 → 이슈 제목 우선"""
     from ..data import naver_news
     fetch = fetch or naver_news.fetch_query
     name = NAME.get(code, code)
-    words = (name, "증시", "코스피", "코스닥")
+    words = (name, "증시", "코스피", "코스닥", "주가", "시장")
     out = []
     for q in (f"{name} {'급락' if down else '급등'}", f"증시 {'폭락' if down else '급등'} 이유"):
         out += fetch(q, days=1, must=words)
+    for q in CAUSE_Q:                                              # 시장 단어 없이도 큰 사건 기사 (예: 속보 사망설)
+        out += fetch(f"{q} {'증시 하락' if down else '증시 상승'}", days=1, must=())
     out.sort(key=lambda x: x["time"], reverse=True)
     from ..data.naver_news import dedupe
-    return dedupe(out)
+    out = dedupe(out)
+    out.sort(key=lambda x: is_price_only(x["title"]))              # 안정 정렬: 이슈 기사 먼저, 같은 쪽 안에서는 최신순
+    return out
 
 
-def message(rows: list[dict], news: list[dict], now_hm: str) -> tuple[str, str]:
+SYS = ("당신은 증시 알림에 붙일 한 줄 해설을 쓴다. 입력은 지수가 크게 움직인 시각 전후의 뉴스 제목들이다. "
+       "제목에 나온 내용만 근거로, 무슨 일이 시장에 영향을 줬을 수 있는지 1~2문장(180자 이내)으로 쓴다. "
+       "확인되지 않은 소문·단독은 '~라는 보도' '~는 소문'으로 표현하고 사실로 단정하지 않는다. "
+       "제목에 없는 사실·숫자를 지어내지 않는다. 단순 시황(오르내림)만 있으면 '뚜렷한 원인 기사는 아직 없음'이라고 쓴다. "
+       "매수·매도 권유는 하지 않는다.")
+
+
+def ai_comment(code: str, chg: float, news: list[dict], model: str | None = None) -> str | None:
+    """ANTHROPIC_API_KEY 가 있을 때만 — 이슈 제목 위주로 최대 25개를 한 번 요약 (급변 단계마다 1회, 하루 몇 번 안팎)"""
+    import os
+    if not os.getenv("ANTHROPIC_API_KEY") or not news:
+        return None
+    try:
+        import requests          # SDK 없이 직접 호출 — GitHub 가벼운 작업(requirements-live)에 패키지를 더하지 않으려고
+        titles = "\n".join(f"- {n['title']} ({n['time'][11:]})" for n in news[:25])
+        r = requests.post("https://api.anthropic.com/v1/messages", timeout=30,
+                          headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
+                                   "content-type": "application/json"},
+                          json={"model": model or os.getenv("MARKET_SHOCK_MODEL") or "claude-haiku-5-5", "max_tokens": 300,
+                                "system": SYS,
+                                "messages": [{"role": "user", "content":
+                                              f"{NAME.get(code, code)} {chg:+.1f}% {'하락' if chg < 0 else '상승'} 중. 뉴스 제목:\n{titles}"}]})
+        if r.status_code != 200:
+            log.warning("시장 급변 AI 해설: HTTP %s %s", r.status_code, r.text[:120])
+            return None
+        text = "".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text").strip()
+        return text[:260] or None
+    except Exception as e:  # noqa: BLE001
+        log.warning("시장 급변 AI 해설 실패: %s", e)
+        return None
+
+
+def message(rows: list[dict], news: list[dict], now_hm: str, comment: str | None = None) -> tuple[str, str]:
     """rows: 알릴 지수들 [{code, chg}] + 같은 시각 다른 지수는 body 에"""
     main = max(rows, key=lambda r: abs(r["chg"]))
     down = main["chg"] < 0
     title = f"🚨 {NAME.get(main['code'], main['code'])} {main['chg']:+.1f}% {'급락' if down else '급등'} ({now_hm})"
     lines = [" · ".join(f"{NAME.get(r['code'], r['code'])} {r['chg']:+.2f}%" for r in rows)]
+    if comment:
+        lines.append("🧭 " + comment + " (AI가 기사 제목만 보고 정리 · 사실 확인 아님)")
     tags = issue_tags([n["title"] for n in news])
     if tags:
         lines.append("뉴스에서 많이 나온 이슈: " + " · ".join(tags))
     if news:
-        lines.append("관련 기사")
+        lines.append("관련 기사 (이유·사건 기사 우선)")
         lines += [f"· {n['title'][:60]} ({n['time'][11:]})" for n in news[:3]]
     else:
         lines.append("관련 기사를 찾지 못했어요 (뉴스 키 없음 또는 아직 기사 전)")
@@ -120,10 +168,11 @@ def check(sb, topics: list[str], indices=None, send=None, fetch=None, now=None) 
         return []
     main = max(hit, key=lambda h: abs(h["chg"]))
     news = news_for(main["code"], main["chg"] < 0, fetch)
+    comment = ai_comment(main["code"], main["chg"], news)
     title, body = message([{"code": h["code"], "chg": h["chg"]} for h in hit] +
                           [{"code": str(r["code"]), "chg": float(r["chg_pct"])} for r in indices.to_dict("records")
                            if str(r["code"]) not in {h["code"] for h in hit} and r.get("chg_pct") == r.get("chg_pct")],
-                          news, now.strftime("%H:%M"))
+                          news, now.strftime("%H:%M"), comment)
     if send is None:
         from ..trading.notify import Notifier
         nt = Notifier()

@@ -59,3 +59,19 @@ def test_all_topics_includes_opted_in_members():
                     {"ntfy_topic": "adm", "notify_daily": True}, {"ntfy_topic": " m3/ "}]
     assert ms.all_topics(S(), ["adm"]) == ["adm", "m1", "m3"]
     assert ms.all_topics(None, ["adm"]) == ["adm"]
+
+
+def test_price_only_vs_issue_titles_and_ordering():
+    assert ms.is_price_only("코스피 3% 급락 마감") and not ms.is_price_only("김정은 사망설에 코스피 급락")
+    n = [{"title": "코스피 급락 마감", "time": "2026-10-20 10:20"}, {"title": "속보 김정은 사망설 확산", "time": "2026-10-20 10:05"},
+         {"title": "코스피 3% 하락", "time": "2026-10-20 10:15"}]
+    got = ms.news_for("KOSPI", True, fetch=lambda q, days=1, must=(), **k: n)
+    assert got[0]["title"].startswith("속보")                           # 이슈 기사가 가격 기사보다 먼저
+    assert "돌발 사건·소문" in ms.issue_tags([x["title"] for x in n])
+
+
+def test_ai_comment_only_with_key(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert ms.ai_comment("KOSPI", -3.1, [{"title": "x", "time": "2026-10-20 10:00"}]) is None
+    t, b = ms.message([{"code": "KOSPI", "chg": -3.1}], [], "10:10", comment="사망설 보도로 불안 확대")
+    assert "🧭 사망설 보도로 불안 확대" in b and "사실 확인 아님" in b

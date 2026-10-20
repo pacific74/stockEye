@@ -663,7 +663,7 @@ function renderGame(){if(!G)return;
   $('g-status').textContent=G.over?`대국 종료 · ${G.over.reason}`:`${hist.length+1}수째 · ${G.mode==='online'?(turn===G.human?'내 차례':'상대 차례'):NAME[turn]+' 차례'}${G.rule33?' · 3·3 금지':''}`;
   $('g-undo').disabled=!canUndo();$('g-resign').disabled=!!G.over||(G.mode==='1p'&&thinking);
   $('g-resign').textContent=G.mode==='2p'&&!G.over?NAME[turn]+' 기권':'기권';
-  const dl=G.mode==='online'&&G.drawWait?'비기기 기다리는 중':(drawLeft()>0?`비기기 (${drawLeft()}회 신청 가능)`:'비기기 불가');$('g-draw').textContent=G.over?'비기기':dl;$('g-draw').disabled=!!G.over||drawLeft()<=0||!!(G.mode==='online'&&G.drawWait);
+  const dl=G.mode==='online'&&G.drawWait?'비기기 기다리는 중':(drawLeft()>0?`비기기 (${drawLeft()}회)`:'비기기 (0회)');$('g-draw').textContent=G.over?'비기기':dl;$('g-draw').disabled=!!G.over||drawLeft()<=0||!!(G.mode==='online'&&G.drawWait);
   $('g-confirm').textContent=prefs.tap2?'두 번 눌러 두기':'바로 두기';$('g-undo').textContent=G.mode==='online'?(G.undoWait?'답 기다리는 중':'무르기 부탁'):'무르기';clockTurn();}
 function canUndo(){if(!G||G.over)return false;if(G.mode==='online')return !G.undoWait&&hist.some((_,k)=>(k%2===0?BLACK:WHITE)===G.human);if(G.mode==='2p')return hist.length>0;return hist.some((_,k)=>(k%2===0?BLACK:WHITE)===G.human);}
 function popOne(){const i=hist.pop();G.moves.pop();b[i]=0;turn=3-turn;}
@@ -676,17 +676,18 @@ function drawLeft(){const r=(G.drawRej&&G.drawRej[drawSide()])||0;return 3-r;}
 function drawRefuse(){G.drawRej=G.drawRej||[0,0];G.drawRej[drawSide()]++;}
 function drawAccepted(){if(!G||G.over)return;endGame(0,'비기기 합의');}
 $('g-draw').onclick=()=>{if(!G||G.over)return;G.drawRej=G.drawRej||[0,0];const me=drawSide();
-  if(drawLeft()<=0)return toast('상대가 세 번 거절해서 더 신청할 수 없습니다',2500);
+  if(drawLeft()<=0)return toast('비기기 신청 횟수를 모두 썼습니다',2500);
+  G.drawRej[me]++;
   if(G.mode==='online'){if(G.drawWait)return;const u=Math.random().toString(36).slice(2,8);G.drawWait=u;ON.send({drawReq:G.seat,s:G.seat,u});toast('상대에게 비기기를 신청했습니다',2500);renderGame();return;}
-  if(G.mode==='2p'){const opp=1-me;modal(`<h3>비기기 신청</h3><p>${NAME[me+1]}이(가) 비기기를 신청했습니다. ${NAME[opp+1]}도 받으시겠습니까?</p>`,[{label:'거절',fn:()=>{drawRefuse();toast(NAME[opp+1]+'이(가) 비기기를 거절했습니다',2500);renderGame();}},{label:'수락',cls:'primary',fn:drawAccepted}]);return;}
-  drawRefuse();toast('컴퓨터가 비기기를 거절했습니다',2500);renderGame();};
+  if(G.mode==='2p'){const opp=1-me;modal(`<h3>비기기 신청</h3><p>${NAME[me+1]}이(가) 비기기를 신청했습니다. ${NAME[opp+1]}도 받으시겠습니까?</p>`,[{label:'거절',fn:()=>{toast(NAME[opp+1]+'이(가) 비기기를 거절했습니다',2500);renderGame();}},{label:'수락',cls:'primary',fn:drawAccepted}]);return;}
+  toast('컴퓨터가 비기기를 거절했습니다',2500);renderGame();};
 function onDrawMsg(v){
   if(!G||G.over)return;
   if(v.drawReq!=null){if(v.s===G.seat)return;const u=v.u;
     setTimeout(()=>{if(!G||G.over||G.drawAns===u)return;G.drawAns=u;
       modal(`<h3>비기기 신청</h3><p>${oppName()}님이 비기기를 신청합니다. 받으시겠습니까?</p>`,[{label:'거절',fn:()=>ON.send({drawNo:1,u,s:G.seat})},{label:'수락',cls:'primary',fn:()=>{ON.send({drawOk:1,u,s:G.seat});drawAccepted();}}]);},400);return;}
   if(v.drawOk!=null){if(v.s!==G.seat)drawAccepted();return;}
-  if(v.drawNo!=null){if(v.s===G.seat)return;G.drawWait=null;drawRefuse();toast('상대가 비기기를 거절했습니다',2500);renderGame();return;}
+  if(v.drawNo!=null){if(v.s===G.seat)return;G.drawWait=null;toast('상대가 비기기를 거절했습니다',2500);renderGame();return;}
 }
 $('g-resign').onclick=()=>{if(!G||G.over)return;const loser=G.mode!=='2p'?G.human:turn;
   modal(`<h3>기권할까요?</h3><p>${G.mode!=='2p'?'이 대국은 패배로 기록됩니다.':NAME[loser]+'의 패배로 기록됩니다.'}</p>`,[{label:'계속 두기'},{label:'기권',cls:'primary',fn:()=>{if(G.mode==='online')ON.send({resign:G.seat});endGame(3-loser,'기권');}}]);};
@@ -772,14 +773,16 @@ function onUndoMsg(v){
 show('home');
 })();
 </script>
+
 <!--FS--><style>#fsbtn{position:fixed;right:10px;bottom:10px;z-index:9999;border:1px solid rgba(211,167,77,.55);background:rgba(20,20,20,.6);color:#d3a74d;border-radius:10px;padding:6px 10px;font:600 13px system-ui,sans-serif;cursor:pointer;opacity:.75}#fsbtn:hover{opacity:1}</style>
 <button id="fsbtn" type="button" aria-label="전체화면">⛶ 전체화면</button>
-<script>(function(){var b=document.getElementById('fsbtn'),el=document.documentElement,auto=true;
+<script>(function(){var b=document.getElementById('fsbtn'),el=document.documentElement,pending=false;
 function on(){return !!(document.fullscreenElement||document.webkitFullscreenElement);}
-function enter(){try{var p=el.requestFullscreen?el.requestFullscreen():(el.webkitRequestFullscreen&&el.webkitRequestFullscreen());if(p&&p.catch)p.catch(function(){});}catch(e){}}
-function exit(){try{var f=document.exitFullscreen||document.webkitExitFullscreen;if(f)f.call(document);}catch(e){}}
+function enter(){if(on())return;try{var p=el.requestFullscreen?el.requestFullscreen():(el.webkitRequestFullscreen&&el.webkitRequestFullscreen());if(p&&p.catch)p.catch(function(){pending=true;});}catch(e){pending=true;}}
+function exit(){try{var f=document.exitFullscreen||document.webkitExitFullscreen;if(on()&&f)f.call(document);}catch(e){}}
 function sync(){b.textContent=on()?'⧉ 창 모드':'⛶ 전체화면';}
 b.onclick=function(){on()?exit():enter();};
 document.addEventListener('fullscreenchange',sync);document.addEventListener('webkitfullscreenchange',sync);
-document.addEventListener('pointerdown',function(e){if(!auto||e.target===b)return;auto=false;if(!on())enter();},true);
+document.addEventListener('pointerdown',function(e){if(!pending||e.target===b)return;pending=false;enter();},true);
+var G_=document.getElementById('game');if(G_){new MutationObserver(function(){if(!G_.hidden)enter();}).observe(G_,{attributes:true,attributeFilter:['hidden']});}document.querySelectorAll('#home,#setup,#setup1,#setup2,#setup-pic,#setup-num,#stats').forEach(function(v){new MutationObserver(function(){if(!v.hidden)exit();}).observe(v,{attributes:true,attributeFilter:['hidden']});});
 sync();})();</script>

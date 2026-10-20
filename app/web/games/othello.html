@@ -633,14 +633,16 @@ function startOnline(res){ON=res.room;ONAMES=res.names||['',''];
 show('home');
 })();
 </script>
+
 <!--FS--><style>#fsbtn{position:fixed;right:10px;bottom:10px;z-index:9999;border:1px solid rgba(211,167,77,.55);background:rgba(20,20,20,.6);color:#d3a74d;border-radius:10px;padding:6px 10px;font:600 13px system-ui,sans-serif;cursor:pointer;opacity:.75}#fsbtn:hover{opacity:1}</style>
 <button id="fsbtn" type="button" aria-label="전체화면">⛶ 전체화면</button>
-<script>(function(){var b=document.getElementById('fsbtn'),el=document.documentElement,auto=true;
+<script>(function(){var b=document.getElementById('fsbtn'),el=document.documentElement,pending=false;
 function on(){return !!(document.fullscreenElement||document.webkitFullscreenElement);}
-function enter(){try{var p=el.requestFullscreen?el.requestFullscreen():(el.webkitRequestFullscreen&&el.webkitRequestFullscreen());if(p&&p.catch)p.catch(function(){});}catch(e){}}
-function exit(){try{var f=document.exitFullscreen||document.webkitExitFullscreen;if(f)f.call(document);}catch(e){}}
+function enter(){if(on())return;try{var p=el.requestFullscreen?el.requestFullscreen():(el.webkitRequestFullscreen&&el.webkitRequestFullscreen());if(p&&p.catch)p.catch(function(){pending=true;});}catch(e){pending=true;}}
+function exit(){try{var f=document.exitFullscreen||document.webkitExitFullscreen;if(on()&&f)f.call(document);}catch(e){}}
 function sync(){b.textContent=on()?'⧉ 창 모드':'⛶ 전체화면';}
 b.onclick=function(){on()?exit():enter();};
 document.addEventListener('fullscreenchange',sync);document.addEventListener('webkitfullscreenchange',sync);
-document.addEventListener('pointerdown',function(e){if(!auto||e.target===b)return;auto=false;if(!on())enter();},true);
+document.addEventListener('pointerdown',function(e){if(!pending||e.target===b)return;pending=false;enter();},true);
+var G_=document.getElementById('game');if(G_){new MutationObserver(function(){if(!G_.hidden)enter();}).observe(G_,{attributes:true,attributeFilter:['hidden']});}document.querySelectorAll('#home,#setup,#setup1,#setup2,#setup-pic,#setup-num,#stats').forEach(function(v){new MutationObserver(function(){if(!v.hidden)exit();}).observe(v,{attributes:true,attributeFilter:['hidden']});});
 sync();})();</script>

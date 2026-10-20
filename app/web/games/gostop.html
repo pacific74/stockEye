@@ -168,13 +168,15 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
 .card.new{outline:2px solid #f3d27a;border-radius:3px}
 .myscore{font-size:12px;color:var(--muted);display:flex;align-items:baseline;gap:4px}
 .myscore b{font-size:20px;color:var(--ink);line-height:1}
+.mn{font-size:12px;color:var(--muted);margin-left:4px;font-weight:600;font-variant-numeric:tabular-nums}
 .tb-r{display:flex;gap:4px}
 .hand{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .hc{border:0;background:none;padding:0;border-radius:5px;transition:transform .12s}
 .hand.active .hc:hover{transform:translateY(-3px)}
 .hand:not(.active) .hc{opacity:.75}
 .hc{position:relative}
-.hc.fits::after{content:'짝';position:absolute;top:-6px;right:-4px;font-size:11px;font-weight:700;color:#1c1507;background:#f3d27a;border-radius:999px;padding:1px 6px;box-shadow:0 1px 3px #0008}
+.hand .hc.fits{transform:translateY(-12px);filter:drop-shadow(0 0 5px rgba(243,210,122,.9))}
+.hand.active .hc.fits:hover{transform:translateY(-16px)}
 .banner{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%) scale(.85);font-family:var(--serif);font-weight:900;font-size:48px;color:#f3d27a;background:#111918e6;border:2px solid #f3d27a;padding:6px 26px;border-radius:14px;opacity:0;pointer-events:none;transition:opacity .15s,transform .15s;white-space:nowrap;z-index:5}
 .banner.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
 .banner.me{color:#fff;border-color:#fff}
@@ -767,8 +769,12 @@ if(location.protocol==='file:'||/^(127\.0\.0\.1|localhost)$/.test(location.hostn
 const kyu=l=>(11-l)+'급';
 const lvDesc=l=>l<=2?'입문 · 아무 패나 냅니다':l<=4?'초급 · 눈앞의 패만 봅니다':l<=6?'중급 · 뒤집을 패까지 따져 봅니다':l<=8?'고급 · 상대 약까지 막습니다':'최상급 · 패를 꼼꼼히 계산합니다';
 const KEY={rec:'gostop.v1.records',cur:'gostop.v1.current',pref:'gostop.v1.prefs',wallet:'gostop.v1.wallet'};
-const WALLET_START=1000,WALLET_REFILL=1000;
-function getWallet(){const v=load(KEY.wallet,null);return typeof v==='number'?v:WALLET_START;}
+const MONEY_START=1000,MONEY_REFILL=1000;
+function moneyKey(){return meta&&meta.online&&ON?'gostop.v1.money.room.'+ON.code:'gostop.v1.money.local';}
+function getMoney(){const m=load(moneyKey(),null);return(m&&typeof m==='object')?m:{};}
+function moneyIdx(q){return meta&&meta.online?(q+SEAT)%meta.n:q;}
+function moneyOf(q){const v=getMoney()[moneyIdx(q)];return v==null?MONEY_START:v;}
+function fmtM(v){return Number(v).toLocaleString('ko-KR');}
 function load(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
 function save(k,v){try{if(v==null)localStorage.removeItem(k);else localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 let prefs=Object.assign({level:5,sound:true,mode:2,statMode:2},load(KEY.pref,{}));
@@ -1034,7 +1040,10 @@ function breakdownHTML(sc){const rows=[];if(sc.gs)rows.push(['광',sc.g+'장',sc
 async function endRound(w,forced,why){stopBgm();const st=EN.settle(S,w,meta.carry,forced);S.over={winner:w};busy=false;
   const names=NAMES(S.n);let net=0;
   if(w===0)net=st.total;else{const mine=st.pays.find(x=>x.from===0);net=mine?-mine.amount:0;}
-  let wl=getWallet()+net,refill=0;while(wl<=0){wl+=WALLET_REFILL;refill++;}save(KEY.wallet,wl);
+  const mm=getMoney(),delta=Array(S.n).fill(0),refilled=[];
+  st.pays.forEach(x=>{delta[x.from]-=x.amount;delta[w]+=x.amount;});
+  for(let q=0;q<S.n;q++){const i=moneyIdx(q);let v=(mm[i]==null?MONEY_START:mm[i])+delta[q];if(v<=0){refilled.push(q);while(v<=0)v+=MONEY_REFILL;}mm[i]=v;}
+  save(moneyKey(),mm);const myM=moneyOf(0),myRefill=refilled.includes(0);
   if(!(meta.online&&RQ.length))records.push({t:Date.now(),mode:meta.online?'o'+S.n:S.n,level:meta.level,winner:w,net,pts:st.total,go:S.go[w],reason:why||(forced?'삼뻑':'스톱')});
   if(records.length>500)records=records.slice(-500);save(KEY.rec,records);
   meta.carry=0;meta.first=w;save(KEY.cur,null);render();
@@ -1043,7 +1052,7 @@ async function endRound(w,forced,why){stopBgm();const st=EN.settle(S,w,meta.carr
   await modal(`<h3 style="color:${w===0?'var(--brass)':'var(--red)'}">${w===0?'승리':names[w]+' 승'}</h3>
     <p>${why==='총통'?'총통으로 이겼습니다. ':forced?'뻑을 세 번 해서 이겼습니다. ':''}기본 ${st.base}점${S.go[w]?` · ${S.go[w]}고 → ${st.pts}점`:''}${st.common.filter(x=>!/고$/.test(x)).length?' · '+st.common.filter(x=>!/고$/.test(x)).join(' · '):''}</p>
     ${breakdownHTML(st.score)}<p class="h3" style="margin:4px 0 0">내는 사람</p><div class="bd">${payRows}</div>
-    <p class="net ${net>=0?'plus':'minus'}">내 점수 ${net>=0?'+':''}${net}점</p><p>보유 점수 ${wl}점${refill?` · 점수를 다 써서 ${WALLET_REFILL*refill}점을 다시 받았습니다`:''}</p>${meta.online&&!(SEAT===0&&!drivenNow())?'<p>방장이 다음 판을 시작하면 자동으로 시작됩니다.</p>':''}`,nextBtns());}
+    <p class="net ${net>=0?'plus':'minus'}">내 점수 ${net>=0?'+':''}${net}점</p><p>보유머니 ${fmtM(myM)}${myRefill?` · 머니를 다 써서 ${MONEY_REFILL}을 다시 받았습니다`:''}</p>${meta.online&&!(SEAT===0&&!drivenNow())?'<p>방장이 다음 판을 시작하면 자동으로 시작됩니다.</p>':''}`,nextBtns());}
 async function endNagari(){stopBgm();S.over={winner:-1};busy=false;meta.carry=Math.min(3,meta.carry+1);
   if(!(meta.online&&RQ.length))records.push({t:Date.now(),mode:meta.online?'o'+S.n:S.n,level:meta.level,winner:-1,net:0,pts:0,go:0,reason:'나가리'});save(KEY.rec,records);save(KEY.cur,null);render();say('나가리');
   await modal(`<h3>나가리</h3><p>아무도 나지 못했습니다. 다음 판 점수는 ${Math.pow(2,meta.carry)}배입니다.</p>`,nextBtns());}
@@ -1058,7 +1067,7 @@ function lmHTML(p){const lm=lastMove[p];if(!lm||(!lm.played.length&&!lm.flipped.
   return `<span class="lm"><span class="lml">낸 패</span>${lm.played.map(id=>cardSVG(id)).join('')||'<i>—</i>'}${lm.flipped.length?`<span class="lml">뒤집음</span>${lm.flipped.map(id=>cardSVG(id)).join('')}`:''}</span>`;}
 function render(){if(!S||$('game').hidden)return;const names=NAMES(S.n);
   let oh='';for(let q=1;q<S.n;q++){const sc=EN.scoreFor(S,q);
-    oh+=`<button class="opp${S.turn===q&&!S.over?' turn':''}" data-q="${q}"><div class="oh"><span class="on"><b>${names[q]}</b><small>${meta.online?oppState(q):kyu(meta.level)}${busy&&S.turn===q&&!S.over?' · <i>치는 중</i>':''}</small></span>
+    oh+=`<button class="opp${S.turn===q&&!S.over?' turn':''}" data-q="${q}"><div class="oh"><span class="on"><b>${names[q]}</b><span class="mn">(${fmtM(moneyOf(q))})</span><small>${meta.online?oppState(q):kyu(meta.level)}${busy&&S.turn===q&&!S.over?' · <i>치는 중</i>':''}</small></span>
       ${lmHTML(q)}<span class="backs">${vHand(q).map((_,i,arr)=>i>=arr.length-oppFlight[q]?'<i class="incoming"></i>':'<i></i>').join('')}</span><span class="osc num"><b>${sc.total}</b>점${S.go[q]?`<em>${S.go[q]}고</em>`:''}${S.shake[q]?`<em>흔들 ${S.shake[q]}</em>`:''}</span></div>${capRow(q)}</button>`;}
   $('opps').innerHTML=oh;$('opps').classList.toggle('two',S.n===3&&!isLand());
   // floor (+ cards in the middle of being played)
@@ -1075,7 +1084,7 @@ function render(){if(!S||$('game').hidden)return;const names=NAMES(S.n);
   $('floor').innerHTML=fh;
   const sc=EN.scoreFor(S,0);
   const kb=EN.hasK(S,0)?(S.kLocked?`<span class="kbtn locked" title="누군가 고를 해서 바꿀 수 없습니다">국진 ${EN.kIsPi(S,0)?'쌍피':'열끗'} · 고정</span>`:`<button class="kbtn" id="kbtn">국진 <b>${EN.kIsPi(S,0)?'쌍피':'열끗'}</b> ⇄ ${EN.kIsPi(S,0)?'열끗':'쌍피'}</button>`):'';
-  $('mine').innerHTML=`<div class="mh"><b>내가 먹은 패</b>${CLK?'<span class="clk" data-clk="0"></span>':''}${kb}${lmHTML(0)}<span class="myscore"><b class="num">${sc.total}</b>점${S.go[0]?`<em>${S.go[0]}고</em>`:''}${S.shake[0]?`<em>흔들 ${S.shake[0]}</em>`:''}${meta.carry?`<em>나가리 ×${Math.pow(2,meta.carry)}</em>`:''}</span></div>${capRow(0)}`;
+  $('mine').innerHTML=`<div class="mh"><b>내가 먹은 패</b><span class="mn">보유머니 ${fmtM(moneyOf(0))}</span>${CLK?'<span class="clk" data-clk="0"></span>':''}${kb}${lmHTML(0)}<span class="myscore"><b class="num">${sc.total}</b>점${S.go[0]?`<em>${S.go[0]}고</em>`:''}${S.shake[0]?`<em>흔들 ${S.shake[0]}</em>`:''}${meta.carry?`<em>나가리 ×${Math.pow(2,meta.carry)}</em>`:''}</span></div>${capRow(0)}`;
   const floorMonths=new Set(deal?[]:S.floor.map(mon));const hand=vHand(0).slice().sort((a,b)=>(a>=48)-(b>=48)||a-b);
   const my=S.turn===0&&!S.over&&!busy;
   $('hand').className='hand'+(my?' active':'');
@@ -1114,7 +1123,7 @@ function modeStats(n,level){const rs=records.filter(r=>r.mode===n&&(level==null|
 const pct=(w,n)=>n?Math.round(w/n*100)+'%':'–';
 function renderHome(){$('fan').innerHTML=[0,28,44].map(id=>cardSVG(id)).join('');$('ic2').innerHTML=cardSVG(4);$('ic3').innerHTML=cardSVG(20);$('ic4').innerHTML=cardSVG(40);
   const a=modeStats(2),b=modeStats(3);
-  $('home-record').innerHTML=`<div><b class="num">${a.n}판 ${a.w}승</b><span>맞고 · 승률 ${pct(a.w,a.n)}</span></div><div><b class="num">${b.n}판 ${b.w}승</b><span>3인 · 승률 ${pct(b.w,b.n)}</span></div><div><b class="num">${a.net+b.net>=0?'+':''}${a.net+b.net}</b><span>누적 점수</span></div><div><b class="num">${getWallet()}</b><span>보유 점수</span></div>`;
+  $('home-record').innerHTML=`<div><b class="num">${a.n}판 ${a.w}승</b><span>맞고 · 승률 ${pct(a.w,a.n)}</span></div><div><b class="num">${b.n}판 ${b.w}승</b><span>3인 · 승률 ${pct(b.w,b.n)}</span></div><div><b class="num">${a.net+b.net>=0?'+':''}${a.net+b.net}</b><span>누적 점수</span></div><div><b class="num">${fmtM(moneyOf(0))}</b><span>보유머니</span></div>`;
   $('ic5').innerHTML=cardSVG(8);const os=NET.saved('gostop');$('btn-oresume').hidden=!os;if(os)$('btn-oresume').innerHTML=`<span class="mini-card">${cardSVG(12)}</span><span class="t">온라인 고스톱 이어하기<small>방 번호 ${os.code}</small></span>`;
   const c=load(KEY.cur,null),rb=$('btn-resume');
   if(c&&c.S){rb.hidden=false;rb.innerHTML=`<span class="mini-card">${cardSVG(28)}</span><span class="t">이어하기<small>${c.S.n===2?'맞고':'3인 고스톱'} · 컴퓨터 ${kyu(c.meta.level)} · 남은 패 ${c.S.hands[0].length}장</small></span>`;}else rb.hidden=true;}
@@ -1179,7 +1188,6 @@ function autoPlay(){if(!S||S.over||busy||S.turn!==0)return;toast('시간이 다 
 show('home');
 })();
 </script>
-
 <!--FS--><style>#fsbtn{position:fixed;right:10px;bottom:10px;z-index:9999;border:1px solid rgba(211,167,77,.55);background:rgba(20,20,20,.6);color:#d3a74d;border-radius:10px;padding:6px 10px;font:600 13px system-ui,sans-serif;cursor:pointer;opacity:.75}#fsbtn:hover{opacity:1}</style>
 <button id="fsbtn" type="button" aria-label="전체화면">⛶ 전체화면</button>
 <script>(function(){var b=document.getElementById('fsbtn'),el=document.documentElement,pending=false;

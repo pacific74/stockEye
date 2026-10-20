@@ -175,8 +175,9 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
 .hand.active .hc:hover{transform:translateY(-3px)}
 .hand:not(.active) .hc{opacity:.75}
 .hc{position:relative}
-.hand .hc.fits{transform:translateY(-12px);filter:drop-shadow(0 0 5px rgba(243,210,122,.9))}
-.hand.active .hc.fits:hover{transform:translateY(-16px)}
+.hand .hc.fits,.hand .hc.bon{transform:translateY(-12px)}
+.hand .hc.fits{filter:drop-shadow(0 0 5px rgba(243,210,122,.9))}
+.hand.active .hc.fits:hover,.hand.active .hc.bon:hover{transform:translateY(-16px)}
 .banner{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%) scale(.85);font-family:var(--serif);font-weight:900;font-size:48px;color:#f3d27a;background:#111918e6;border:2px solid #f3d27a;padding:6px 26px;border-radius:14px;opacity:0;pointer-events:none;transition:opacity .15s,transform .15s;white-space:nowrap;z-index:5}
 .banner.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
 .banner.me{color:#fff;border-color:#fff}

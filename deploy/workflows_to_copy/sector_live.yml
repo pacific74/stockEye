@@ -24,6 +24,8 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      NAVER_HUB_ID: ${{ secrets.NAVER_HUB_ID }}          # 시장 급변(종합지수 ±3%) 알림의 뉴스 — 키는 Secrets 에만
+      NAVER_HUB_SECRET: ${{ secrets.NAVER_HUB_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

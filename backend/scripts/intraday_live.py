@@ -322,6 +322,22 @@ def main():
         import threading
         threading.Thread(target=job, name="sector-live", daemon=True).start()   # 전 종목 시세 1회 (1시간에 한 번)
 
+    shock_at = [0.0]                                                    # 시장 급변(종합지수 ±3%) 확인: 2분마다 (지수 시세 1건)
+
+    def shock_slot(hm: str) -> None:
+        if not sb or hm < "09:01" or hm > "15:35" or time.time() - shock_at[0] < 120:
+            return
+        shock_at[0] = time.time()
+
+        def job():
+            try:
+                from stockeye.analysis.market_shock import check
+                check(sb, admin_topics(sb))
+            except Exception as e:  # noqa: BLE001
+                print(f"⚠ 시장 급변 확인 실패: {e}")
+        import threading
+        threading.Thread(target=job, name="market-shock", daemon=True).start()
+
     while True:
         t0 = time.time()
         now = _now()
@@ -356,6 +372,7 @@ def main():
         except Exception as e:  # noqa: BLE001
             print(f"⚠ 종가배팅 추적 실패: {e}")
         sector_slot(hm)
+        shock_slot(hm)
         try:                                                           # 당일 잠정 수급 (09:35·10:05·11:25·13:25·14:35 + 새 고정 종목)
             flow.start(now, flow_codes())
         except Exception as e:  # noqa: BLE001

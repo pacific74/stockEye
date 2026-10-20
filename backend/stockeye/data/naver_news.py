@@ -94,3 +94,24 @@ def fetch(name: str, days: int = 3, display: int = 50, session=None, timeout: fl
     except Exception as e:  # noqa: BLE001
         log.warning("뉴스 %s 실패: %s", name, e)
         return []
+
+
+def fetch_query(query: str, days: int = 1, display: int = 40, must: tuple[str, ...] = (), session=None,
+                timeout: float = 8.0) -> list[dict]:
+    """검색어로 최근 뉴스 (시장 전체 이슈용). must 중 하나가 제목에 있는 것만 · 실패하면 빈 목록"""
+    if not enabled() or not query:
+        return []
+    import requests
+    s = session or requests
+    try:
+        r = s.get(URL, params={"query": query, "display": display, "sort": "date"}, timeout=timeout,
+                  headers={"X-NCP-APIGW-API-KEY-ID": os.environ["NAVER_HUB_ID"],
+                           "X-NCP-APIGW-API-KEY": os.environ["NAVER_HUB_SECRET"]})
+        if r.status_code != 200:
+            log.warning("뉴스 %s: HTTP %s %s", query, r.status_code, r.text[:120])
+            return []
+        items = parse(r.json(), "", days)
+        return [x for x in items if not must or any(m in x["title"] for m in must)]
+    except Exception as e:  # noqa: BLE001
+        log.warning("뉴스 %s 실패: %s", query, e)
+        return []

@@ -106,6 +106,15 @@ def main():
         run(publish=not args.dry_run, skip_if_recent=args.skip_if_recent)
     except RuntimeError as e:
         sys.exit(str(e))
+    if not args.dry_run:        # 종합지수 ±3% 이상이면 뉴스와 함께 관리자 알림 (PC 22번이 이미 보냈으면 중복 없음)
+        try:
+            from stockeye.cloud.client import Supabase
+            from stockeye.analysis.market_shock import check
+            from scripts.intraday_live import admin_topics
+            sb = Supabase()
+            check(sb, admin_topics(sb))
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠ 시장 급변 확인 실패: {e}")
 
 
 if __name__ == "__main__":

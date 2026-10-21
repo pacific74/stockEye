@@ -247,7 +247,14 @@ def main():
     # 추천주 검증: recommendations 결과 칸 채우기(관심 탭 20거래일 · 장중 탭은 위 실전 기록) + 통계 → 앱 '검증 > 추천주'
     if not args.as_of:
         from stockeye.analysis.rec_eval import run as rec_run
-        step("추천주 검증 (결과·통계)", lambda: rec_run(sb, pit.ohlcv, report["date"]), errors)
+        def _rec_run():
+            kis = None
+            if os.getenv("KIS_APP_KEY"):
+                from stockeye.data.sources.kis_source import KISClient
+                kc = cfg.get("kis", {})
+                kis = KISClient(kc.get("env", "prod"), data_dir(cfg) / ".kis_token.json", kc.get("calls_per_sec", 15))
+            return rec_run(sb, pit.ohlcv, report["date"], kis)
+        step("추천주 검증 (결과·통계)", _rec_run, errors)
 
     # 매매일지: 앱을 쓰는 모든 사용자 각각 (본인 데이터만 본인에게 보임)
     from stockeye.cloud.journal import CloudJournal

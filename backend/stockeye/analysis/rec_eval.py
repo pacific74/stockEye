@@ -231,7 +231,7 @@ def stats(rows: list[dict]) -> dict:
             **win_loss(pn)}
 
 
-def summarize(rows: list[dict], ix: dict | None = None, nx: dict | None = None) -> dict:
+def summarize(rows: list[dict], ix: dict | None = None, nx: dict | None = None, fills: dict | None = None) -> dict:
     cnt: dict[tuple, int] = {}
     for r in rows:
         k = (str(r["rec_date"])[:10], r["code"])
@@ -247,6 +247,7 @@ def summarize(rows: list[dict], ix: dict | None = None, nx: dict | None = None) 
             "grid": grid(rows),
             "dt_time": grid_time(rows, ix=ix),
             "cb_nx": grid_nx(rows, nx or {}),
+            "hr_time": grid_hour(rows, fills),
             "by_day": {d: stats([r for r in rows if str(r["rec_date"])[:10] == d]) for d in dates[-60:]}}
 
 
@@ -361,6 +362,38 @@ def grid_time(rows: list[dict], kind: str = "daytrade", ix: dict | None = None) 
     return out
 
 
+HOUR_KINDS = ("v3", "nextday", "early", "reversal", "uplimit", "limitcatch")
+
+
+def hour_bucket(t) -> str:
+    """체결(포착) 시각 → 1시간 단위 '09' … '15' · 시각 없음(미체결·미기록)은 '--'"""
+    s = str(t or "").strip()
+    if len(s) < 5 or s[2] != ":" or not s[:2].isdigit():
+        return "--"
+    h = int(s[:2])
+    return f"{min(max(h, 9), 15):02d}"
+
+
+def fill_of(r: dict, fills: dict | None) -> str | None:
+    """매수 시각: 저녁 추천은 기록한 장중 체결 시각 · 상한가포착은 포착 시각"""
+    if r.get("kind") in DAILY_KINDS:
+        return (fills or {}).get(f"{str(r['rec_date'])[:10]}|{r['kind']}|{r['code']}")
+    return r.get("rec_time")
+
+
+def grid_hour(rows: list[dict], fills: dict | None = None) -> dict:
+    """시간대별(1시간) 표: {날짜: {"09|90|v3": {"d": …, "h": …}}} (칸 모양은 grid 와 같음)"""
+    out: dict[str, dict] = {}
+    for r in rows:
+        k = r.get("kind")
+        b, c = band_of(r.get("score")), cat_of(r.get("res_status"))
+        if k not in HOUR_KINDS or b is None or c is None:
+            continue
+        hb = hour_bucket(fill_of(r, fills)) if c not in ("unfilled", "wait") else "--"
+        _add(out.setdefault(str(r["rec_date"])[:10], {}).setdefault(f"{hb}|{b}|{k}", {}), r, c)
+    return out
+
+
 IX_FILE = "stats/dt_ix.json"
 
 
@@ -450,7 +483,7 @@ DETAIL_KEY = "RECS_DETAIL"
 DETAIL_DAYS = 150
 
 
-def detail(rows: list[dict], ix_all: dict | None = None, today: str | None = None) -> list[dict]:
+def detail(rows: list[dict], ix_all: dict | None = None, today: str | None = None, fills: dict | None = None) -> list[dict]:
     """통계 표에서 추천건수를 눌렀을 때 보여 줄 종목별 목록 (표에 들어가는 것과 같은 조건: 60점↑ · 표 구분 · 결과 칸 있음)
     짧은 키: d 날짜 · k 구분 · c 종목코드 · n 이름 · s 점수 · b 점수대 · tb 매수시간대 · t 포착시각 · st 결과 · cat 표 칸 ·
              p 손익% · dn 끝남 · dy 보유일 · ix 매수·매도 순간 지수"""
@@ -469,6 +502,9 @@ def detail(rows: list[dict], ix_all: dict | None = None, today: str | None = Non
                "tb": time_bucket(r.get("rec_time")) if k == "daytrade" else None,
                "st": (r.get("res_status") or "").split(" · ")[0].strip(), "cat": c, "p": _f(r.get("res_pnl")),
                "dn": bool(r.get("res_done")), "dy": int(_f(r.get("res_days")) or 0) or None}
+        if k in HOUR_KINDS:
+            row["hb"] = hour_bucket(fill_of(r, fills)) if c not in ("unfilled", "wait") else "--"
+            row["ft"] = fill_of(r, fills)
         if x:
             row["ix"] = x
         out.append(row)
@@ -493,16 +529,24 @@ def publish(sb, today: str | None = None) -> dict:
     except Exception as e:  # noqa: BLE001
         log.warning("종가배팅 NXT 기록 읽기 실패: %s", e)
         nx = {}
-    out = summarize(rows, ix, nx)
+    from .fill_time import load as load_fills
+    fills = load_fills(sb)
+    out = summarize(rows, ix, nx, fills)
     pub.publish_backtest(sb, KEY, "추천주 검증", out)
     try:   # 표의 추천건수를 눌렀을 때 보는 종목별 목록 (앱이 눌렀을 때만 받음)
-        pub.publish_backtest(sb, DETAIL_KEY, "추천주 상세", {"updated": out["updated"], "rows": detail(rows, ix_all, day)})
+        pub.publish_backtest(sb, DETAIL_KEY, "추천주 상세", {"updated": out["updated"], "rows": detail(rows, ix_all, day, fills)})
     except Exception as e:  # noqa: BLE001
         log.warning("추천 상세 목록 올리기 실패: %s", e)
     return out
 
 
-def run(sb, ohlcv: pd.DataFrame, today: str) -> int:
+def run(sb, ohlcv: pd.DataFrame, today: str, kis=None) -> int:
     n = grade_open(sb, ohlcv, today)
+    if kis is not None:
+        try:
+            from .fill_time import resolve
+            resolve(sb, kis, ohlcv, today)
+        except Exception as e:  # noqa: BLE001
+            log.warning("체결 시각 기록 실패: %s", e)
     publish(sb, today)
     return n

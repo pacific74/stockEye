@@ -13,9 +13,10 @@ import 'rec_detail.dart';
 ///   데이터: 저녁 배치 RECS 의 grid {날짜: {"90|v3": {"d": 완료, "h": 보유중}}} · dt_time {날짜: {"09:10|90": …}}
 ///   → 고른 기간만 더함
 class OverviewTab extends StatefulWidget {
-  const OverviewTab({super.key, this.daytrade = false, this.closingbet = false});
+  const OverviewTab({super.key, this.daytrade = false, this.closingbet = false, this.hourly = false});
   final bool daytrade; // true = 통계 > 당일단타 탭
   final bool closingbet; // true = 통계 > 종가배팅 탭
+  final bool hourly; // true = 통계 > 시간대별 탭 (2026-10-22)
   @override
   State<OverviewTab> createState() => _OverviewTabState();
 }
@@ -33,6 +34,15 @@ const _kinds = [
 const _bands = [90, 80, 70, 60];
 const _dtBands = [90, 80]; // 통계 > 당일단타는 80점 이상만 (2026-10-15)
 const _cats = ['t1', 't2', 't3', 'even', 'stop'];
+const _hourKinds = [
+  ('v3', 'V3'),
+  ('nextday', '유망주'),
+  ('early', '상승초기'),
+  ('reversal', '추세전환'),
+  ('uplimit', '상파'),
+  ('limitcatch', '상한가포착'),
+];
+const _hours = ['09', '10', '11', '12', '13', '14', '15', '--'];
 const _times = ['09:00', '09:10', '09:20', '09:30', '09:40', '09:50'];
 
 // 칸 너비: 점수 · 구분 · 추천건수 · 체결율 · 1차 · 2차 · 3차 · 매수가매도 · 손절 · 평균손익 · 누적손익
@@ -47,7 +57,7 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
   late Future<Json> _f = _load();
   String _period = 'all'; // all · year · month · day
   String? _year, _month, _day; // '2026' · '2026-10' · '2026-10-15'
-  String _mode = 'd'; // d 완료 · h 보유중 · a 전체(둘 다)
+  String _mode = 'a'; // a 전체(둘 다 · 기본) · d 완료 · h 보유중
   List<String> get _modes => _mode == 'a' ? const ['d', 'h'] : [_mode];
   String get _modeName => switch (_mode) { 'a' => '전체', 'h' => '보유중', _ => '완료' };
 
@@ -145,6 +155,7 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
             ]),
           );
           final filters = _filters(context, years, months, dates);
+          if (widget.hourly) return _hourly(context, filters, empty, data, inPeriod, open);
           if (widget.closingbet) return _closingbet(context, filters, empty, dates.isEmpty, sum, asMap(data['cb_nx']), inPeriod, open);
           if (!widget.daytrade) {
             // 틀 고정: 검색 줄 + 표 머리는 그대로, 아래 표만 위아래로 스크롤 (옆으로는 머리·표가 같이 움직임)
@@ -468,6 +479,78 @@ class _OverviewTabState extends State<OverviewTab> with AutomaticKeepAliveClient
       c(f == 0 ? '-' : '${p.toStringAsFixed(1)}%', _wSum, color: f == 0 ? null : (p >= 0 ? upColor : downColor)),
       for (final e in extras) c(e, _wNx),
     ]);
+  }
+
+  // ---------------------------------------------------------------- 통계 > 시간대별 (2026-10-22)
+  /// V3 · 유망주 · 상승초기 · 추세전환 · 상파 · 상한가포착을 매수시간(1시간) × 점수 × 추천구분으로.
+  /// 저녁 추천은 다음 거래일 장중 1차 매수구간에 처음 닿은 시각(1분봉)을 매수시각으로 기록 (기록은 2026-10-22 저녁부터 쌓임).
+  Widget _hourly(BuildContext context, Widget filters, Widget empty, Json data, bool Function(String) inPeriod,
+      void Function(String, bool Function(Json)) open) {
+    final hgrid = asMap(data['hr_time']);
+    // 키 '10|90|v3' → 그 키 + '10|all|all' (시간대 합계)
+    final hsum = _sumUp(hgrid, hgrid.keys.where(inPeriod), (k) => [k, '${k.split('|').first}|all|all']);
+    final t = Theme.of(context).textTheme;
+    String hname(String h) => h == '--' ? '시간\n미기록' : '$h시\n~\n${(int.parse(h) + 1).toString().padLeft(2, '0')}시';
+    String hshort(String h) => h == '--' ? '시간 미기록' : '$h시대';
+    final groups = <Widget>[];
+    for (final h in _hours) {
+      final tot = hsum['$h|all|all'];
+      if (tot == null) continue;
+      final rows = <Widget>[
+        _row(context, [('전체', _wScore, false), ('전체', _wKind, true)], tot, 0, true,
+            fill: true, onCount: () => open('${hshort(h)} · 전체', (r) => r['hb'] == h)),
+      ];
+      var i = 1;
+      for (final b in _bands) {
+        for (final (k, kn) in _hourKinds) {
+          final s = hsum['$h|$b|$k'];
+          if (s == null) continue;
+          rows.add(_row(context, [('$b~', _wScore, false), (kn, _wKind, true)], s, i++, false,
+              fill: true, onCount: () => open('${hshort(h)} · $b~ · $kn', (r) => r['hb'] == h && r['b'] == b && r['k'] == k)));
+        }
+      }
+      groups.add(_group(context, hname(h), _wTime, rows));
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        filters,
+        const SizedBox(height: 8),
+        if (hgrid.isEmpty)
+          Expanded(
+            child: ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
+              Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(
+                      child: Text('시간대별 집계가 아직 없어요 — 오늘 저녁 배치 뒤부터 쌓여요\n(저녁 추천의 장중 체결 시각은 2026-10-22 부터 기록)',
+                          textAlign: TextAlign.center, style: t.bodySmall?.copyWith(color: Colors.orange)))),
+            ]),
+          )
+        else
+          Expanded(
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 32),
+              children: [
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    _header(context, [('매수시간', _wTime), ('점수', _wScore), ('추천구분', _wKind)], fill: true),
+                    ...groups,
+                  ]),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                    '* 매수시간 = 저녁 추천(V3·유망주·상승초기·추세전환·상파)은 추천 다음 거래일 하루 중 1차 매수구간에 처음 닿은 시각(1분봉, 시가가 구간 안이면 09시), '
+                    '상한가포착은 포착 시각. 미체결·시간 미기록은 "시간 미기록" 묶음.\n'
+                    '저녁 추천의 유효기간은 다음 거래일 하루 — 그날 못 사면 미체결. 체결 시각은 기록을 시작한 뒤(2026-10-22 저녁)부터 쌓이므로 그 전 체결분은 시간 미기록.\n'
+                    '칸 = 체결된 것 중 비율 (괄호 = 평균 보유기간). 평균·누적 손익은 비용 0.25% 뺀 %.',
+                    style: t.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
+              ],
+            ),
+          ),
+      ]),
+    );
   }
 
   // ---------------------------------------------------------------- 통계 > 종가배팅 (2026-10-15)

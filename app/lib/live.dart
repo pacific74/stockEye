@@ -40,7 +40,15 @@ class LiveQuote {
   bool get isOpen => status == 'OPEN';
 
   /// 넥스트레이드 프리마켓(08:00~08:50)·애프터마켓(15:40~20:00) 거래 중이고 정규장은 닫힘 → 현재가로 NXT 가격을 씀 (2026-10-16)
-  bool get nxtOn => overStatus == 'OPEN' && (overPrice ?? 0) > 0 && status != 'OPEN';
+  ///   네이버가 '지금 거래 중' 을 OPEN 으로 안 주는 때(다른 글자)에도 NXT 시간이면 보이도록: OPEN → 켬 · CLOSE → 끔 · 그 밖(없음·다른 글자) → 시간으로 판단 (2026-10-21)
+  bool get nxtOn {
+    if ((overPrice ?? 0) <= 0 || status == 'OPEN') return false;
+    if (overStatus == 'OPEN') return true;
+    if (overStatus == 'CLOSE') return false;
+    final n = MarketClock.kstNow();
+    final hm = n.hour * 100 + n.minute;
+    return n.weekday <= DateTime.friday && ((hm >= 800 && hm < 850) || (hm >= 1540 && hm < 2000));
+  }
 
   /// NXT 가격의 정규장 가격 대비 % (프리마켓 = 전일 종가 대비 · 애프터마켓 = 오늘 종가 대비)
   double? get nxtRatio => !nxtOn || price <= 0 ? null : (overPrice! / price - 1) * 100;

@@ -102,6 +102,28 @@ class InfoBox extends StatelessWidget {
 /// 네모 박스 여러 개 한 줄 (넘치면 다음 줄)
 Widget infoBoxes(List<Widget> boxes) => Wrap(spacing: 4, runSpacing: 3, children: boxes);
 
+/// 종목명 + 현재가·등락률 한 줄 — 좁은 화면(폰)에서는 종목명 아래 줄로 현재가를 내림 (이름이 잘리지 않게)
+class NameQuoteRow extends StatelessWidget {
+  const NameQuoteRow({super.key, required this.name, required this.quote});
+  final Widget name;
+  final Widget quote;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
+        if (box.maxWidth < 520) {
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            name,
+            Padding(padding: const EdgeInsets.only(top: 2), child: quote),
+          ]);
+        }
+        return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Expanded(child: name),
+          const SizedBox(width: 6),
+          quote,
+        ]);
+      });
+}
+
 /// 점수 옆 [당일] — 오늘 장중에 새로 추천된 종목 표시
 class TodayTag extends StatelessWidget {
   const TodayTag({super.key});

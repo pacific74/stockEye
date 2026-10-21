@@ -66,17 +66,18 @@ class ClosingbetTile extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Expanded(
-                      child: StockName('${r['name']}', score: r['score'] as num?, scoreDigits: 1, style: t.titleMedium)),
-                  const SizedBox(width: 6),
-                  if (px != null)
-                    Text.rich(TextSpan(children: [
-                      TextSpan(text: '현재가 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
-                      TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                    ])),
-                  ChgBadge(Live.last['${r['code']}']?.ratio ?? (r['chg_pct'] as num?)), // 오늘 등락률
-                ]),
+                // 폰처럼 좁으면 종목명 한 줄 · 현재가는 아래 줄 (이름이 'LS EL…' 로 잘려 안 보였음, 2026-10-21)
+                NameQuoteRow(
+                  name: StockName('${r['name']}', score: r['score'] as num?, scoreDigits: 1, style: t.titleMedium),
+                  quote: Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (px != null)
+                      Text.rich(TextSpan(children: [
+                        TextSpan(text: '현재가 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
+                        TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      ])),
+                    ChgBadge(Live.last['${r['code']}']?.ratio ?? (r['chg_pct'] as num?)), // 오늘 등락률
+                  ]),
+                ),
                 StockInfoLine('${r['code']}', sectorIdx: true), // [시장][업종 · 테마][시총]
                 const SizedBox(height: 3),
                 infoBoxes([

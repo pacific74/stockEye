@@ -172,6 +172,7 @@ class WatchTile extends StatelessWidget {
                       market: c['market'] as String?,
                       score: score,
                       scoreDigits: scoreDigits,
+                      today: c['today_new'] == true,
                       style: t.titleMedium?.copyWith(fontSize: 17, fontWeight: FontWeight.bold));
                   final priceW = Row(mainAxisSize: MainAxisSize.min, children: [
                     if (px != null)

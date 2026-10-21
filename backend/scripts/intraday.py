@@ -109,6 +109,12 @@ def main():
     except Exception as e:  # noqa: BLE001
         log.warning("유망주 장중 상태 실패: %s", e)
         report.get("strategies", {}).pop("nextday", None)
+    try:                                      # 전날 저녁 목록에 없던 후보 → 앱에서 점수 옆 [당일]
+        from stockeye.cloud.today_new import mark
+        n_new = mark(report, DataSync(store, sb).get_json("reports/latest.json"))
+        print(f"당일 추천 표시 {n_new}개")
+    except Exception as e:  # noqa: BLE001
+        log.warning("당일 추천 표시 실패: %s", e)
     report["intraday"] = {"time": hm, "coverage": round(cov, 3)}
     try:                                      # 장중 지수·업종 급락 경고 (이어받은 후보에도 다시 붙임)
         from stockeye.analysis.market_alert import annotate

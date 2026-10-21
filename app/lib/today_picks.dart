@@ -102,7 +102,7 @@ class TodayPickTile extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
         leading: CircleAvatar(child: Text('$rank')),
-        title: StockName('${c['name']}', market: c['market'] as String?, score: p.score),
+        title: StockName('${c['name']}', market: c['market'] as String?, score: p.score, today: c['today_new'] == true),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Wrap(spacing: 4, runSpacing: 2, children: [
             _chip(p.zone, zoneColor),

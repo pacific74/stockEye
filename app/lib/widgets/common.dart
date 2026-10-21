@@ -102,14 +102,31 @@ class InfoBox extends StatelessWidget {
 /// 네모 박스 여러 개 한 줄 (넘치면 다음 줄)
 Widget infoBoxes(List<Widget> boxes) => Wrap(spacing: 4, runSpacing: 3, children: boxes);
 
+/// 점수 옆 [당일] — 오늘 장중에 새로 추천된 종목 표시
+class TodayTag extends StatelessWidget {
+  const TodayTag({super.key});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(left: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+        decoration: BoxDecoration(
+            color: Colors.purple.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.purple.shade200.withValues(alpha: 0.7))),
+        child: Text('[당일]', style: TextStyle(color: Colors.purple.shade200, fontSize: 11, fontWeight: FontWeight.bold)),
+      );
+}
+
 /// 종목명 + 코스피/코스닥 + (점수)
 class StockName extends StatelessWidget {
-  const StockName(this.name, {super.key, this.market, this.score, this.style, this.scoreDigits = 0});
+  const StockName(this.name, {super.key, this.market, this.score, this.style, this.scoreDigits = 0, this.today = false});
   final String name;
   final String? market;
   final num? score;
   final TextStyle? style;
   final int scoreDigits; // 점수 소수 자리 (관심 탭 점수는 1자리)
+  final bool today; // 오늘 장중에 새로 추천된 종목 (전날 저녁 목록에 없었음) → 점수 옆 [당일]
 
   @override
   Widget build(BuildContext context) => Row(children: [
@@ -118,6 +135,7 @@ class StockName extends StatelessWidget {
                 overflow: TextOverflow.ellipsis, style: style ?? const TextStyle(fontWeight: FontWeight.w600))),
         MarketBadge(market),
         if (score != null) ...[const SizedBox(width: 6), ScoreBadge(score, digits: scoreDigits)],
+        if (today) const TodayTag(),
       ]);
 }
 
@@ -306,8 +324,11 @@ class CandidateTile extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(bigStrategy && ss != null ? '${ss.toStringAsFixed(0)}점' : '${score.toStringAsFixed(0)}점',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(bigStrategy && ss != null ? '${ss.toStringAsFixed(0)}점' : '${score.toStringAsFixed(0)}점',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              if (c['today_new'] == true) const TodayTag(),
+            ]),
             if (showStrategyScore && ss != null)
               Text(bigStrategy ? '종합 ${score.toStringAsFixed(0)}' : '전략 ${ss.toStringAsFixed(0)}',
                   style: const TextStyle(fontSize: 11, color: Colors.grey)),

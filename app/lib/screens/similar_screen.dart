@@ -22,6 +22,7 @@ class SimilarScreen extends StatefulWidget {
 
 class _SimilarScreenState extends State<SimilarScreen> {
   late Future<(Json, Json)> _f = _load();
+  bool _reloaded = false; // 요청 '완료' 뒤 다시 불러왔는데도 비어 있으면 무한 새로고침 대신 안내 (2026-10-22)
   final _scroll = ScrollController();
   int _sel = 0;
 
@@ -52,7 +53,13 @@ class _SimilarScreenState extends State<SimilarScreen> {
         builder: (context, data) {
           final d = data.$1;
           if (d['missing'] == true) {
-            return _PatternRequest(code: widget.code, onDone: () => setState(() => _f = _load()));
+            return _PatternRequest(
+                code: widget.code,
+                emptyAfterDone: _reloaded,
+                onDone: () => setState(() {
+                  _reloaded = true;
+                  _f = _load();
+                }));
           }
           final win = (d['window'] as num?)?.toInt() ?? 20;
           final q = _path(d['query_path']);
@@ -330,8 +337,9 @@ class _ComparePainter extends CustomPainter {
 
 /// 아직 패턴이 없는 종목: [패턴 찾기 요청] → 상태 표시 · 1분마다 자동 확인
 class _PatternRequest extends StatefulWidget {
-  const _PatternRequest({required this.code, required this.onDone});
+  const _PatternRequest({required this.code, required this.onDone, this.emptyAfterDone = false});
   final String code;
+  final bool emptyAfterDone; // 완료로 보고 다시 불러왔는데 결과가 비어 있음 → 또 불러오지 않음
   final VoidCallback onDone;
 
   @override
@@ -344,6 +352,8 @@ class _PatternRequestState extends State<_PatternRequest> {
   String? _err;
   Timer? _timer;
   int _polls = 0;
+  bool _sawWaiting = false; // 이 화면에서 새로 요청해 기다린 적 있음
+  bool _emptyDone = false;
 
   @override
   void initState() {
@@ -365,8 +375,13 @@ class _PatternRequestState extends State<_PatternRequest> {
     setState(() => _st = st);
     if (st['status'] == 'done') {
       _timer?.cancel();
-      widget.onDone();
+      if (!widget.emptyAfterDone || _sawWaiting) {
+        widget.onDone();
+      } else if (mounted) {
+        setState(() => _emptyDone = true);
+      }
     } else if (_waiting) {
+      _sawWaiting = true;
       _timer ??= Timer.periodic(const Duration(minutes: 1), (_) {
         if (++_polls > 70) _timer?.cancel(); // 최대 약 1시간 10분
         _check();
@@ -422,6 +437,12 @@ class _PatternRequestState extends State<_PatternRequest> {
               const SizedBox(height: 6),
               Text('이 화면을 열어 두면 1분마다 확인해서 끝나면 바로 보여줍니다.', style: t.bodySmall),
             ] else ...[
+              if (_emptyDone)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text('계산은 끝났다고 나오지만 이 종목의 결과가 비어 있어요 (저장 실패·과거 데이터 부족 등). 다시 요청해 보세요.',
+                      style: TextStyle(color: Colors.orange)),
+                ),
               if (_st['status'] == 'failed')
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),

@@ -13,8 +13,8 @@ foreach ($old in @('StockEye Daytrade', 'StockEye Limitcatch')) {
   }
 }
 $tasks = @(
-  @{ Name = 'StockEye Intraday';   Bat = '22_intraday.bat';   At = '08:50' },
-  @{ Name = 'StockEye Closingbet'; Bat = '16_closingbet.bat'; At = '14:45' }
+  @{ Name = 'StockEye Intraday';   Bat = '22_intraday.bat';   At = '08:50'; Catchup = $true },
+  @{ Name = 'StockEye Closingbet'; Bat = '16_closingbet.bat'; At = '14:45'; Catchup = $false }  # 14:45 only (no catch-up when the PC was off)
 )
 foreach ($t in $tasks) {
   if (Get-ScheduledTask -TaskName $t.Name -ErrorAction SilentlyContinue) {
@@ -24,8 +24,10 @@ foreach ($t in $tasks) {
   $bat = Join-Path $dir $t.Bat
   $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c `"$bat`" auto" -WorkingDirectory $dir
   $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At $t.At
-  $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-    -ExecutionTimeLimit (New-TimeSpan -Hours 8) -MultipleInstances IgnoreNew
+  $opts = @{ AllowStartIfOnBatteries = $true; DontStopIfGoingOnBatteries = $true
+             ExecutionTimeLimit = (New-TimeSpan -Hours 8); MultipleInstances = 'IgnoreNew' }
+  if ($t.Catchup) { $opts.StartWhenAvailable = $true }   # Intraday: if started late the same day it still helps
+  $settings = New-ScheduledTaskSettingsSet @opts
   $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
   Register-ScheduledTask -TaskName $t.Name -Action $action -Trigger $trigger -Settings $settings -Principal $principal | Out-Null
   Write-Host "registered: $($t.Name)  Mon-Fri $($t.At)  -> $($t.Bat) auto"

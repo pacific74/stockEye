@@ -124,7 +124,7 @@ class NameQuoteRow extends StatelessWidget {
       });
 }
 
-/// 점수 옆 [당일] — 오늘 장중에 새로 추천된 종목 표시
+/// 점수 옆 당일 — 오늘 장중에 새로 추천된 종목 표시
 class TodayTag extends StatelessWidget {
   const TodayTag({super.key});
 
@@ -136,7 +136,7 @@ class TodayTag extends StatelessWidget {
             color: Colors.purple.withValues(alpha: 0.16),
             borderRadius: BorderRadius.circular(6),
             border: Border.all(color: Colors.purple.shade200.withValues(alpha: 0.7))),
-        child: Text('[당일]', style: TextStyle(color: Colors.purple.shade200, fontSize: 11, fontWeight: FontWeight.bold)),
+        child: Text('당일', style: TextStyle(color: Colors.purple.shade200, fontSize: 11, fontWeight: FontWeight.bold)),
       );
 }
 
@@ -148,7 +148,7 @@ class StockName extends StatelessWidget {
   final num? score;
   final TextStyle? style;
   final int scoreDigits; // 점수 소수 자리 (관심 탭 점수는 1자리)
-  final bool today; // 오늘 장중에 새로 추천된 종목 (전날 저녁 목록에 없었음) → 점수 옆 [당일]
+  final bool today; // 오늘 장중에 새로 추천된 종목 (전날 저녁 목록에 없었음) → 점수 옆 당일
 
   @override
   Widget build(BuildContext context) => Row(children: [

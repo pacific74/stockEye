@@ -47,9 +47,26 @@ def collect_range(store: DataStore, source, start, end, with_flows=True, with_fu
             log.info("  %d/%d 저장", i, len(todo))
 
     if days:
-        store.upsert("index", source.index_range(start, end))
-        store.upsert("listing", source.listing(days[-1]))
+        # 지수·종목목록은 KRX 가 가끔 연결을 끊음 (RemoteDisconnected) → 3번까지 다시 시도하고, 그래도 안 되면 이전 것을 그대로 써서 계속
+        # (시세는 위에서 이미 저장됨 — 여기서 멈추면 그날 리포트가 통째로 안 나감: 2026-10-22)
+        for name, fn in (("index", lambda: source.index_range(start, end)), ("listing", lambda: source.listing(days[-1]))):
+            df = _retry(fn, name)
+            if df is not None and len(df):
+                store.upsert(name, df)
         collect_sectors(store, source, days[-1])
+
+
+def _retry(fn, label: str, tries: int = 3, wait: float = 8.0):
+    import time
+    for i in range(1, tries + 1):
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001
+            log.warning("%s 수집 실패 (%d/%d): %s", label, i, tries, e)
+            if i < tries:
+                time.sleep(wait * i)
+    log.error("%s 수집 끝내 실패 — 이전 것을 그대로 사용", label)
+    return None
 
 
 def collect_sectors(store: DataStore, source, date) -> None:

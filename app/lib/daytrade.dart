@@ -7,10 +7,14 @@ import 'format.dart';
 import 'live.dart';
 import 'screens/stock_detail_screen.dart';
 import 'widgets/common.dart';
+import 'widgets/price_chart.dart';
 
 /// 당일단타 (DT-0.1) — PC 가 평일 09:00~10:00 1분마다 올리는 후보 (system_status 'daytrade')
 ///   상태: 진입 조건 충족(80↑+신호) / 진입 대기(80↑) / 관찰(70↑) / 진입 금지(필수 제외)
 ///   주문은 하지 않음 — 알림·관찰용
+
+/// 1분봉 (PC 가 1분마다 올리는 system_status 'intraday_bars' · 종목코드 → [[HH:MM,시,고,저,종,량], ...]) — 당일매매 화면이 채움
+Map<String, List> dtMinuteBars = {};
 
 Color dtStatusColor(String? s) => switch (s) {
       '진입 조건 충족' => const Color(0xFFD32F2F),
@@ -76,10 +80,11 @@ class NewsLine extends StatelessWidget {
 
 /// 후보 카드: 순위 · 종목명 [점수] · 현재가 / 상태 · 유형 · VWAP · 거래대금 / 진입 · 손절 · 1·2차 / 근거
 class DaytradeTile extends StatelessWidget {
-  const DaytradeTile({super.key, required this.r, required this.rank, this.price});
+  const DaytradeTile({super.key, required this.r, required this.rank, this.price, this.chart = true});
   final Json r;
   final int rank;
   final double? price; // 지금 시세 (없으면 계산 때 가격)
+  final bool chart; // 1분봉 차트 (고정 카드 안에 넣을 땐 이미 따로 있어서 끔)
 
   @override
   Widget build(BuildContext context) {
@@ -143,11 +148,52 @@ class DaytradeTile extends StatelessWidget {
                 for (final x in warns) Text('⚠ $x', style: t.bodySmall?.copyWith(color: Colors.orange)),
                 if (reasons.isNotEmpty) Text(reasons.join(' · '), style: t.bodySmall?.copyWith(color: Colors.grey)),
                 NewsLine(asList(r['news'])),
+                if (chart) _candChart(context, '${r['code']}', px, r),
               ]),
             ),
           ]),
         ),
       ),
+    );
+  }
+
+  /// 진입 대기·관찰 후보 1분봉 차트 (당일매매 화면에서만 · 마지막 봉은 지금가로 덧그림 · 진입·손절·1차 선)
+  Widget _candChart(BuildContext context, String code, double? last, Json r) {
+    final mb = <Json>[
+      for (final b in dtMinuteBars[code] ?? const [])
+        if (b is List && b.length >= 6)
+          {
+            'date': '${b[0]}',
+            'open': (b[1] as num).toDouble(),
+            'high': (b[2] as num).toDouble(),
+            'low': (b[3] as num).toDouble(),
+            'close': (b[4] as num).toDouble(),
+            'volume': (b[5] as num).toDouble(),
+          },
+    ];
+    if (mb.length < 3) return const SizedBox.shrink();
+    if (last != null && last > 0) {
+      final b = mb.last;
+      b['close'] = last;
+      if (last > (b['high'] as double)) b['high'] = last;
+      if (last < (b['low'] as double)) b['low'] = last;
+    }
+    double? n(String k) => (r[k] as num?)?.toDouble();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+        SizedBox(
+          height: 150,
+          child: PriceChart(bars: mb, showMa: false, levels: [
+            if (n('entry') != null) PriceLevel('진입', n('entry')!, Colors.grey),
+            if (n('stop') != null) PriceLevel('손절', n('stop')!, downColor),
+            if (n('t1') != null) PriceLevel('1차', n('t1')!, upColor),
+          ]),
+        ),
+        Text('1분봉 ${mb.first['date']} ~ ${mb.last['date']}',
+            textAlign: TextAlign.right,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
+      ]),
     );
   }
 }

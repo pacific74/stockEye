@@ -5,7 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'api.dart';
 import 'closingbet.dart' show ClosingbetTile;
-import 'daytrade.dart' show DaytradeTile, DaytradeFindButton, dtIsToday, lookupLabel;
+import 'daytrade.dart' show DaytradeTile, DaytradeFindButton, dtIsToday, lookupLabel, dtMinuteBars;
 import 'format.dart';
 import 'limitcatch.dart' show LimitcatchTile;
 import 'live.dart';
@@ -141,6 +141,7 @@ class _IntradayScreenState extends State<IntradayScreen> {
       for (final b in [r[5], r[4]]) // 당일매매 통합 것이 우선
         if (dtIsToday(b)) ...asMap(b['bars']).map((k, v) => MapEntry(k, v is List ? v : const [])),
     };
+    dtMinuteBars = _minuteBars; // 후보 카드(진입 대기·관찰)도 같은 1분봉으로 차트
     _dt = r[0];
     _lc = r[1];
     _cb = r[2];
@@ -627,7 +628,7 @@ class _TrackCard extends StatelessWidget {
                           ? ClosingbetTile(r: card, rank: 1, showRules: true)
                           : lc
                               ? LimitcatchTile(r: card, rank: 1)
-                              : DaytradeTile(r: card, rank: 1)
+                              : DaytradeTile(r: card, rank: 1, chart: false)
                     ],
                   ),
                 ),

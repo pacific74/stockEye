@@ -32,6 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<Json> _f;
   Json? _report;
   List<Json> _holdings = const [];
+  List<Json> _auto = const []; // 당일매매 자동(모의 추적) 보유 — 실제 보유와 따로 표시 (2026-10-24)
   Map<String, Json> _meta = const {}; // 보유종목 점수·시장 (최근 분석)
   List<Json> _pool = const []; // 어제 분석의 모든 후보 (지금 매수구간 계산용)
   Map<String, List<Json>> _picks = const {}; // 금일 관심주: 후보 탭별 상위 3
@@ -123,7 +124,12 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {
       _holdings = const [];
     }
-    _meta = await Api.stockMeta(_holdings.map((h) => '${h['code']}').toList());
+    try {
+      _auto = await Api.journal(status: 'open', mode: 'signal');
+    } catch (_) {
+      _auto = const [];
+    }
+    _meta = await Api.stockMeta([..._holdings, ..._auto].map((h) => '${h['code']}').toList());
     try {
       _pool = await Api.allCandidates();
     } catch (_) {
@@ -157,7 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
       for (final l in _picks.values) ...l.map((c) => '${c['code']}'),
       ..._pool.map((c) => '${c['code']}'),
     }.toList();
-    final mine = _holdings.map((h) => '${h['code']}').where((c) => !common.contains(c)).toList();
+    final mine = [..._holdings, ..._auto].map((h) => '${h['code']}').where((c) => !common.contains(c)).toList();
     final r = await Future.wait([Live.indices(), Live.stocks(common), Live.stocks(mine)]);
     final sl = await Api.sectorsLive().catchError((_) => <String, dynamic>{});
     if (!mounted) return;
@@ -319,6 +325,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   SectionTitle('보유종목',
                       trailing: TextButton(onPressed: () => goTab(context, tabPos('port')), child: const Text('전체'))),
                   _HoldingsTable(holdings: _holdings, quotes: quotes, meta: _meta),
+                ],
+                if (_auto.isNotEmpty) ...[
+                  const SectionTitle('당일매매 자동 (모의 추적)'),
+                  _HoldingsTable(holdings: _auto, quotes: quotes, meta: _meta),
                 ],
                 const SizedBox(height: 16),
                 Text('규칙 기반 분석 결과이며 투자 권유가 아닙니다. 최종 판단과 책임은 본인에게 있습니다. '

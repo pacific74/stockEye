@@ -332,6 +332,23 @@ def main():
         import threading
         threading.Thread(target=job, name="sector-live", daemon=True).start()   # 전 종목 시세 1회 (1시간에 한 번)
 
+    pend_at = [0.0]                                                     # 가입·테스트 알림 대신 보내기: 2분마다 (하루 종일 · Supabase 가 ntfy 한도에 걸려서)
+
+    def pending_slot() -> None:
+        if not sb or time.time() - pend_at[0] < 120:
+            return
+
+        pend_at[0] = time.time()
+
+        def job():
+            try:
+                from stockeye.cloud.pending_notify import run as pend_run
+                pend_run(sb, admin_topics(sb))
+            except Exception as e:  # noqa: BLE001
+                print(f"⚠ 가입·테스트 알림 대신 보내기 실패: {e}")
+        import threading
+        threading.Thread(target=job, name="pending-notify", daemon=True).start()
+
     shock_at = [0.0]                                                    # 시장 급변(종합지수 ±3%) 확인: 2분마다 (지수 시세 1건)
 
     def shock_slot(hm: str) -> None:
@@ -384,6 +401,7 @@ def main():
             print(f"⚠ 종가배팅 추적 실패: {e}")
         sector_slot(hm)
         shock_slot(hm)
+        pending_slot()
         try:                                                           # 당일 잠정 수급 (09:35·10:05·11:25·13:25·14:35 + 새 고정 종목)
             flow.start(now, flow_codes())
         except Exception as e:  # noqa: BLE001

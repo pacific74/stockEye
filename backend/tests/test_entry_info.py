@@ -19,3 +19,22 @@ def test_build():
     assert "V3 2위 86점(V3 선정 2위)" in i["summary"] and "유망주 1위 74점(B 관심 후보)" in i["summary"]
     assert "매수구간 안" in i["summary"] and "시장 약세" in i["summary"]
     assert build(rep, "Z", 1)["summary"].startswith("그날 후보 목록에 없던 종목")
+
+
+def test_comments():
+    rep = {"date": "2026-10-07", "market": {"mood": "약세"}, "sectors": [{"group": "반도체", "ret1_pct": -2.5}],
+           "sector_members": {"groups": {"반도체": [["B", "x"]]}},
+           "strategies": {"v3": {"short": "V3", "candidates": [
+               {"code": "B", "score": 80, "reasons": ["거래량 급증", "20일선 돌파"], "warnings": ["단기 과열"],
+                "market_alert": "종합지수 급락 · 매수 주의"}]}}}
+    i = build(rep, "B", 105)
+    assert i["comments"] == [{"tab": "V3", "why": ["거래량 급증", "20일선 돌파"], "warn": ["단기 과열", "종합지수 급락 · 매수 주의"]}]
+    assert i["sector"] == "반도체 -2.5%"
+    assert build(rep, "Z", 1)["comments"] == []
+
+
+def test_needs_backfill():
+    from stockeye.cloud.entry_info import _needs
+    assert _needs({"plan": None})
+    assert _needs({"plan": {"entry_info": {"summary": "x"}}})
+    assert not _needs({"plan": {"entry_info": {"summary": "x", "comments": []}}})

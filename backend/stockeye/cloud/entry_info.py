@@ -56,8 +56,21 @@ LABEL = {"v3": "V3", "nextday": "유망주", "early": "상승초기", "reversal"
          "signal": "매수 신호", "buy": "강력·매수 후보", "watch": "관심", "overall": "전체 후보"}
 
 
+def _lines(x, n: int) -> list[str]:
+    return [str(t).strip() for t in (x or []) if isinstance(t, str) and t.strip()][:n]
+
+
+def comment_of(label: str, c: dict) -> dict | None:
+    """후보 1종목의 그때 코멘트: 선정 이유 · 주의 · 시장/업종 급락 경고 (한 탭 = 한 묶음)"""
+    why = _lines(c.get("reasons"), 4)
+    warn = _lines(c.get("warnings") or c.get("warn") or c.get("risks"), 3)
+    if c.get("market_alert"):
+        warn.append(str(c["market_alert"]))
+    return {"tab": label, "why": why, "warn": warn} if why or warn else None
+
+
 def build(report: dict, code: str, entry_price: float) -> dict:
-    tabs, plan = [], None
+    tabs, plan, comments = [], None, []
     for k, v in (report.get("strategies") or {}).items():
         for i, c in enumerate((v or {}).get("candidates") or [], 1):
             if c.get("code") != code:
@@ -71,6 +84,9 @@ def build(report: dict, code: str, entry_price: float) -> dict:
                          "score": None if sc is None else round(float(sc), 1),
                          "state": grade or (c.get("plan") or {}).get("verdict")})
             plan = plan or c.get("plan")
+            cm = comment_of(v.get("short") or LABEL.get(k, k), c)
+            if cm:
+                comments.append(cm)
             break
     mood = (report.get("market") or {}).get("mood")
     bits = [f"{t['label']} {t['rank']}위 {t['score']:.0f}점" + (f"({t['state']})" if t.get("state") else "")
@@ -78,14 +94,48 @@ def build(report: dict, code: str, entry_price: float) -> dict:
     z = zone_of(entry_price, plan or {})
     summary = (" · ".join(bits) if bits else "그날 후보 목록에 없던 종목") + (f" · {z}" if z else "") + (
         f" · 시장 {mood}" if mood else "")
+    sec = None
+    try:
+        from .holding_note import sector_of
+        sc = sector_of(report, code)
+        sec = f"{sc[0]} {sc[1]:+.1f}%" if sc else None            # 그날 소속 업종(테마)과 등락
+    except Exception:  # noqa: BLE001
+        pass
     return {"report_date": report.get("date"), "tabs": tabs, "zone": z, "market": mood, "summary": summary,
+            "comments": comments, "sector": sec,
             "plan": {k: (plan or {}).get(k) for k in ("entry_low", "entry_high", "target1", "stop")} if plan else None}
 
 
+INTRA_LABEL = {"daytrade": "당일단타", "closingbet": "종가배팅", "limitcatch": "상한가포착"}
+
+
+def intraday_comments(sb, code: str, day: str) -> list[dict]:
+    """그날 장중 탭(당일단타·종가배팅·상한가포착)에서 포착된 기록의 이유·위험 (recommendations.payload)"""
+    try:
+        rows = sb.select("recommendations", {"select": "kind,payload", "rec_date": f"eq.{day}", "code": f"eq.{code}",
+                                             "kind": "in.(daytrade,closingbet,limitcatch)"}) or []
+    except Exception as e:  # noqa: BLE001
+        log.info("장중 코멘트 조회 실패: %s", e)
+        return []
+    out = []
+    for r in rows:
+        pl = r.get("payload") or {}
+        cm = comment_of(INTRA_LABEL.get(r.get("kind"), r.get("kind")), {"reasons": pl.get("reasons"), "risks": pl.get("risks")})
+        if cm:
+            out.append(cm)
+    return out
+
+
+def _needs(r: dict) -> bool:
+    pl = r.get("plan") if isinstance(r.get("plan"), dict) else {}
+    ei = pl.get("entry_info")
+    return not ei or "comments" not in ei                   # 코멘트 칸이 생기기 전에 붙인 것도 한 번 채움 (2026-10-24)
+
+
 def annotate_positions(sb, sync, limit: int = 3000) -> int:
-    """entry_info 가 없는 포지션에 매수 당시 정보를 붙임. 붙인 개수"""
+    """entry_info 가 없거나 코멘트 칸이 없는 포지션에 매수 당시 정보를 붙임. 붙인 개수 (이미 있는 요약은 그대로)"""
     rows = sb.select("positions", {"select": "id,code,entry_time,entry_price,plan", "limit": str(limit)})
-    todo = [r for r in rows if not (isinstance(r.get("plan"), dict) and r["plan"].get("entry_info"))]
+    todo = [r for r in rows if _needs(r)]
     if not todo:
         return 0
     dates = _report_dates(sb)
@@ -100,8 +150,13 @@ def annotate_positions(sb, sync, limit: int = 3000) -> int:
         if not rep:
             continue
         info = build(rep, r["code"], float(r.get("entry_price") or 0))
-        info["at"] = datetime.utcnow().isoformat() + "Z"
+        info["comments"] += intraday_comments(sb, r["code"], str(r["entry_time"])[:10])
         plan = r["plan"] if isinstance(r.get("plan"), dict) else {}
+        old = plan.get("entry_info")
+        if old:                                              # 매수 당시 요약은 보존 — 코멘트·업종만 채움
+            info = {**old, "comments": info["comments"], "sector": info.get("sector")}
+        else:
+            info["at"] = datetime.utcnow().isoformat() + "Z"
         sb.update("positions", {"id": f"eq.{r['id']}"}, {"plan": {**plan, "entry_info": info}})
         n += 1
     log.info("매매일지 매수 당시 정보 %d건", n)

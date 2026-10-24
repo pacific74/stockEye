@@ -339,8 +339,55 @@ class _EntryRow extends StatelessWidget {
                     : '매수 당시${info['report_date'] == null ? '' : '(${_d(info['report_date'])} 분석)'}: $summary',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: summary == null ? Colors.grey : null)),
           ),
+          EntryComments(info: info),
           ]),
         ),
+      ),
+    );
+  }
+}
+
+/// 매수 당시 코멘트 (2026-10-24): 그때 후보 탭마다 선정 이유 · 주의 + 매수 구간·목표·손절 + 소속 업종 등락 — 눌러서 펼침
+class EntryComments extends StatelessWidget {
+  const EntryComments({required this.info});
+  final Json info;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme.bodySmall;
+    final comments = asList(info['comments']);
+    final plan = asMap(info['plan']);
+    String w(dynamic v) => v is num ? num0(v.toDouble()) : '-';
+    final planLine = plan.isEmpty
+        ? null
+        : '그때 계획: 매수구간 ${w(plan['entry_low'])}~${w(plan['entry_high'])} · 1차 ${w(plan['target1'])} · 손절 ${w(plan['stop'])}';
+    final bits = <String>[
+      if (info['sector'] != null) '업종 ${info['sector']}',
+      if (info['market'] != null) '시장 ${info['market']}',
+    ];
+    if (comments.isEmpty && planLine == null && bits.isEmpty) return const SizedBox.shrink();
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: 4),
+        dense: true,
+        visualDensity: const VisualDensity(vertical: -4),
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        title: Text('매수 당시 코멘트${comments.isEmpty ? '' : ' (${comments.length})'}',
+            style: t?.copyWith(color: Theme.of(context).colorScheme.primary)),
+        children: [
+          if (planLine != null) Text(planLine, style: t),
+          if (bits.isNotEmpty) Text(bits.join(' · '), style: t),
+          for (final c in comments) ...[
+            const SizedBox(height: 4),
+            Text('[${asMap(c)['tab']}]', style: t?.copyWith(fontWeight: FontWeight.bold)),
+            for (final x in (asMap(c)['why'] as List? ?? const [])) Text('· $x', style: t),
+            for (final x in (asMap(c)['warn'] as List? ?? const [])) Text('⚠ $x', style: t?.copyWith(color: Colors.orange)),
+          ],
+          if (comments.isEmpty)
+            Text('그날 후보 목록에 코멘트가 남은 기록이 없어요', style: t?.copyWith(color: Colors.grey)),
+        ],
       ),
     );
   }

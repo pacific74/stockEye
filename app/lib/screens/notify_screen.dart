@@ -179,6 +179,13 @@ class _NotifySettingsScreenState extends State<NotifySettingsScreen> {
               FilledButton(onPressed: _busy ? null : () => _save(), child: const Text('저장')),
               const SizedBox(height: 8),
               OutlinedButton(onPressed: _busy || !_saved ? null : _test, child: const Text('테스트 알림 보내기')),
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                    '테스트는 PC·배치가 확인할 때 보내서 몇 분 걸리거나, ntfy 무료 한도 때문에 안 올 수도 있어요. '
+                    '테스트 알림이 안 와도 정상일 수 있습니다 — 실제 알림(매수·급변·장마감 리포트)은 따로 정상으로 옵니다.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey)),
+              ),
               if (_saved)
                 TextButton(onPressed: _busy ? null : () => _save(off: true), child: const Text('알림 끄기')),
             ]),

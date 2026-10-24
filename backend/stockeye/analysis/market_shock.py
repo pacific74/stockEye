@@ -176,7 +176,7 @@ def check(sb, topics: list[str], indices=None, send=None, fetch=None, now=None) 
     if send is None:
         from ..trading.notify import Notifier
         nt = Notifier()
-        send = lambda tp, t, b: nt.send_topic(tp, t, b, priority="urgent")  # noqa: E731
+        send = lambda tp, t, b: nt.send_topic(tp, t, b, priority="high")  # noqa: E731  (urgent 는 폰 ntfy 앱 "최대 우선순위" 채널이 꺼져 있으면 안 울림 — 매수 알림과 같은 high, 2026-10-22)
     ok = False
     for tp in topics:
         ok = bool(send(tp, title, body)) or ok

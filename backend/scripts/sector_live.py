@@ -115,6 +115,11 @@ def main():
             check(sb, all_topics(sb, admin_topics(sb)))
         except Exception as e:  # noqa: BLE001
             print(f"⚠ 시장 급변 확인 실패: {e}")
+        try:                    # Supabase 가 ntfy 한도(429)로 못 보낸 가입·테스트 알림을 대신 보냄 (2026-10-24)
+            from stockeye.cloud.pending_notify import run as pend_run
+            pend_run(sb, admin_topics(sb))
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠ 가입·테스트 알림 대신 보내기 실패: {e}")
 
 
 if __name__ == "__main__":

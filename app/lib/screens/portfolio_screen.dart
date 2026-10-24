@@ -8,6 +8,7 @@ import '../v3.dart';
 import '../widgets/common.dart';
 import '../widgets/nav.dart';
 import '../widgets/top_actions.dart';
+import 'journal_screen.dart' show EntryComments;
 import 'stock_detail_screen.dart';
 
 class PortfolioScreen extends StatefulWidget {
@@ -100,7 +101,9 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
           if (rows.isEmpty) {
             return const Center(child: Text('보유종목이 없습니다.\n아래 [추가] 버튼에서 종목명이나 코드로 추가하세요.', textAlign: TextAlign.center));
           }
-          double sum(String k) => rows.fold(0.0, (a, h) => a + ((h[k] as num?)?.toDouble() ?? 0));
+          final auto = rows.where((h) => h['mode'] == 'signal').toList(); // 당일매매 자동(모의) — 합계에서 뺌
+          final real = rows.where((h) => h['mode'] != 'signal').toList();
+          double sum(String k) => real.fold(0.0, (a, h) => a + ((h[k] as num?)?.toDouble() ?? 0));
           final cost = sum('cost'), value = sum('value'), pnlWon = sum('pnl_won');
           final totalPct = cost > 0 ? pnlWon / cost * 100 : null;
           final t = Theme.of(context).textTheme;
@@ -113,7 +116,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                   child: Row(children: [
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('보유 ${rows.length}종목 · 수익률', style: t.bodySmall),
+                        Text('보유 ${real.length}종목 · 수익률${auto.isEmpty ? '' : ' (당일매매 자동 ${auto.length}종목 제외)'}', style: t.bodySmall),
                         const SizedBox(height: 2),
                         Text('매수 ${won(cost)} → 평가 ${won(value)}', style: t.bodyMedium),
                       ]),
@@ -130,10 +133,15 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                   ]),
                 ),
               ),
-              ...rows.map((h) {
+              ...[...real, ...auto].map((h) {
+              final isAuto = h['mode'] == 'signal';
               final alerts = List<String>.from(h['alerts'] as List? ?? []);
               final pnl = (h['pnl_now'] as num?)?.toDouble();
               return Card(
+                shape: isAuto
+                    ? RoundedRectangleBorder(
+                        side: BorderSide(color: Colors.blueGrey.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(12))
+                    : null,
                 child: InkWell(
                   onTap: () => Navigator.push(context,
                       MaterialPageRoute(builder: (_) => StockDetailScreen(code: h['code'] as String, name: '${h['name']}'))),
@@ -218,6 +226,16 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                       if (_originOf(h) != null)
                         _OriginBox(o: _originOf(h)!, price: (h['now_price'] as num?)?.toDouble(),
                             entry: (h['entry_price'] as num?)?.toDouble(), maxPrice: (h['max_price'] as num?)?.toDouble()),
+                      if (isAuto)
+                        Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text('당일매매 자동 (모의 추적) — 보유 합계에는 넣지 않아요',
+                                style: t.bodySmall?.copyWith(color: Colors.blueGrey))),
+                      if ('${h['note'] ?? ''}'.isNotEmpty)
+                        Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text('점검 코멘트: ${h['note']}', style: t.bodySmall)),
+                      EntryComments(info: asMap(asMap(h['plan'])['entry_info'])),
                       ...alerts.map((a) => Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text('⚠ $a', style: const TextStyle(color: Colors.orange)),

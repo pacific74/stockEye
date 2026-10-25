@@ -131,7 +131,9 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
 .toast.show{opacity:1}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 .btn:disabled{opacity:.45;cursor:default}#game #topstack{grid-column:1;grid-row:2;align-self:start;display:flex;flex-direction:column;gap:10px;min-width:0;width:100%;overflow:visible}
-#game #topstack .actions.tops{grid-column:auto;grid-row:auto;display:flex;flex-wrap:nowrap;gap:6px;justify-content:flex-start;width:100%}
+#game .actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#game .actions>.btn:last-child{grid-column:1 / -1}
+#game #topstack .actions.tops{grid-column:auto;grid-row:auto;display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%}
 #game #topstack .actions.tops .btn{flex:1 1 0;min-width:0;padding:8px 4px;white-space:nowrap;font-size:13px}
 #game #top-actions[hidden]{display:none!important}
 #game #topstack{transform-origin:50% 0}
@@ -237,7 +239,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
     <button class="btn" id="btn-online"><span class="glyph cho">網</span><span class="t">온라인 대전 · 인터넷으로 두기<small>방 번호로 멀리 있는 친구와 둡니다</small></span></button>
     <button class="btn" id="btn-stats"><span class="glyph cho" style="font-size:18px">戰</span><span class="t">전적 · 승률<small>난이도별 기록과 최근 대국</small></span></button>
   </div>
-  <p class="footnote">기록은 이 기기의 브라우저에만 저장됩니다. 사이트 데이터를 지우면 함께 지워집니다.<br><span class="ver">버전 5.0.2 · © 왕대박</span></p>
+  <p class="footnote">기록은 이 기기의 브라우저에만 저장됩니다. 사이트 데이터를 지우면 함께 지워집니다.<br><span class="ver">버전 5.0.3 · © 왕대박</span></p>
 </section>
 
 <section id="setup1" hidden>
@@ -805,12 +807,13 @@ function renderGame(){if(!G)return;const flip=G.mode!=='2p'&&G.human===HAN;
   let top,bot;if(G.mode==='1p'){const ai=1-G.human;top=[ai,`컴퓨터 · ${kyu(G.level)}`];bot=[G.human,'나'];}
   else if(G.mode==='online'){top=[1-G.human,`${oppName()} · ${oppState()}`];bot=[G.human,'나 · 온라인'];}else{top=[HAN,'한'];bot=[CHO,'초'];}
   const ptsLabel=s=>s===HAN?'점 (덤 포함)':'점';
+  $('t-resign').dataset.side=top[0];$('g-resign').dataset.side=bot[0];$('game').dataset.two=(G.mode==='2p'&&!G.over)?'1':'';
   $('bar-top').innerHTML=barHTML(top[0],top[1],ptsLabel(top[0]));$('bar-bot').innerHTML=barHTML(bot[0],bot[1],ptsLabel(bot[0]));
   $('bar-top').classList.toggle('turn',!G.over&&pos.side===top[0]);$('bar-bot').classList.toggle('turn',!G.over&&pos.side===bot[0]);
   const n=G.moves.length;
   $('g-status').textContent=G.over?`대국 종료 · ${G.over.reason}`:`${n}수 / ${MAX_PLIES} · ${G.mode==='online'?(pos.side===G.human?'내 차례':'상대 차례'):SIDE[pos.side]+' 차례'}${chk>=0?' · 장군!':''}`;
   $('g-undo').disabled=!canUndo();$('g-resign').disabled=!!G.over||(G.mode==='1p'&&thinking);
-  $('g-resign').textContent=G.over?'대국 종료':(G.mode==='2p'?SIDE[pos.side]+' 기권':'기권');
+  $('g-resign').textContent=G.over?'대국 종료':'기권';
   const dl=G.mode==='online'&&G.drawWait?'비기기 기다리는 중':(drawLeft()>0?`비기기 (${drawLeft()}회)`:'비기기 (0회)');$('g-draw').textContent=G.over?'비기기':dl;$('g-draw').disabled=!!G.over||drawLeft()<=0||!!(G.mode==='online'&&G.drawWait);
   $('g-sound').textContent=prefs.sound?'소리 켬':'소리 끔';$('g-undo').textContent=G.mode==='online'?(G.undoWait?'답 기다리는 중':'무르기 부탁'):'무르기';clockTurn();}
 function canUndo(){if(!G||G.over)return false;if(G.mode==='online')return !G.undoWait&&hist.some(h=>h.side===G.human&&h.m>=0);if(G.mode==='2p')return hist.length>0;return hist.some(h=>h.side===G.human&&h.m>=0);}
@@ -838,7 +841,7 @@ function onDrawMsg(v){
   if(v.drawOk!=null){if(v.s!==G.seat)drawAccepted();return;}
   if(v.drawNo!=null){if(v.s===G.seat)return;G.drawWait=null;toast('상대가 비기기를 거절했습니다',2500);renderGame();return;}
 }
-$('g-resign').onclick=()=>{if(!G||G.over)return;const loser=G.mode!=='2p'?G.human:pos.side;
+$('g-resign').onclick=()=>{if(!G||G.over)return;const loser=G.mode!=='2p'?G.human:Number(window.__rs!=null?window.__rs:$('g-resign').dataset.side);
   modal(`<h3>기권할까요?</h3><p>${G.mode!=='2p'?'이 대국은 패배로 기록됩니다.':SIDE[loser]+'의 패배로 기록됩니다.'}</p>`,[{label:'계속 두기'},{label:'기권',cls:'primary',fn:()=>{if(G.mode==='online')ON.send({resign:G.seat});endGame(1-loser,'기권');}}]);};
 $('g-menu').onclick=()=>{if(G&&G.mode==='online'&&!G.over){modal('<h3>대국에서 나갈까요?</h3><p>나가도 판은 그대로 남습니다. 처음 화면의 \'온라인 대전 이어하기\'로 다시 들어올 수 있습니다.</p>',[{label:'계속 두기'},{label:'나가기',cls:'primary',fn:()=>{ON.close(true);ON=null;show('home');}}]);return;}if(ON&&G&&G.over){ON.close();ON=null;}reqId++;thinking=false;show('home');};
 $('g-sound').onclick=()=>{prefs.sound=!prefs.sound;savePrefs();renderGame();};
@@ -937,9 +940,11 @@ document.addEventListener('DOMContentLoaded',function(){
   var g=document.getElementById('game');
   var pairs=[['g-undo','t-undo'],['g-draw','t-draw'],['g-resign','t-resign']];
   pairs.forEach(function(p){var d=document.getElementById(p[1]),s=document.getElementById(p[0]);
-    if(d&&s)d.addEventListener('click',function(){s.click();});});
+    if(!d||!s)return;
+    if(p[1]==='t-resign'){d.addEventListener('click',function(){window.__rs=Number(d.dataset.side);s.click();window.__rs=null;});return;}
+    d.addEventListener('click',function(){s.click();});});
   function sync(){
-    var rs=document.getElementById('g-resign');var two=!!rs&&/\s기권$/.test(rs.textContent);
+    var two=g.dataset.two==='1';
     if(g.classList.contains('p2')!==two)g.classList.toggle('p2',two);
     var tsk=document.getElementById('topstack');if(tsk){tsk.style.height=getComputedStyle(g).display==='grid'?'0px':'';tsk.style.setProperty('--tsh',two?tsk.scrollHeight+'px':'0px');}
     var ta=document.getElementById('top-actions');
@@ -950,7 +955,7 @@ document.addEventListener('DOMContentLoaded',function(){
       if(d.disabled!==s.disabled)d.disabled=s.disabled;
       var vis=!s.hidden;if(d.hidden===vis)d.hidden=!vis;});
   }
-  new MutationObserver(sync).observe(g,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['disabled','hidden']});
+  new MutationObserver(sync).observe(g,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['disabled','hidden','data-two']});
   sync();
 });
 </script>

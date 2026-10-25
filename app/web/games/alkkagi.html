@@ -114,6 +114,12 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20;max-width:calc(100% - 32px);text-align:center}
 .toast.show{opacity:1}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+#game #topstack{grid-column:1;grid-row:2;align-self:start;display:flex;flex-direction:column;gap:10px;min-width:0;width:100%;overflow:visible}
+#game #topstack .actions.tops{grid-column:auto;grid-row:auto;display:flex;flex-wrap:nowrap;gap:6px;justify-content:flex-start;width:100%}
+#game #topstack .actions.tops .btn{flex:1 1 0;min-width:0;padding:8px 4px;white-space:nowrap;font-size:13px}
+#game #top-actions[hidden]{display:none!important}
+#game #topstack{transform-origin:50% 0}
+#game.p2 #topstack{transform:translateY(var(--tsh,0px)) rotate(180deg)}
 </style>
 <style>
 .actions{grid-template-columns:repeat(2,1fr)}
@@ -225,7 +231,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
     <button class="btn" id="btn-online"><span class="stone b">網</span><span class="t">온라인 대전 · 인터넷으로 두기<small>방 번호로 멀리 있는 친구와 둡니다</small></span></button>
     <button class="btn" id="btn-stats"><span class="stone w">戰</span><span class="t">전적 · 승률<small>난이도별 기록과 최근 대국</small></span></button>
   </div>
-  <p class="footnote">기록은 이 기기에만 저장됩니다. 앱이나 사이트 데이터를 지우면 함께 지워집니다.<br><span class="ver">버전 5.0.1 · © 왕대박</span></p>
+  <p class="footnote">기록은 이 기기에만 저장됩니다. 앱이나 사이트 데이터를 지우면 함께 지워집니다.<br><span class="ver">버전 5.0.2 · © 왕대박</span></p>
 </section>
 
 <section id="setup1" hidden>
@@ -291,7 +297,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
     <div id="g-status" class="num"></div>
     <button class="linkbtn" id="g-sound">소리 켬</button>
   </div>
-  <div class="pbar" id="bar-top"></div>
+  <div id="topstack"><div class="pbar" id="bar-top"></div><div class="actions tops" id="top-actions" hidden><button class="btn small" id="t-undo">무르기</button><button class="btn small" id="t-resign">기권</button></div></div>
   <div class="board-wrap"><canvas id="board" aria-label="알까기판"></canvas></div>
   <div class="gauge" id="gauge"><span class="gl">힘</span><span class="track"><span class="needle" id="needle"></span></span><span class="gv" id="gv">–</span></div>
   <div class="pbar" id="bar-bot"></div>
@@ -687,6 +693,29 @@ function startOnline(res){ON=res.room;ONAMES=res.names||['',''];const n=(res.cfg
   toast(G.human===BLACK?'내가 흑입니다. 먼저 튕기세요':'내가 백입니다. 상대가 먼저 튕깁니다',2500);}
 show('home');
 })();
+</script>
+<script id="p2-script">
+/* 2인 대국: 위쪽(백) 플레이어 패널과 버튼을 뒤집어 맞은편에서 읽을 수 있게 */
+document.addEventListener('DOMContentLoaded',function(){
+  var g=document.getElementById('game');
+  var pairs=[['g-undo','t-undo'],['g-draw','t-draw'],['g-resign','t-resign']];
+  pairs.forEach(function(p){var d=document.getElementById(p[1]),s=document.getElementById(p[0]);
+    if(d&&s)d.addEventListener('click',function(){s.click();});});
+  function sync(){
+    var rs=document.getElementById('g-resign');var two=!!rs&&/\s기권$/.test(rs.textContent);
+    if(g.classList.contains('p2')!==two)g.classList.toggle('p2',two);
+    var tsk=document.getElementById('topstack');if(tsk){tsk.style.height=getComputedStyle(g).display==='grid'?'0px':'';tsk.style.setProperty('--tsh',two?tsk.scrollHeight+'px':'0px');}
+    var ta=document.getElementById('top-actions');
+    if(ta&&ta.hidden===two)ta.hidden=!two;
+    pairs.forEach(function(p){var s=document.getElementById(p[0]),d=document.getElementById(p[1]);
+      if(!s||!d)return;
+      if(d.textContent!==s.textContent)d.textContent=s.textContent;
+      if(d.disabled!==s.disabled)d.disabled=s.disabled;
+      var vis=!s.hidden;if(d.hidden===vis)d.hidden=!vis;});
+  }
+  new MutationObserver(sync).observe(g,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['disabled','hidden']});
+  sync();
+});
 </script>
 <!--FS--><style>#fsbtn{position:fixed;right:10px;bottom:10px;z-index:9999;border:1px solid rgba(211,167,77,.55);background:rgba(20,20,20,.6);color:#d3a74d;border-radius:10px;padding:6px 10px;font:600 13px system-ui,sans-serif;cursor:pointer;opacity:.75;display:none}#fsbtn:hover{opacity:1}#fsbtn.show{display:block}</style>
 <button id="fsbtn" type="button" aria-label="전체화면">⛶ 전체화면</button>

@@ -213,7 +213,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
     <button class="btn" id="btn-online"><span class="stone b">網</span><span class="t">온라인 대전 · 인터넷으로 두기<small>방 번호로 멀리 있는 친구와 둡니다</small></span></button>
     <button class="btn" id="btn-stats"><span class="stone w">戰</span><span class="t">전적 · 승률<small>난이도별 기록과 최근 대국</small></span></button>
   </div>
-  <p class="footnote">기록은 이 기기에만 저장됩니다. 앱이나 사이트 데이터를 지우면 함께 지워집니다.<br><span class="ver">버전 5.0 · © 왕대박</span></p>
+  <p class="footnote">기록은 이 기기에만 저장됩니다. 앱이나 사이트 데이터를 지우면 함께 지워집니다.<br><span class="ver">버전 5.0.1 · © 왕대박</span></p>
 </section>
 
 <section id="setup1" hidden>
@@ -480,15 +480,16 @@ function lineStr(b,idx,dr,dc,s){var r=(idx/N)|0,c=idx-r*N,o='';
     if(rr<0||rr>=N||cc<0||cc>=N)o+='o';else{var v=b[rr*N+cc];o+=v===0?'.':v===s?'x':'o';}}
   return o;}
 // kind: 5 five, 4 open four, 3 four, 2 open three, 1 three, 0 other
-function pointInfo(b,idx,s){var score=0,five=0,o4=0,f4=0,o3=0;
-  for(var d=0;d<4;d++){var str=lineStr(b,idx,DIRS[d][0],DIRS[d][1],s),best=5,kind=-1;
+function pointInfo(b,idx,s){var score=0,five=0,o4=0,f4=0,o3=0,o3c=0;
+  for(var d=0;d<4;d++){var str=lineStr(b,idx,DIRS[d][0],DIRS[d][1],s),best=5,kind=-1,pat0='';
     for(var p=0;p<PATS.length;p++){var pat=PATS[p][0],i=str.indexOf(pat),found=false;
       while(i!==-1&&i<=5){if(i+pat.length>5){found=true;break;}i=str.indexOf(pat,i+1);}
-      if(found){best=PATS[p][1];kind=PATS[p][2];break;}}
-    score+=best;if(kind===5)five++;else if(kind===4)o4++;else if(kind===3)f4++;else if(kind===2)o3++;}
+      if(found){best=PATS[p][1];kind=PATS[p][2];pat0=PATS[p][0];break;}}
+    score+=best;if(kind===5)five++;else if(kind===4)o4++;else if(kind===3)f4++;else if(kind===2){o3++;if(!/\./.test(pat0.replace(/^\.+|\.+$/g,'')))o3c++;}}
   if(o4+f4>=2)score+=12000;else if((o4+f4)>=1&&o3>=1)score+=10000;else if(o3>=2)score+=5000;
-  return{score:score,five:five,o4:o4,f4:f4,o3:o3};}
-function isForbidden(b,idx,s,rule33){if(!rule33)return false;var inf=pointInfo(b,idx,s);return inf.five===0&&inf.o3>=2;}
+  return{score:score,five:five,o4:o4,f4:f4,o3:o3,o3c:o3c};}
+// 3·3 금지: 한 칸 띄운 3(.xx.x. 등)은 세지 않고, 붙은 열린 3(.xxx..)만 두 개 이상이면 금지
+function isForbidden(b,idx,s,rule33){if(!rule33)return false;var inf=pointInfo(b,idx,s);return inf.five===0&&inf.o3c>=2;}
 function isWin(b,idx){var s=b[idx],r=(idx/N)|0,c=idx-r*N;
   for(var d=0;d<4;d++){var dr=DIRS[d][0],dc=DIRS[d][1],n=1,k;
     for(k=1;k<5;k++){var rr=r+dr*k,cc=c+dc*k;if(rr<0||rr>=N||cc<0||cc>=N||b[rr*N+cc]!==s)break;n++;}

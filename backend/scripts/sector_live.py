@@ -90,6 +90,11 @@ def run(sb=None, publish: bool = True, skip_if_recent: int | None = None, quiet:
     if publish:
         from stockeye.cloud import publish as pub
         pub.publish_status(sb, "sectors_live", payload)
+        try:                    # 메인 '시장 뉴스' 5개 — 업종 집계와 같이 매시 (2026-10-27)
+            from stockeye.analysis import market_news
+            market_news.run(sb)
+        except Exception as e:  # noqa: BLE001
+            log.warning("시장 뉴스 갱신 실패: %s", e)
     return payload
 
 

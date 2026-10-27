@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../closingbet.dart';
@@ -37,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Json> _pool = const []; // 어제 분석의 모든 후보 (지금 매수구간 계산용)
   Map<String, List<Json>> _picks = const {}; // 금일 관심주: 후보 탭별 상위 3
   LiveResult? _idx, _stk;
+  Json _news = const {}; // 시장 뉴스 5개 (sector-live 와 같이 매시, 2026-10-27)
   Json _secLive = const {}; // 업종 '오늘' (sector-live 작업이 1시간마다)
   bool _liveBusy = false;
   DateTime? _liveAt; // 마지막으로 시세를 받은 기기 시각
@@ -166,9 +168,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final mine = [..._holdings, ..._auto].map((h) => '${h['code']}').where((c) => !common.contains(c)).toList();
     final r = await Future.wait([Live.indices(), Live.stocks(common), Live.stocks(mine)]);
     final sl = await Api.sectorsLive().catchError((_) => <String, dynamic>{});
+    final nw = await Api.marketNews().catchError((_) => <String, dynamic>{});
     if (!mounted) return;
     setState(() {
       _secLive = sl;
+      _news = nw;
       _idx = r[0];
       _stk = Live.merge([r[1], r[2]]);
       _liveAt = DateTime.now();
@@ -272,6 +276,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     prevSub: '',
                   );
                 }(),
+                _MarketNews(news: _news),
                 if (_stk?.error != null && quotes.isEmpty)
                   _Notice('지금 시세를 가져오지 못해 $repBasis 가격으로 보여줍니다. (${_stk!.error})'),
                 // 후보 탭별 3개 (탭 데이터를 못 받으면 V3 상위 3)
@@ -575,6 +580,58 @@ class _LiveCandidateTile extends StatelessWidget {
   }
 }
 
+
+/// 시장 뉴스: 오늘 시장이 왜 움직였나 기사 5개 — 서버가 매시 골라 둠(실시간 아님). 탭하면 기사 열기
+class _MarketNews extends StatelessWidget {
+  const _MarketNews({required this.news});
+  final Json news;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = asList(news['items']);
+    if (items.isEmpty) return const SizedBox.shrink();
+    final t = Theme.of(context).textTheme;
+    final today = dtIsToday(news);
+    final chg = (news['chg'] as num?)?.toDouble();
+    final idx = {'KOSPI': '코스피', 'KOSDAQ': '코스닥'}['${news['index']}'] ?? '${news['index'] ?? ''}';
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SectionTitle('시장 뉴스',
+          trailing: Text(today ? '${news['time']} 기준' : '${news['date']} ${news['time']} (어제 이전)',
+              style: t.bodySmall?.copyWith(color: Colors.grey))),
+      Card(
+        margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (chg != null)
+              Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text('$idx ${pct(chg)} — 왜 움직였나 (원인·배경 기사 우선)',
+                      style: t.bodySmall?.copyWith(color: Colors.grey))),
+            for (final n in items.take(5))
+              InkWell(
+                onTap: () {
+                  final u = Uri.tryParse('${n['link'] ?? ''}');
+                  if (u != null && u.hasScheme) launchUrl(u, mode: LaunchMode.externalApplication);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(child: Text('${n['title']}', maxLines: 2, overflow: TextOverflow.ellipsis)),
+                    const SizedBox(width: 8),
+                    Text('${n['time']}'.length >= 16 ? '${n['time']}'.substring(11) : '',
+                        style: t.bodySmall?.copyWith(color: Colors.grey)),
+                  ]),
+                ),
+              ),
+            Text('※ 기사 제목을 모아 본 참고이며 원인을 확정하는 것이 아닙니다.',
+                style: t.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
+          ]),
+        ),
+      ),
+    ]);
+  }
+}
 
 /// 업종/테마 강도: 왼쪽 = 오늘(업종 전체 종목 등락, 1시간마다), 오른쪽 = 전일 마감 (같은 방식) — 높은 순 6개
 class _SectorCompare extends StatelessWidget {

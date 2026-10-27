@@ -86,6 +86,7 @@ class Api {
     return d;
   }
   static Future<Json> sectorsLive() => useCloud ? _Cloud.statusOf('sectors_live') : Future.value(<String, dynamic>{});
+  static Future<Json> marketNews() => useCloud ? _Cloud.statusOf('market_news') : Future.value(<String, dynamic>{});
   static Future<Json> sectors() => useCloud ? _Cloud.sectors() : _Http.get('/api/sectors');
   static Future<Json> sector(String group) =>
       useCloud ? _Cloud.sector(group) : _Http.get('/api/sectors/${Uri.encodeComponent(group)}');

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 log = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ ISSUES = {                                   # 이슈 이름 → 제목에 나�
     "전쟁·지정학": ["전쟁", "중동", "이스라엘", "이란", "러시아", "우크라이나", "북한", "미사일", "지정학"],
     "물가·경기": ["물가", "CPI", "고용", "경기침체", "침체", "소비"],
     "유가·원자재": ["유가", "원유", "WTI", "금값", "원자재"],
-    "반도체·AI": ["반도체", "엔비디아", "삼성전자", "SK하이닉스", "AI", "HBM"],
+    "반도체·AI": ["반도체", "엔비디아", "삼성전자", "SK하이닉스", "AI", "HBM", "앤트로픽", "엔트로픽", "Anthropic"],
     "외국인·기관 매매": ["외국인", "기관", "순매도", "순매수", "프로그램"],
     "정치·정책": ["정치", "탄핵", "대통령", "계엄", "정책", "세제", "공매도"],
     "실적": ["실적", "어닝", "영업이익"],
@@ -30,6 +31,25 @@ ISSUES = {                                   # 이슈 이름 → 제목에 나�
 }
 PRICE_ONLY = ("마감", "장중", "종가", "시황", "지수", "급락", "폭락", "하락", "약세", "내림세", "하락세", "급등", "상승", "강세")
 CAUSE_Q = ("속보", "긴급", "충격", "원인 배경", "왜 떨어")        # 가격 얘기 말고 '무슨 일이 있었나' 기사를 찾는 검색어
+
+
+STOP = set("코스피 코스닥 증시 지수 주가 시장 오늘 장중 마감 개장 상승 하락 급등 급락 폭락 폭등 이유 배경 속보 긴급 충격 원인 서울 한국 국내 투자자 전망 영향 대비 이상 이하 이번 지난 최대 최고 최저 사상 기록 돌파 안팎 이후 이전 관련 기대 우려 발표 공개 정부 시장에서 종목 업종 거래 거래일 외국인 기관 개인 순매수 순매도 매수 매도 전일 전날 하루".split())
+
+
+def hot_terms(titles: list[str], top: int = 2, min_docs: int = 2) -> list[str]:
+    """그날 기사 제목들에서 서로 다른 제목 2개 이상에 반복해 나오는 고유 단어 (예: 앤트로픽, 엔비디아) — 미리 정해 둔 주제 없이 '오늘의 이슈'를 따라감"""
+    cnt: dict[str, int] = {}
+    for t in titles:
+        seen = set()
+        for w in re.findall(r"[가-힣]{2,}|[A-Za-z][A-Za-z0-9]{2,}", t):
+            w = re.sub(r"(은|는|이|가|을|를|의|에|도|만|과|와|로|으로|에서|발)$", "", w) if re.fullmatch(r"[가-힣]{3,}", w) else w
+            if len(w) < 2 or w in STOP or w.isdigit():
+                continue
+            seen.add(w)
+        for w in seen:
+            cnt[w] = cnt.get(w, 0) + 1
+    return [w for w, n in sorted(cnt.items(), key=lambda kv: (-kv[1], kv[0])) if n >= min_docs][:top]
+
 
 
 def level(chg: float | None) -> int:
@@ -55,21 +75,42 @@ def is_price_only(title: str) -> bool:
     return (not has_issue) and any(w in title for w in PRICE_ONLY)
 
 
+CAUSE_WORDS = ("이유", "배경", "때문", "영향", "호재", "악재", "촉발", "덕분", "힘입", "기대", "우려", "발표", "공개", "수혜", "여파", "계기", "급등한", "뛴", "쏠린")
+SHOW_N = 5                                                    # 알림에 싣는 기사 수 (2026-10-27: 3→5, 원인 기사 위주)
+
+
+def cause_score(title: str) -> int:
+    """높을수록 '왜 움직였나'에 가까운 제목: 원인 표현 +2 · 이슈 단어 +1 · 숫자만 전하는 시황 -3"""
+    sc = 2 if any(w in title for w in CAUSE_WORDS) else 0
+    if any(w in title for ws in ISSUES.values() for w in ws):
+        sc += 1
+    if is_price_only(title):
+        sc -= 3
+    return sc
+
+
 def news_for(code: str, down: bool, fetch=None) -> list[dict]:
-    """가격 기사(급락·마감)보다 '이유·사건' 기사를 앞에: 검색 두 갈래 — 지수 급락/급등 + 속보·긴급·원인 검색 → 이슈 제목 우선"""
+    """'지수가 몇 % 올랐다' 기사보다 '왜 움직였나' 기사를 앞에.
+    1) 지수 급등락·이유 검색 + 속보류  2) 거기서 많이 나온 이슈로 '<이슈> 급등/급락 이유' 재검색 (오늘 같은 날 반도체·AI 이슈가 잡힘)
+    3) 그날 기사 제목에 반복해 나온 단어(hot_terms)로 재검색 → 원인 점수(cause_score) 순, 같으면 최신순"""
     from ..data import naver_news
     fetch = fetch or naver_news.fetch_query
     name = NAME.get(code, code)
+    up_dn = "급락" if down else "급등"
     words = (name, "증시", "코스피", "코스닥", "주가", "시장")
     out = []
-    for q in (f"{name} {'급락' if down else '급등'}", f"증시 {'폭락' if down else '급등'} 이유"):
+    for q in (f"{name} {up_dn}", f"증시 {'폭락' if down else '급등'} 이유", f"증시 {'하락' if down else '상승'} 배경"):
         out += fetch(q, days=1, must=words)
     for q in CAUSE_Q:                                              # 시장 단어 없이도 큰 사건 기사 (예: 속보 사망설)
         out += fetch(f"{q} {'증시 하락' if down else '증시 상승'}", days=1, must=())
+    for tag in issue_tags([x["title"] for x in out], top=2):       # 많이 나온 이슈로 원인 재검색
+        kw = ISSUES[tag][0] if tag != "반도체·AI" else "반도체"
+        out += fetch(f"{kw} {up_dn} 이유", days=1, must=())
+    for w in hot_terms([x["title"] for x in out]):                  # 오늘 기사에 반복해 나온 단어(앤트로픽 등)로 한 번 더 — 고정 주제 없이
+        out += fetch(f"{w} {'증시 하락' if down else '증시 상승'}", days=1, must=(w,))
     out.sort(key=lambda x: x["time"], reverse=True)
-    from ..data.naver_news import dedupe
-    out = dedupe(out)
-    out.sort(key=lambda x: is_price_only(x["title"]))              # 안정 정렬: 이슈 기사 먼저, 같은 쪽 안에서는 최신순
+    out = naver_news.dedupe(out)
+    out.sort(key=lambda x: -cause_score(x["title"]))               # 안정 정렬: 원인 기사 먼저, 같은 점수 안에서는 최신순
     return out
 
 
@@ -105,9 +146,12 @@ def ai_comment(code: str, chg: float, news: list[dict], model: str | None = None
         return None
 
 
-def message(rows: list[dict], news: list[dict], now_hm: str, comment: str | None = None) -> tuple[str, str]:
-    """rows: 알릴 지수들 [{code, chg}] + 같은 시각 다른 지수는 body 에"""
-    main = max(rows, key=lambda r: abs(r["chg"]))
+def message(rows: list[dict], news: list[dict], now_hm: str, comment: str | None = None,
+            new_codes: list[str] | None = None) -> tuple[str, str]:
+    """rows: 알릴 지수들 [{code, chg}] + 같은 시각 다른 지수는 body 에 · new_codes: 이번에 새 단계에 들어간 지수 (제목은 이쪽 기준)"""
+    pool = [r for r in rows if new_codes and r["code"] in new_codes] or rows
+    main = max(pool, key=lambda r: abs(r["chg"]))
+    rows = sorted(rows, key=lambda r: r["code"] != main["code"])      # 제목의 지수를 본문 맨 앞에
     down = main["chg"] < 0
     title = f"🚨 {NAME.get(main['code'], main['code'])} {main['chg']:+.1f}% {'급락' if down else '급등'} ({now_hm})"
     lines = [" · ".join(f"{NAME.get(r['code'], r['code'])} {r['chg']:+.2f}%" for r in rows)]
@@ -117,8 +161,8 @@ def message(rows: list[dict], news: list[dict], now_hm: str, comment: str | None
     if tags:
         lines.append("뉴스에서 많이 나온 이슈: " + " · ".join(tags))
     if news:
-        lines.append("관련 기사 (이유·사건 기사 우선)")
-        lines += [f"· {n['title'][:60]} ({n['time'][11:]})" for n in news[:3]]
+        lines.append("왜 움직였나 (원인·배경 기사 우선)")
+        lines += [f"· {n['title'][:60]} ({n['time'][11:]})" for n in news[:SHOW_N]]
     else:
         lines.append("관련 기사를 찾지 못했어요 (뉴스 키 없음 또는 아직 기사 전)")
     lines.append("※ 기사 제목을 모아 본 참고이며 원인을 확정하는 것이 아닙니다.")
@@ -172,7 +216,7 @@ def check(sb, topics: list[str], indices=None, send=None, fetch=None, now=None) 
     title, body = message([{"code": h["code"], "chg": h["chg"]} for h in hit] +
                           [{"code": str(r["code"]), "chg": float(r["chg_pct"])} for r in indices.to_dict("records")
                            if str(r["code"]) not in {h["code"] for h in hit} and r.get("chg_pct") == r.get("chg_pct")],
-                          news, now.strftime("%H:%M"), comment)
+                          news, now.strftime("%H:%M"), comment, new_codes=[h["code"] for h in hit])
     if send is None:
         from ..trading.notify import Notifier
         nt = Notifier()

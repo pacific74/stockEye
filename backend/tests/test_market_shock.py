@@ -75,3 +75,38 @@ def test_ai_comment_only_with_key(monkeypatch):
     assert ms.ai_comment("KOSPI", -3.1, [{"title": "x", "time": "2026-10-20 10:00"}]) is None
     t, b = ms.message([{"code": "KOSPI", "chg": -3.1}], [], "10:10", comment="사망설 보도로 불안 확대")
     assert "🧭 사망설 보도로 불안 확대" in b and "사실 확인 아님" in b
+
+
+def test_title_follows_new_index():
+    rows = [{"code": "KOSDAQ", "chg": 3.02}, {"code": "KOSPI", "chg": 3.67}]
+    t, b = ms.message(rows, [], "09:12", new_codes=["KOSDAQ"])
+    assert "코스닥 +3.0% 급등" in t and b.splitlines()[0].startswith("코스닥")
+    t2, _ = ms.message(rows, [], "09:12")
+    assert "코스피" in t2                                            # new_codes 가 없으면 예전처럼 가장 큰 지수
+
+
+def test_cause_news_ranked_first_and_theme_search():
+    def fake(q, days=1, must=(), **kw):
+        base = {"코스피 급등": [{"title": "코스피 3.6% 급등 마감", "time": "2026-10-27 09:20"}],
+                "증시 급등 이유": [{"title": "코스피 장중 3% 상승", "time": "2026-10-27 09:18"},
+                                 {"title": "반도체 쏠림 속 코스피 급등", "time": "2026-10-27 09:10"},
+                                 {"title": "앤트로픽 쇼크에 반도체 들썩", "time": "2026-10-27 09:12"},
+                                 {"title": "앤트로픽 효과 반도체주 강세", "time": "2026-10-27 09:14"}]}
+        if q == "반도체 급등 이유":                                   # 1차 결과에서 반도체·AI 이슈가 잡히면 재검색
+            return [{"title": "앤트로픽 신모델 여파에 반도체 급등 이유는", "time": "2026-10-27 09:00"}]
+        if q.startswith("앤트로픽 "):                                   # 오늘 기사에 반복된 단어로 재검색
+            return [{"title": "앤트로픽 대규모 AI 칩 계약", "time": "2026-10-27 08:50"}]
+        return base.get(q, [])
+    out = ms.news_for("KOSPI", False, fake)
+    titles = [x["title"] for x in out]
+    assert titles[0].startswith("앤트로픽 신모델") and "앤트로픽 대규모 AI 칩 계약" in titles
+    assert titles.index("코스피 3.6% 급등 마감") > titles.index("반도체 쏠림 속 코스피 급등")   # 숫자만 전하는 시황은 뒤로
+    _, body = ms.message([{"code": "KOSPI", "chg": 3.6}], out, "09:12")
+    assert "왜 움직였나" in body and "앤트로픽 신모델" in body
+
+
+def test_no_fixed_topic_on_quiet_day():
+    def fake(q, days=1, must=(), **kw):
+        return [{"title": "코스피 3.1% 급등 마감", "time": "2026-10-27 09:20"}] if q == "코스피 급등" else []
+    out = ms.news_for("KOSPI", False, fake)
+    assert all("앤트로픽" not in x["title"] for x in out) and ms.hot_terms(["코스피 급등 마감", "증시 상승 이유"]) == []

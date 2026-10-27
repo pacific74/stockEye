@@ -288,3 +288,22 @@ def test_send_topic_retries_on_429(monkeypatch):
     codes2 = iter([403])
     monkeypatch.setattr(requests, "post", lambda *a, **k: R(next(codes2)))
     assert nt.Notifier().send_topic("t", "제목", "본문") is False      # 403 은 다시 안 함
+
+
+def test_finish_day_refreshes_stale_status(monkeypatch):
+    """PC 가 꺼져 'daytrade' 상태에 진행중 종목이 남아 있으면, 저녁 마무리가 그 tracked 를 끝난 결과로 바꿔 올림"""
+    sb = SB()
+    sb.delete = lambda table, f: None
+    tr = it.Tracker(sb, "daytrade", "2026-10-13", user_id="u1")
+    tr.add([SIG], pd.Timestamp("2026-10-13 09:10"))
+    tr.save()
+    sb.select = lambda t, q: [{"payload": {"date": "2026-10-13", "tracked": [{"code": "000010", "done": False}], "items": []}}] if t == "system_status" else []
+    saved = {}
+    from stockeye.cloud import publish as pub
+    monkeypatch.setattr(pub, "publish_status", lambda s_, k, p: saved.__setitem__(k, p))
+
+    class KIS:
+        def minute_bars_day(self, code, start, end):
+            return _bars([(10000, 10050, 9990, 10020, 100)] * 3, start="2026-10-13 15:18")
+    it.finish_day(sb, KIS(), "2026-10-13", kinds=("daytrade",))
+    assert saved["daytrade"]["tracked"][0]["done"] is True and saved["daytrade"]["items"] == []

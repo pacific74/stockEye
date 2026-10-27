@@ -501,6 +501,14 @@ def finish_day(sb, kis, day: str, kinds=("daytrade", "limitcatch", "closingbet")
                 tr.update(code, bars, last, None, now)
                 n_done += int(t["done"])
         tr.save()
+        if n_done and kind in ("daytrade", "limitcatch"):             # 앱은 system_status 의 tracked 를 읽음 → PC 가 꺼져 있으면 낡은 '진행중' 이 남으므로 갱신 (2026-10-28)
+            try:
+                from ..cloud import publish as pub
+                cur = (sb.select("system_status", {"select": "payload", "key": f"eq.{kind}"}) or [{}])[0].get("payload")
+                if cur:
+                    pub.publish_status(sb, kind, {**cur, "tracked": tr.view()})
+            except Exception as e:  # noqa: BLE001
+                log.warning("%s 고정 종목 현황 갱신 실패: %s", kind, e)
         out[kind] = {"tracked": len(tr.tracks) + len(tr.carry), "finished_now": n_done,
                      "open": len(tr.codes())}
         if kind == "closingbet":                                      # 앱 '종가배팅' 구역의 전날·오늘 내역

@@ -249,10 +249,10 @@ class _Section extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final today = dtIsToday(d);
-    // 고정 종목: 오늘 것 + 아직 추적 중이거나 오늘 끝난 것만 (상한가포착 전날 종목은 오늘 09:30 까지) — 어제 끝난 당일단타는 안 보임
+    // 고정 종목: 오늘 것 + 오늘 끝난 것 + (상한가포착만) 전날부터 아직 추적 중인 것 (오늘 09:30 까지). 당일단타는 어제 것이 마감 처리 못 된 채 남아도 안 보임 (2026-10-28)
     final todayStr = '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}';
     final tracked = asList(d['tracked'])
-        .where((x) => dtIsToday({'date': x['date']}) || x['done'] != true || '${x['exit_time'] ?? ''}'.startsWith(todayStr))
+        .where((x) => dtIsToday({'date': x['date']}) || (_lc && x['done'] != true) || '${x['exit_time'] ?? ''}'.startsWith(todayStr))
         .toList();
     final fixed = {for (final x in tracked) '${x['code']}'};
     final items = today ? asList(d['items']).where((r) => !fixed.contains('${r['code']}')).toList() : <Json>[];

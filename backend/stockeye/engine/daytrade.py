@@ -26,13 +26,18 @@
   지금가 아래 지지선 후보 (돌파한 저항 · 눌림 저점 · VWAP · 시초 범위 고/저 · 최근 1분봉 스윙 저점 · 당일 저가) 중
   '흔들림 폭'(3호가 · 0.6% · 평소 하루 폭의 15% 중 큰 것)보다 아래 있는 가장 가까운 것 → 그 밑 2호가(최소 0.2%)
   3% 안에 그런 지지선이 없으면 진입 금지 (진입 신호가 떠도)
+
+DT-0.4 (2026-10-27)
+  반등장 (전날 지수 −2% 이하 → 오늘 +1.5% 이상 또는 갭 +1%↑, analysis/regime.py): 신규 진입 09:40 까지만 · 눌림목형 진입 보류 · VWAP 추격 한도 3% → 5%
+    (오전 급등이 9시 반~10시에 되밀려 손절 나는 걸 줄이려고 일찍 잡고 늦으면 안 잡음)
+  신고가 돌파 시도 제외: 돌파형인데 최근 일봉 고점(KIS 30거래일)의 1% 안까지 올라온 자리 — 한 번에 못 넘으면 되밀려 손절
 """
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-VERSION = "DT-0.3"   # 0.2: 1차 목표 +3%↑ · 2차 +5%↑ · 평소 하루 변동폭 5% 미만 제외 · 0.3: 손절 = 지지선 아래 (3% 이내)
+VERSION = "DT-0.4"   # 0.2: 1차 목표 +3%↑ · 2차 +5%↑ · 평소 하루 변동폭 5% 미만 제외 · 0.3: 손절 = 지지선 아래 (3% 이내)
 COST = 0.002                 # 왕복 수수료·세금 (비율)
 MIN_VALUE = 10e8             # 오전 누적 거래대금 10억
 MAX_SPREAD = 0.003           # 0.3%
@@ -44,6 +49,9 @@ MIN_T2 = 0.05               # 2차 목표 최소 +5%
 MIN_ADR = 0.05              # 최근 20일 평균 하루 변동폭(고가-저가)/전일종가 5% 미만 → 3% 먹기 어려움
 LIMIT_UP = 0.30             # 상한가
 VWAP_CHASE = 0.03            # VWAP 대비 3%
+HI_MARGIN = 0.01             # 최근 일봉(KIS 30거래일) 고점의 1% 안까지 올라 '신고가를 뚫는 자리'면 돌파형 제외 — 한 번에 못 넘으면 되밀려 손절 (2026-10-27 사용자, 뉴파워프라즈마)
+REB_ENTRY_UNTIL = "09:40"    # 반등장(전날 급락 → 오늘 갭상승)엔 이 시각 뒤 신규 진입 보류 — 오전 급등이 9시 반~10시에 되밀려 손절 (2026-10-27 사용자)
+REB_CHASE = 0.05             # 반등장엔 초반 급등으로 VWAP 위 3% 는 금방 넘으므로 5% 까지 허용 (일찍 잡기)
 WARMUP = "09:05"             # 이 전에는 신규 진입 신호 없음
 WATCH, PRIORITY = 70.0, 80.0
 PARTS = {"liq20": ("거래대금·유동성", 20), "vol15": ("거래량·매수세", 15), "pat25": ("가격 구조·진입 패턴", 25),
@@ -232,14 +240,21 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
     # ---- 패턴 ----
     A = breakout(b)
     B = pullback(b, vw, or_high)
-    use = A if A["score"] >= B["score"] else B
+    reb = ctx.get("rebound")                                          # {prev, chg, why} — 전날 급락 후 오늘 급등장
+    use = A if (A["score"] >= B["score"] or (reb and A.get("signal"))) else B
     typ = "돌파" if use is A else "눌림목"
     sig = bool(use.get("signal"))
+    if reb and use is B and sig:                                      # 눌림목은 급등이 한 번 꺾인 뒤 = 이미 늦은 자리
+        sig = False
+        out["warnings"].append("반등장: 눌림목 진입은 보류 (오전 급등이 꺾인 뒤라 되밀림 위험)")
     ss = support_stop(b, p, vw, or_high, or_low, use, a)            # 손절 = 지지선 아래 (호가 흔들림에 안 걸리게)
     pl = plan(p, ss["stop"] if ss["stop"] else p * (1 - MAX_STOP))
     stop_pct = (p - pl["stop"]) / p
     if sig and ss["stop"] is None:
         ex.append(ss["basis"] or "3% 안에 지지선 없음")
+    hi_n = ctx.get("hi_n")                                            # 신고가를 뚫으려는 돌파형은 제외
+    if typ == "돌파" and hi_n and max(p, float(use.get("level") or 0)) >= float(hi_n) * (1 - HI_MARGIN):
+        ex.append(f"신고가 돌파 시도 (최근 고점 {rt(float(hi_n)):,.0f}원 근처 — 한 번에 못 넘으면 되밀려 손절)")
 
     # ---- 점수 ----
     vavg = float(b["volume"].iloc[-25:-5].mean()) if len(b) > 6 else float(b["volume"].mean())
@@ -271,11 +286,15 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
     # ---- 상태 ----
     gap = p / vw - 1
     w = out["warnings"]
-    if gap >= VWAP_CHASE:
+    chase = REB_CHASE if reb else VWAP_CHASE
+    if gap >= chase:
         w.append(f"VWAP 대비 +{gap * 100:.1f}% — 추격 금지 (신규 진입 보류)")
     if hm < WARMUP:
         w.append("장 시작 5분 — 후보 수집만 (신규 진입 보류)")
-    can_enter = sig and gap < VWAP_CHASE and hm >= WARMUP
+    late = bool(reb) and hm > REB_ENTRY_UNTIL
+    if late:
+        w.append(f"{reb['why']} — {REB_ENTRY_UNTIL} 이후 신규 진입 보류 (오전 급등 되밀림)")
+    can_enter = sig and gap < chase and hm >= WARMUP and not late
     if ex:
         status = "진입 금지"
     elif score >= PRIORITY and can_enter:
@@ -294,12 +313,14 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
         r.append(f"오전 상승 +{use.get('gain_pct', 0):.1f}% 뒤 눌림 (깊이 {use.get('depth', 0):.0%})"
                  f" · 고점 {rt(use.get('level') or p):,.0f}원")
     r.append(f"VWAP {rt(vw):,.0f}원 {'위' if p > vw else '아래'} · 오전 거래대금 {value / 1e8:,.0f}억")
+    if reb:
+        r.append(f"{reb['why']} · {REB_ENTRY_UNTIL} 전 돌파형만")
     if ss["basis"]:
         r.append(f"손절 근거: {ss['basis']}")
     out.update({"status": status, "score": score, "parts": parts, "type": typ, "signal": sig,
                 "price": p, "chg_pct": round(chg, 2), "vwap": rt(vw), "vwap_gap_pct": round(gap * 100, 2),
                 "value": round(value), "adr_pct": None if a is None else round(a * 100, 1), "spread_pct": None if spread is None else round(spread * 100, 3),
-                "or_high": rt(or_high), "level": rt(use.get("level") or p), **pl, "stop_basis": ss["basis"],
+                "rebound": bool(reb), "or_high": rt(or_high), "level": rt(use.get("level") or p), **pl, "stop_basis": ss["basis"],
                 "labels": {k: v for k, (v, _) in PARTS.items()}, "maxes": {k: m for k, (_, m) in PARTS.items()}})
     return out
 

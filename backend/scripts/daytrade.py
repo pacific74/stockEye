@@ -79,6 +79,7 @@ class Runner:
         self.news: dict[str, str | None] = {}
         self.news_items: dict[str, list] = {}                     # 앱 상세 화면용 뉴스 제목
         self.spread: dict[str, tuple[float, float | None]] = {}     # code → (받은 시각, 스프레드)
+        self.hi_n: dict[str, float | None] = {}                       # code → 최근 일봉(30거래일) 고가 (신고가 돌파 제외용)
         self.adr: dict[str, float | None] = {}                       # code → 평소 하루 변동폭 (하루 한 번)
         self.signals: dict[tuple, dict] = {}
         self.day = _now().strftime("%Y-%m-%d")
@@ -86,6 +87,8 @@ class Runner:
         self.rec = IntradayRecorder(sb, "daytrade", runner)          # 검증용 추천 기록 ('진입 조건 충족' 첫 시점)
         from stockeye.trading.intraday_track import Tracker
         self.track = Tracker(sb, "daytrade", self.day)               # 당일매매: 충족 종목 고정 → 상태·결과 추적 → 매매일지
+        from stockeye.analysis import regime
+        self.reg_days = regime.days_for(sb, self.day) if sb else {}                  # 지수 일별 등락 기록 (반등장 판정용, 2026-10-27)
         self.last_items: list[dict] = []
 
     def discover(self) -> pd.DataFrame:
@@ -135,9 +138,11 @@ class Runner:
                 d = self.kis.daily(code)
                 d = d[d["date"] < pd.Timestamp(self.day)]                 # 오늘(장중) 봉 제외
                 self.adr[code] = dt.adr(d)
+                self.hi_n[code] = float(d["high"].max()) if len(d) >= 10 else None
             except Exception as e:  # noqa: BLE001
                 log.debug("일봉 실패 %s: %s", code, e)
                 self.adr[code] = None
+                self.hi_n[code] = None
         return self.adr[code]
 
     def _extras(self, code: str) -> None:
@@ -175,6 +180,8 @@ class Runner:
         snap = self.discover()
         idx = naver_live.indices()
         idx_chg = {r["code"]: float(r["chg_pct"]) for _, r in idx.iterrows()} if not idx.empty else {}
+        from stockeye.analysis import regime
+        reb = {m: regime.for_market(self.reg_days, self.day, idx, m) for m in ("KOSPI", "KOSDAQ")} if not idx.empty else {}
         from concurrent.futures import ThreadPoolExecutor
         live = snap[snap["value"] >= dt.MIN_VALUE]                    # 거래대금 10억 미만은 어차피 제외 → 분봉 안 받음
         top = live.sort_values("value", ascending=False).head(self.top).index.tolist()
@@ -190,7 +197,8 @@ class Runner:
                     "idx_chg": idx_chg.get(market or "KOSPI", idx_chg.get("KOSPI", 0.0)),
                     "value": float(b["value"].iloc[-1]) if "value" in b and b["value"].iloc[-1] > 0 else float(q["value"]),
                     "danger": "관리종목" if code in self.admin else None,
-                    "spread": (self.spread.get(code) or (0, None))[1], "news_level": None}
+                    "spread": (self.spread.get(code) or (0, None))[1], "news_level": None,
+                    "rebound": reb.get(market or "KOSPI")}
 
         first = {}
         for code in cands:
@@ -207,7 +215,7 @@ class Runner:
             if code in need:
                 ctx = ctx_of(code, bars[code])
                 ctx.update({"spread": (self.spread.get(code) or (0, None))[1], "news_level": self.news.get(code),
-                            "adr": self.adr.get(code)})
+                            "adr": self.adr.get(code), "hi_n": self.hi_n.get(code)})
                 r = dt.evaluate(bars[code], ctx)
             r.update({"code": code, "name": self.names.get(code, code)})
             if self.news_items.get(code):

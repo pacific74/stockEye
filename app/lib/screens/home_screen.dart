@@ -592,8 +592,6 @@ class _MarketNews extends StatelessWidget {
     if (items.isEmpty) return const SizedBox.shrink();
     final t = Theme.of(context).textTheme;
     final today = dtIsToday(news);
-    final chg = (news['chg'] as num?)?.toDouble();
-    final idx = {'KOSPI': '코스피', 'KOSDAQ': '코스닥'}['${news['index']}'] ?? '${news['index'] ?? ''}';
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       SectionTitle('시장 뉴스',
           trailing: Text(today ? '${news['time']} 기준' : '${news['date']} ${news['time']} (어제 이전)',
@@ -603,11 +601,6 @@ class _MarketNews extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if (chg != null)
-              Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text('$idx ${pct(chg)} — 왜 움직였나 (원인·배경 기사 우선)',
-                      style: t.bodySmall?.copyWith(color: Colors.grey))),
             for (final n in items.take(5))
               InkWell(
                 onTap: () {
@@ -624,8 +617,6 @@ class _MarketNews extends StatelessWidget {
                   ]),
                 ),
               ),
-            Text('※ 기사 제목을 모아 본 참고이며 원인을 확정하는 것이 아닙니다.',
-                style: t.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
           ]),
         ),
       ),

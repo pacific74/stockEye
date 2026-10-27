@@ -65,6 +65,8 @@ class Runner:
         self.track = Tracker(sb, "closingbet", self.day, write_carry=False)
         self.track.on_event = self._alert                      # 종가배팅 매수발생 → 관리자 알림 (2026-10-19, 그전엔 없었음)
         self._topics = None
+        from stockeye.analysis import regime
+        self.reg_days = regime.days_for(sb, self.day) if sb else {}                  # 지수 일별 등락 기록 (반등장 판정용, 2026-10-27)
 
     def _alert(self, tracker, t: dict, state: str) -> None:
         """매수발생만 관리자 ntfy 로 (PC·GitHub 둘 다). 실패해도 추적은 계속"""
@@ -118,6 +120,8 @@ class Runner:
         snap = snap.set_index("code")
         idx = naver_live.indices()
         idx_chg = {r["code"]: float(r["chg_pct"]) for _, r in idx.iterrows()} if not idx.empty else {}
+        from stockeye.analysis import regime
+        reb = {m: regime.for_market(self.reg_days, self.day, idx, m) for m in ("KOSPI", "KOSDAQ")} if not idx.empty else {}
         top = snap.sort_values("value", ascending=False).head(self.top).index.tolist()
         cands = list(dict.fromkeys(top + [c for c in self.watch if c in snap.index]))
         def one(code):
@@ -132,7 +136,8 @@ class Runner:
             today = {"open": q["open"], "high": q["high"], "low": q["low"], "close": q["price"], "volume": vol,
                      "value": value, "vwap": value / vol if vol > 0 else None, "prev_close": q["prev_close"] or None}
             ctx = {"idx_chg": idx_chg.get(self.market.get(code, "KOSPI")), "sector_chg": sec_chg.get(self.sector.get(code)),
-                   "danger": "관리종목" if code in self.admin else None, "now": now, "news_level": None}
+                   "danger": "관리종목" if code in self.admin else None, "now": now, "news_level": None,
+                   "rebound": reb.get(self.market.get(code, "KOSPI"))}
             r = cb.evaluate(daily, today, None, ctx)
             if r["score"] >= 60 and not r["excluded"]:                   # 될 만한 종목만 분봉·뉴스 (API 아끼기)
                 try:

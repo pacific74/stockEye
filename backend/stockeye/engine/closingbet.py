@@ -16,6 +16,8 @@
   지난 60일 '전일 종가 → 다음 날 시가' 하위 20% 갭 · 오늘 상승률 · 윗꼬리 · 바로 위 60일 고점(저항) · 20일선 이격 · 지수 약세
   예상 갭 범위 = 지난 60일 시가 갭 하위 20% ~ 상위 20%
 
+일시 반등 제외 (CB-0.2, 2026-10-27): 전날 −5%↓ 급락(또는 5일 고점 대비 −10%↓) 뒤 오늘 +5%↑ 반등 · 반등장(전날 지수 급락 → 오늘 급등)이면 종목 +3%↑ —
+  다음 날 되밀려 손절 나는 일시 반등이라 종가 매수에서 제외
 필수 제외: 오늘 거래대금 30억 미만 · 오늘 +20% 이상(과열·되밀림) · 관리종목 · 심각 악재 뉴스 · 하락 마감(-1% 미만)
 상태: 진입 금지 / 관찰(70↑) / 우선 관찰(80↑) / 매수 후보(80↑ + 갭 위험 낮음·보통 + 14:50~15:20 · 2026-10-13 사용자: 딱 종가가 아니라 그 사이에 매수)
 
@@ -33,11 +35,15 @@ import pandas as pd
 
 from .daytrade import ramp, rt
 
-VERSION = "CB-0.1"
+VERSION = "CB-0.2"
 COST = 0.0025                # 왕복 비용 (수수료·세금, 비율)
 MIN_VALUE = 30e8             # 오늘 거래대금 30억
 MAX_CHG = 20.0               # 오늘 +20% 이상 제외
 EXIT_TIME = "10:30"
+BOUNCE_PREV = -5.0           # 일시 반등 의심: 어제 종목이 이만큼(%) 이하로 빠졌다가
+BOUNCE_DEEP = -10.0          # (또는 최근 5일 고점 대비 어제 종가가 이만큼 이하) →
+BOUNCE_UP = 5.0              # 오늘 이만큼(%) 이상 급등하면 종가 매수에서 제외 (다음 날 되밀려 손절 — 2026-10-27 사용자)
+BOUNCE_MKT_UP = 3.0          # 반등장(전날 지수 급락 → 오늘 급등)이면 종목이 이만큼만 올라도 의심
 BUY_FROM, BUY_UNTIL = "14:50", "15:20"   # 매수 시간 (예전 15:10 이후 → 14:50 부터)
 WATCH, PRIORITY = 70.0, 80.0
 PARTS = {"close20": ("종가 강도", 20), "late20": ("장 후반 매수세", 20), "liq15": ("거래대금·유동성", 15),
@@ -89,6 +95,23 @@ def gap_risk(today: dict, daily: pd.DataFrame, chg: float, idx_chg: float | None
         pts += 1; why.append(f"평소 시가 갭 하락이 큼 (하위 20% {lo:.1f}%)")
     grade = "낮음" if pts <= 1 else ("보통" if pts <= 3 else "높음")
     return {"grade": grade, "points": pts, "why": why, "gap_lo": round(lo, 2), "gap_hi": round(hi, 2)}
+
+
+def bounce(daily: pd.DataFrame, chg: float, rebound: dict | None = None) -> str | None:
+    """'전날 폭락 → 오늘 폭등' 일시 반등 의심 이유 (없으면 None). daily = 어제까지 일봉(오래된 → 최근)"""
+    if len(daily) >= 2:
+        cl = daily["close"].to_numpy(float)
+        if cl[-2] > 0:
+            prev = (cl[-1] / cl[-2] - 1) * 100
+            if prev <= BOUNCE_PREV and chg >= BOUNCE_UP:
+                return f"전날 {prev:.1f}% 급락 후 오늘 +{chg:.0f}% 반등 (일시 반등 의심 — 다음 날 되밀림)"
+        if len(cl) >= 6 and chg >= BOUNCE_UP:
+            hi = float(cl[-6:-1].max())
+            if hi > 0 and (cl[-1] / hi - 1) * 100 <= BOUNCE_DEEP:
+                return f"최근 5일 고점 대비 {(cl[-1] / hi - 1) * 100:.0f}% 빠졌다 오늘 +{chg:.0f}% 반등 (일시 반등 의심)"
+    if rebound and chg >= BOUNCE_MKT_UP:
+        return f"{rebound['why']} · 종목 +{chg:.0f}% (일시 반등 의심 — 다음 날 되밀림)"
+    return None
 
 
 def plan(c: float, atr: float) -> dict:
@@ -157,6 +180,9 @@ def evaluate(daily: pd.DataFrame, today: dict, mbars: pd.DataFrame | None, ctx: 
         ex.append(str(ctx["danger"]))
     if nl == "severe":
         ex.append("심각 악재 뉴스")
+    bn = bounce(daily, chg, ctx.get("rebound"))
+    if bn:
+        ex.append(bn)
 
     pos = (c - l) / (h - l) if h > l else 0.5
     close20 = ramp(pos, [(0.5, 0), (0.8, 10), (0.95, 14)]) + ramp(c / h if h > 0 else 0, [(0.97, 0), (0.995, 3)]) \

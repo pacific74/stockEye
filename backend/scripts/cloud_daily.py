@@ -244,6 +244,11 @@ def main():
             return ctx_run(sb, kis, pit.listing, getattr(pit, "sectors", None), report["date"])
         step("당일매매 시장·업종 기록", _intraday_ctx, errors)
 
+    def _index_daily():                                              # 반등장 판정용 지수 일별 등락 (당일단타·종가배팅이 아침에 읽음)
+        from stockeye.analysis import regime
+        return regime.record(sb, pit.index)
+    step("지수 일별 등락 기록", _index_daily, errors)
+
     # 추천주 검증: recommendations 결과 칸 채우기(관심 탭 20거래일 · 장중 탭은 위 실전 기록) + 통계 → 앱 '검증 > 추천주'
     if not args.as_of:
         from stockeye.analysis.rec_eval import run as rec_run

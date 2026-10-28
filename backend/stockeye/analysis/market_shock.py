@@ -161,7 +161,6 @@ def message(rows: list[dict], news: list[dict], now_hm: str, comment: str | None
     if tags:
         lines.append("뉴스에서 많이 나온 이슈: " + " · ".join(tags))
     if news:
-        lines.append("왜 움직였나 (원인·배경 기사 우선)")
         lines += [f"· {n['title'][:60]} ({n['time'][11:]})" for n in news[:SHOW_N]]
     else:
         lines.append("관련 기사를 찾지 못했어요 (뉴스 키 없음 또는 아직 기사 전)")

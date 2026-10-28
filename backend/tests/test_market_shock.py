@@ -102,7 +102,7 @@ def test_cause_news_ranked_first_and_theme_search():
     assert titles[0].startswith("앤트로픽 신모델") and "앤트로픽 대규모 AI 칩 계약" in titles
     assert titles.index("코스피 3.6% 급등 마감") > titles.index("반도체 쏠림 속 코스피 급등")   # 숫자만 전하는 시황은 뒤로
     _, body = ms.message([{"code": "KOSPI", "chg": 3.6}], out, "09:12")
-    assert "왜 움직였나" in body and "앤트로픽 신모델" in body
+    assert "왜 움직였나" not in body and "앤트로픽 신모델" in body
 
 
 def test_no_fixed_topic_on_quiet_day():

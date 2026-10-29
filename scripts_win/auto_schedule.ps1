@@ -23,7 +23,13 @@ foreach ($t in $tasks) {
   if ($Off) { Write-Host "removed: $($t.Name)"; continue }
   $bat = Join-Path $dir $t.Bat
   $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c `"$bat`" auto" -WorkingDirectory $dir
-  $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At $t.At
+  $trigger = @(New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At $t.At)
+  if ($t.Catchup) {
+    # PC turned on late (after 08:50): StartWhenAvailable alone did not start it -> also start at logon.
+    # The program exits by itself on weekends/holidays/after 15:40, and with --logon it skips before 08:45 (the 08:50 trigger covers that).
+    $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c `"$bat`" logon" -WorkingDirectory $dir
+    $trigger += New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+  }
   $opts = @{ AllowStartIfOnBatteries = $true; DontStopIfGoingOnBatteries = $true
              ExecutionTimeLimit = (New-TimeSpan -Hours 8); MultipleInstances = 'IgnoreNew' }
   if ($t.Catchup) { $opts.StartWhenAvailable = $true }   # Intraday: if started late the same day it still helps

@@ -164,6 +164,7 @@ def main():
     ap.add_argument("--top", type=int, default=100)
     ap.add_argument("--no-ws", action="store_true", help="실시간 웹소켓 없이 1분 갱신만")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--logon", action="store_true", help="작업 스케줄러 로그온 시작: 08:45 전이면 건너뜀 (08:50 예약이 따로 시작)")
     args = ap.parse_args()
     print(BANNER, flush=True)
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(message)s", datefmt="%H:%M:%S", stream=sys.stdout)
@@ -175,6 +176,8 @@ def main():
     from stockeye.cloud.client import Supabase, enabled
     import scripts.daytrade as sd
     import scripts.limitcatch as sl
+    if args.logon and _now().strftime("%H:%M") < "08:45":
+        print("로그온 시작인데 08:45 전 → 건너뜀 (08:50 예약이 시작함)"); return
     if _now().weekday() >= 5 or naver_live.is_trading_day() is False:
         print("오늘은 장이 열리지 않음 → 종료"); return
     if _now().strftime("%H:%M") >= "15:40":

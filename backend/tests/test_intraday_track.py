@@ -87,3 +87,73 @@ def test_close_out_and_limitcatch_overnight():
     assert c["done"] and c["result"] == "이익실현" and c["hits"].get("t2") == "09:00"
     nxt.save()
     assert json.loads(sb.store["track/limitcatch/2026-10-13.json"])["tracks"]["000030"]["done"]
+
+
+def _hold_setup():
+    tr = it.Tracker(None, "daytrade", "2026-10-13", user_id=None)
+    tr.add([SIG], pd.Timestamp("2026-10-13 09:10"))
+    return tr, tr.tracks["000010"]
+
+
+def _flat(n, px=10000, vol=1000, start="2026-10-13 09:11"):
+    return _bars([(px, px + 5, px - 5, px, vol)] * n, start=start)
+
+
+def _hold(t):
+    return [e for e in t["events"] if e["state"] == "신규진입보류"]
+
+
+def test_hold_when_price_leaves_zone_above():
+    tr, t = _hold_setup()
+    hi = t["buy_hi"]
+    tr.update("000010", _flat(3), hi * 1.004, 90, pd.Timestamp("2026-10-13 09:14"))
+    assert not _hold(t)                                                # 구간 위 1% 안쪽은 그대로
+    tr.update("000010", _flat(3), hi * 1.012, 90, pd.Timestamp("2026-10-13 09:15"))
+    assert len(_hold(t)) == 1 and "위로" in _hold(t)[0]["why"] and t["state"] == "신규진입보류"
+
+
+def test_hold_below_zone_needs_two_minutes():
+    tr, t = _hold_setup()
+    lo = t["buy_lo"]
+    tr.update("000010", _flat(3), lo * 0.999, 90, pd.Timestamp("2026-10-13 09:14"))
+    assert not _hold(t)
+    tr.update("000010", _flat(3), lo * 0.999, 90, pd.Timestamp("2026-10-13 09:15"))
+    assert "아래로 2분" in _hold(t)[0]["why"]
+    tr2, t2 = _hold_setup()                                            # 중간에 구간으로 돌아오면 다시 셈
+    tr2.update("000010", _flat(3), lo * 0.999, 90, pd.Timestamp("2026-10-13 09:14"))
+    tr2.update("000010", _flat(3), (lo + t2["buy_hi"]) / 2, 90, pd.Timestamp("2026-10-13 09:15"))
+    tr2.update("000010", _flat(3), lo * 0.999, 90, pd.Timestamp("2026-10-13 09:16"))
+    assert not _hold(t2)
+
+
+def test_hold_on_sudden_drop_bar_and_volume_dry():
+    tr, t = _hold_setup()
+    b = _bars([(10000, 10005, 9995, 10000, 1000)] * 4 + [(10100, 10100, 9945, 9945, 3000)], start="2026-10-13 09:11")
+    tr.update("000010", b, 10000, 90, pd.Timestamp("2026-10-13 09:16"))   # 1분봉 −1.5%↓ (손절가 9850 은 안 건드림), 가격(구간)은 그대로
+    assert "급락" in _hold(t)[0]["why"]
+    tr2, t2 = _hold_setup()
+    rows = [(10000, 10005, 9995, 10000, 1000)] * 20 + [(10000, 10005, 9995, 10000, 300)] * 5
+    tr2.update("000010", _bars(rows, start="2026-10-13 09:11"), 10000, 90, pd.Timestamp("2026-10-13 09:36"))
+    assert "거래량 급감" in _hold(t2)[0]["why"]
+
+
+def test_hold_vwap_two_minutes_and_not_after_target():
+    tr, t = _hold_setup()
+    up = [(10000, 10040, 9995, 10035, 5000)] * 3                         # VWAP 이 높게 형성
+    dn = [(10030, 10032, 9990, 9995, 800), (9995, 9998, 9985, 9990, 800)]
+    tr.update("000010", _bars(up + dn[:1], start="2026-10-13 09:11"), 10000, 90, pd.Timestamp("2026-10-13 09:15"))
+    assert not _hold(t)
+    tr.update("000010", _bars(up + dn, start="2026-10-13 09:11"), 10000, 90, pd.Timestamp("2026-10-13 09:16"))
+    assert "VWAP 아래 2분" in _hold(t)[0]["why"]
+    tr3, t3 = _hold_setup()                                              # 1차 목표를 먹은 뒤엔 구간 위여도 보류 안 띄움
+    b = _bars([(10000, 10320, 9995, 10310, 2000)], start="2026-10-13 09:11")
+    tr3.update("000010", b, 10310, 90, pd.Timestamp("2026-10-13 09:12"))
+    assert t3["hits"] and not _hold(t3)
+
+
+def test_limitcatch_unchanged_by_new_hold_rules():
+    tr = it.Tracker(None, "limitcatch", "2026-10-13", user_id=None)
+    tr.add([{**SIG, "status": "매수 검토"}], pd.Timestamp("2026-10-13 09:10"))
+    t = tr.tracks["000010"]
+    tr.update("000010", _flat(3), t["buy_hi"] * 1.05, 90, pd.Timestamp("2026-10-13 09:15"))
+    assert not _hold(t)

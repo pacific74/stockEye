@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../recent_search.dart';
 import '../widgets/common.dart';
 import 'stock_detail_screen.dart';
 
@@ -10,6 +11,7 @@ import 'stock_detail_screen.dart';
 ///   종목을 누르면 팝업이 닫히고 종목 상세 화면으로
 Future<void> showStockSearch(BuildContext context) async {
   final picked = await showDialog<Json>(context: context, builder: (_) => const StockSearchDialog());
+  if (picked != null) RecentSearch.add(picked); // 최근 검색 (맨 위로)
   if (picked != null && context.mounted) {
     Navigator.push(
         context,
@@ -32,6 +34,15 @@ class _StockSearchDialogState extends State<StockSearchDialog> {
   List<Json> _rows = [];
   bool _busy = false;
   String? _error;
+  List<Map<String, String>> _recent = []; // 최근 검색 종목 (입력창이 비었을 때 보임)
+
+  @override
+  void initState() {
+    super.initState();
+    RecentSearch.load().then((r) {
+      if (mounted) setState(() => _recent = r);
+    });
+  }
 
   @override
   void dispose() {
@@ -82,6 +93,38 @@ class _StockSearchDialogState extends State<StockSearchDialog> {
     Widget body;
     if (_error != null) {
       body = Padding(padding: const EdgeInsets.all(16), child: Text(_error!, style: const TextStyle(color: Colors.redAccent)));
+    } else if (q.isEmpty && _recent.isNotEmpty) {
+      body = ListView(shrinkWrap: true, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
+          child: Row(children: [
+            Expanded(child: Text('최근 검색', style: t.labelMedium?.copyWith(color: Colors.grey))),
+            TextButton(
+                onPressed: () {
+                  RecentSearch.clear();
+                  setState(() => _recent = []);
+                },
+                child: const Text('전체 삭제')),
+          ]),
+        ),
+        for (final r in _recent)
+          ListTile(
+            dense: true,
+            title: Row(children: [
+              Flexible(child: Text(r['name'] ?? '', overflow: TextOverflow.ellipsis)),
+              MarketBadge(r['market']?.isEmpty ?? true ? null : r['market']),
+            ]),
+            subtitle: Text(r['code'] ?? ''),
+            trailing: IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                tooltip: '목록에서 지움',
+                onPressed: () {
+                  RecentSearch.remove(r['code'] ?? '');
+                  setState(() => _recent = _recent.where((x) => x['code'] != r['code']).toList());
+                }),
+            onTap: () => Navigator.pop(context, <String, dynamic>{'code': r['code'], 'name': r['name'], 'market': r['market']}),
+          ),
+      ]);
     } else if (q.isEmpty) {
       body = Padding(padding: const EdgeInsets.all(16), child: Text('입력하면 아래에 목록이 나옵니다', style: t.bodySmall));
     } else if (_rows.isEmpty && !_busy) {

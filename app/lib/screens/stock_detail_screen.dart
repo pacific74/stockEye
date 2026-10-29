@@ -181,6 +181,9 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
+              // ---- 한 줄 정보: [코스피/코스닥] [업종 · 테마] [업종지수 오늘 등락] [시총] [외인·기관 수급] (2026-10-29) ----
+              //   기업 개요 카드는 후보에 오른 종목만 값이 있어서, 어느 화면에서 열어도 보이도록 종목 정보(저녁 배치)에서 따로
+              Padding(padding: const EdgeInsets.only(bottom: 6), child: StockInfoLine(widget.code)),
               // ---- 기업 개요 ----
               _ProfileCard(
                 profile: {

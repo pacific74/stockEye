@@ -24,6 +24,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=20)
     ap.add_argument("--top", type=int, default=80)
+    ap.add_argument("--compare", type=float, default=75.0,
+                    help="기준을 이 점수까지 낮췄다면 어땠나도 같이 비교 (기본 75, 0 이면 비교 안 함). 앱에 올리는 건 지금 기준(80)만")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
@@ -53,7 +55,7 @@ def main():
         return
     names = store.load("listing")
     nm = dict(zip(names["code"], names["name"])) if names is not None else {}
-    rows, t0 = [], time.time()
+    rows, low_rows, t0 = [], [], time.time()
     for di in range(max(1, len(dates) - args.days), len(dates)):
         day, prev = pd.Timestamp(dates[di]), pd.Timestamp(dates[di - 1])
         p = oh[oh["date"] == prev]
@@ -74,13 +76,19 @@ def main():
             if bars.empty:
                 continue
             s = de.replay_day(bars, prev_close.get(code), adr=adrs.get(code))
-            if not s:
-                continue
-            s.update({"date": day.strftime("%Y-%m-%d"), "code": code, "name": nm.get(code, code)})
-            g = de.grade(s, bars)
-            if g:
-                rows.append(g)
-                n_sig += 1
+            if s:
+                s.update({"date": day.strftime("%Y-%m-%d"), "code": code, "name": nm.get(code, code)})
+                g = de.grade(s, bars)
+                if g:
+                    rows.append(g)
+                    n_sig += 1
+            if args.compare:                                          # 기준을 낮춰 첫 신호를 따로 (같은 분봉으로 한 번 더 계산)
+                s2 = de.replay_day(bars, prev_close.get(code), adr=adrs.get(code), min_score=args.compare)
+                if s2:
+                    s2.update({"date": day.strftime("%Y-%m-%d"), "code": code, "name": nm.get(code, code)})
+                    g2 = de.grade(s2, bars)
+                    if g2:
+                        low_rows.append(g2)
         print(f"{day:%Y-%m-%d}: 신호 {n_sig}건 (누적 {len(rows)} · {(time.time() - t0) / 60:.0f}분)")
     rep = de.report(rows)
     rep.update({"universe": f"전날 거래대금 상위 {args.top}", "note": "호가·뉴스·지수 없이 중립으로 계산한 되돌려 보기",
@@ -90,6 +98,17 @@ def main():
     for k, v in rep["by_type"].items():
         print(f"  {k}: {v.get('n')}건 · 승률 {v.get('win')}% · 평균 {v.get('pnl')}% · 2차 {v.get('t2')}% 1차 {v.get('t1')}%"
               f" 손절 {v.get('stop')}% 마감 {v.get('close')}%")
+    if args.compare:
+        def line(name, rs):
+            m = de.summary(rs)
+            return (f"  {name:<22} {m.get('n', 0):>4}건 · 승률 {m.get('win')}% · 평균 {m.get('pnl')}% · 합계 {m.get('pnl_sum')}%"
+                    f" · 2차 {m.get('t2')}% 1차 {m.get('t1')}% 손절 {m.get('stop')}% 마감 {m.get('close')}%") if m.get("n") else f"  {name:<22}    0건"
+        mid = [r for r in low_rows if (r.get("score") or 0) < 80]
+        print(f"\n점수 기준 비교 (같은 기간·종목 · 호가·뉴스·지수 없이 환산한 점수)")
+        print(line("기준 80 (현재)", rows))
+        print(line(f"기준 {args.compare:g} (낮춤)", low_rows))
+        print(line(f"  └ 진입 시점 점수 {args.compare:g}~80 미만", mid))
+        print("  ※ 낮춘 기준은 80 보다 일찍 진입할 수 있어 80↑ 구간 결과도 달라질 수 있음 · 건수가 적으면 우연일 수 있음")
     if not args.dry_run:
         from stockeye.cloud.client import Supabase, enabled
         if enabled():

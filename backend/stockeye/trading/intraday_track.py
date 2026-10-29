@@ -5,6 +5,7 @@
 현재 상태 (생길 때마다 시각과 함께 쌓음)
   매수구간      지금 가격이 매수구간 안
   신규진입보류  지금 점수가 기준 아래 (당일단타 80 · 상한가포착 75) — 새로 들어가지 말 것 (이미 산 몫은 계속 추적)
+                당일단타는 추가로: 매수구간 위 1%↑ · 구간 아래 2분 연속 · 1분봉 −1.5%↓ · VWAP 아래 2분 연속 · 거래량 급감 (hold_reason)
   1·2·3차 목표달성
   매도신호포착  산 뒤 매물이 갑자기 쏟아짐: 1분 거래량이 앞 10분 평균의 3배 이상 + 1% 넘는 음봉
   손절          손절가 닿음 (1차 목표 전만)
@@ -37,7 +38,7 @@ COST = 0.25                       # %
 AMOUNT = 1_000_000                # 매매일지 1건 금액 (원)
 SELL = (0.5, 0.3, 0.2)
 CFG = {
-    "daytrade": {"name": "당일단타", "trigger": "진입 조건 충족", "hold": 80.0, "end": "15:20", "overnight": False},
+    "daytrade": {"name": "당일단타", "trigger": "진입 조건 충족", "hold": 80.0, "end": "15:20", "overnight": False, "hold_rules": True},
     "limitcatch": {"name": "상한가포착", "trigger": "매수 검토", "hold": 75.0, "end": "09:30", "overnight": True},
     # 종가배팅: 고정 뒤 매수 범위에 들어와야 매수 · 1차 50% → 2차 나머지 · 매도신호(거래량) 안 봄 · 전날 내역도 화면에
     "closingbet": {"name": "종가배팅", "trigger": "매수 후보", "hold": None, "end": "10:30", "overnight": True,
@@ -46,6 +47,12 @@ CFG = {
 RESULTS = ("이익실현", "매수가매도", "손절", "미체결")
 LC_STOP = 0.04                    # 상한가포착 손절 = 매수가 −4%
 HOLD_DROP, HOLD_N = 5.0, 3        # 신규진입보류: 기준보다 5점 넘게 낮거나 · 기준 아래 3분 연속
+# 당일단타 신규진입보류 추가 조건 (2026-10-29): 점수와 별개로 아래 중 하나라도 맞으면 보류 (이미 산 몫은 계속 추적)
+HOLD_ABOVE = 0.01                 # 지금가가 매수구간 위로 1% 넘게 벗어남 (추격 금지)
+HOLD_ZONE_N = 2                   # 매수구간 아래로 이 횟수(분) 연속
+HOLD_DROP_BAR = -0.015            # 1분봉 하나가 시가 대비 −1.5% 이하
+HOLD_VWAP_N = 2                   # VWAP 아래 마감 이 횟수(분) 연속
+HOLD_VOL = 0.5                    # 최근 5분 평균 거래량이 직전 20분 평균의 이 비율 미만
 
 
 def _f(v):
@@ -98,8 +105,8 @@ class Track:
                 "high": p["entry"], "low": p["entry"], "seen": now.strftime("%Y-%m-%d %H:%M"), "pos_id": None, "done": False}
 
 
-def _event(t: dict, state: str, hm: str) -> None:
-    t["events"].append({"state": state, "time": hm})
+def _event(t: dict, state: str, hm: str, why: str | None = None) -> None:
+    t["events"].append({"state": state, "time": hm, **({"why": why} if why else {})})
     t["state"] = state
 
 
@@ -110,6 +117,36 @@ def _sell_signal(bars: pd.DataFrame, i: int) -> bool:
     avg = v[i - 10:i].mean()
     o, c = float(bars["open"].iloc[i]), float(bars["close"].iloc[i])
     return avg > 0 and v[i] >= 3 * avg and c < o * 0.99
+
+
+def hold_reason(t: dict, bars: pd.DataFrame | None, px: float | None) -> str | None:
+    """당일단타 신규진입보류 사유 (없으면 None). 1분에 한 번 부름 — '연속 몇 분' 은 t 에 세어 둠:
+    ① 매수구간 위로 1%↑ ② 구간 아래 2분 연속 ③ 1분봉 −1.5%↓ 또는 VWAP 아래 2분 연속 ④ 거래량 급감(5분 평균 < 직전 20분 평균 ×0.5)"""
+    why = None
+    if px and t.get("buy_hi") and t.get("buy_lo"):
+        if px > t["buy_hi"] * (1 + HOLD_ABOVE):
+            why = f"매수구간 위로 +{(px / t['buy_hi'] - 1) * 100:.1f}% 벗어남 (추격 금지)"
+        t["zone_n"] = t.get("zone_n", 0) + 1 if px < t["buy_lo"] else 0
+        if why is None and t["zone_n"] >= HOLD_ZONE_N:
+            why = f"매수구간 아래로 {t['zone_n']}분 연속"
+    if bars is not None and len(bars) >= 3:
+        b = bars.sort_values("time").reset_index(drop=True)
+        last = b.iloc[-1]
+        stamp = pd.Timestamp(last["time"]).strftime("%H:%M")
+        if t.get("hold_bar") != stamp:                                  # 새 1분봉일 때만 (같은 봉을 두 번 세지 않게)
+            t["hold_bar"] = stamp
+            v = (b["close"] * b["volume"]).sum() / max(b["volume"].sum(), 1)
+            t["vwap_n"] = t.get("vwap_n", 0) + 1 if float(last["close"]) < v else 0
+            op, cl = float(last["open"]), float(last["close"])
+            if why is None and op > 0 and cl / op - 1 <= HOLD_DROP_BAR:
+                why = f"1분봉 {(cl / op - 1) * 100:.1f}% 급락"
+            if why is None and t["vwap_n"] >= HOLD_VWAP_N:
+                why = f"VWAP 아래 {t['vwap_n']}분 연속"
+            if why is None and len(b) >= 25:
+                v5, v20 = float(b["volume"].iloc[-5:].mean()), float(b["volume"].iloc[-25:-5].mean())
+                if v20 > 0 and v5 < v20 * HOLD_VOL:
+                    why = f"거래량 급감 (최근 5분 평균 직전 20분의 {v5 / v20:.0%})"
+    return why
 
 
 def step(t: dict, bars: pd.DataFrame | None, price: float | None, score_now: float | None, now: pd.Timestamp,
@@ -170,7 +207,13 @@ def step(t: dict, bars: pd.DataFrame | None, price: float | None, score_now: flo
         if cfg.get("hold") is not None and "신규진입보류" not in [x["state"] for x in t["events"]]:
             t["below_n"] = t.get("below_n", 0) + 1 if score_now < cfg["hold"] else 0
             if score_now < cfg["hold"] - HOLD_DROP or t["below_n"] >= HOLD_N:
-                _event(t, "신규진입보류", now.strftime("%H:%M"))
+                _event(t, "신규진입보류", now.strftime("%H:%M"),
+                       f"점수 {score_now:.0f} (기준 {cfg['hold']:.0f} 아래)")
+    if cfg.get("hold_rules") and not t["hits"] and "신규진입보류" not in [x["state"] for x in t["events"]]:   # 점수와 별개 (구간 이탈·급락·VWAP·거래량)
+        why = hold_reason(t, bars, price or t.get("last"))
+        if why:
+            _event(t, "신규진입보류", now.strftime("%H:%M"), why)
+            t["hold_why"] = why
     today, hm_now = now.strftime("%Y-%m-%d"), now.strftime("%H:%M")
     if cfg["overnight"]:                                               # 상한가포착: 다음 거래일 09:30
         over = today > t["date"] and hm_now >= cfg["end"]

@@ -568,6 +568,12 @@ class _TrackCard extends StatelessWidget {
       }
       return null;
     }
+    String? whyOf(String s) {                        // 상태가 생긴 이유 (신규진입보류: 점수·구간 이탈·급락·VWAP·거래량)
+      for (final e in events) {
+        if (_st('${e['state']}') == s && e['why'] != null) return '${e['why']}';
+      }
+      return null;
+    }
     final closeT = timeOf('마감 청산');
     final noFillT = timeOf('미체결');
     return Card(
@@ -641,17 +647,21 @@ class _TrackCard extends StatelessWidget {
                       for (final s in [...(cb ? _cbStates : _states).map((x) => x == '손절' ? lastSt : x), if (closeT != null) '마감 청산', if (noFillT != null) '미체결'])
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 1.5),
-                          child: Row(children: [
-                            Expanded(
-                                child: Blink(
-                                    on: cur == s && blink,
-                                    child: Text(s,
-                                        style: tx.bodySmall?.copyWith(
-                                            fontWeight: cur == s ? FontWeight.bold : null,
-                                            color: cur == s && blink
-                                                ? (s == '매도신호포착' ? downColor : upColor)
-                                                : (timeOf(s) == null ? Colors.grey : null))))),
-                            SizedBox(width: 46, child: Text(timeOf(s) ?? '-', textAlign: TextAlign.right, style: tx.bodySmall)),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Row(children: [
+                              Expanded(
+                                  child: Blink(
+                                      on: cur == s && blink,
+                                      child: Text(s,
+                                          style: tx.bodySmall?.copyWith(
+                                              fontWeight: cur == s ? FontWeight.bold : null,
+                                              color: cur == s && blink
+                                                  ? (s == '매도신호포착' ? downColor : upColor)
+                                                  : (timeOf(s) == null ? Colors.grey : null))))),
+                              SizedBox(width: 46, child: Text(timeOf(s) ?? '-', textAlign: TextAlign.right, style: tx.bodySmall)),
+                            ]),
+                            if (s == '신규진입보류' && whyOf(s) != null)
+                              Text(whyOf(s)!, style: tx.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
                           ]),
                         ),
                     ]),

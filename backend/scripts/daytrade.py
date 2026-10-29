@@ -90,6 +90,8 @@ class Runner:
         from stockeye.analysis import regime
         self.reg_days = regime.days_for(sb, self.day) if sb else {}                  # 지수 일별 등락 기록 (반등장 판정용, 2026-10-27)
         self.last_items: list[dict] = []
+        from stockeye.analysis import shortlist
+        self.sl = shortlist.restore(sb, self.day) if runner == "pc" else shortlist.new_state()   # 오늘의 후보 10 (09:10 고정)
 
     def discover(self) -> pd.DataFrame:
         """후보 찾기 (2026-10-13): KIS 거래대금 순위 코스피·코스닥 상위 30씩 + 관심 탭 종목만 네이버 시세
@@ -221,6 +223,16 @@ class Runner:
             if self.news_items.get(code):
                 r["news"] = self.news_items[code]
             res.append(r)
+        # 오늘의 후보: 09:10 뒤 처음 도는 회차에서 점수 상위 10개 고정 → 진입은 후보 안에서만 (PC 실행만, 앱 [종목찾기] 버튼은 그대로)
+        from stockeye.analysis import shortlist
+        gated = self.runner == "pc"
+        if gated and shortlist.freeze(self.sl, res, now.strftime("%H:%M")):
+            log.info("★ 오늘의 후보 %d개 확정: %s", len(self.sl["list"]), ", ".join(f"{x['name']}({x['score']})" for x in self.sl["list"]))
+        for r in res:
+            if gated:
+                shortlist.gate(r, self.sl)
+                shortlist.tag(r, self.sl)
+            code = r["code"]
             if r["status"] == "진입 조건 충족":
                 key = (code, r["type"])
                 if key not in self.signals:
@@ -250,11 +262,13 @@ class Runner:
         self.last_items = keep
         return {"date": self.day, "time": now.strftime("%H:%M"), "version": dt.VERSION, "scanned": len(res),
                 "counts": counts, "items": keep, "signals": list(self.signals.values()), "idx_chg": idx_chg,
-                "runner": self.runner, "until": self.until, "tracked": self.track.view()}
+                "runner": self.runner, "until": self.until, "tracked": self.track.view(),
+                "shortlist": shortlist.view(self.sl) if gated else None}
 
     def track_step(self) -> dict:
         """10:00 뒤: 새 종목은 찾지 않고 고정된 종목만 15:20 까지 1분마다 상태·결과 갱신 (종목당 1분봉 1번)"""
         from stockeye.engine import daytrade as dt
+        from stockeye.analysis import shortlist
         now = _now()
         hhmmss = now.strftime("%H%M%S")
         for code in self.track.codes():
@@ -264,7 +278,8 @@ class Runner:
         self.track.save()
         return {"date": self.day, "time": now.strftime("%H:%M"), "version": dt.VERSION, "scanned": 0,
                 "counts": {}, "items": self.last_items, "signals": list(self.signals.values()), "runner": self.runner,
-                "until": self.until, "scan_closed": True, "tracked": self.track.view()}
+                "until": self.until, "scan_closed": True, "tracked": self.track.view(),
+                "shortlist": shortlist.view(self.sl) if self.runner == "pc" else None}
 
     def publish(self, payload: dict) -> None:
         if not self.sb:

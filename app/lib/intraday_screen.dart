@@ -292,6 +292,7 @@ class _Section extends StatelessWidget {
         Text('● 실시간 (체결 때마다 목표·손절 판단)', style: t.bodySmall?.copyWith(color: Colors.green)),
       // 상한가 예비 (2026-10-16): +10~20% 급등 초입 — 상한가 갈 만한 종목을 미리 (표시+기록만)
       if (_lc) _PreSection(items: today ? asList(d['pre']) : const []),
+      if (!_lc) _Shortlist(sl: today ? asMap(d['shortlist']) : const {}),
       sub('진입조건충족', tracked.length, '충족된 시간 순 · 고정'),
       if (tracked.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('아직 없어요', style: t.bodySmall)),
       _grid([
@@ -328,6 +329,50 @@ class _Section extends StatelessWidget {
           ),
         ),
     ]);
+  }
+}
+
+/// 당일단타 '오늘의 후보' (2026-10-29) — 09:10 에 점수 상위 10개 고정, 진입은 후보 안에서만. 상위 5개가 우선
+/// 되돌려 보기(20거래일): 상위 5개 평균 +0.78% · 10개 +0.27% · 전체 −0.32% (수급 없이, 한 달 한 장세 — 참고용)
+class _Shortlist extends StatelessWidget {
+  const _Shortlist({required this.sl});
+  final Json sl;
+
+  @override
+  Widget build(BuildContext context) {
+    if (sl.isEmpty) return const SizedBox.shrink();
+    final t = Theme.of(context).textTheme;
+    final list = asList(sl['list']);
+    final top = (sl['top'] as num?)?.toInt() ?? 5;
+    final done = '${sl['state']}' == '확정';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text.rich(TextSpan(children: [
+          TextSpan(text: '오늘의 후보 ${done ? list.length : 0}', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+          TextSpan(
+              text: done
+                  ? '  ${sl['at']} 확정 · 진입은 이 안에서만 (앞 $top개 우선)'
+                  : '  ${sl['freeze_at'] ?? '09:10'} 에 점수 상위 ${sl['n'] ?? 10}개를 골라요 · 그 전엔 진입 대기',
+              style: t.bodySmall?.copyWith(color: Colors.grey)),
+        ])),
+        if (done)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Wrap(spacing: 6, runSpacing: 2, children: [
+              for (final x in list)
+                ActionChip(
+                  visualDensity: VisualDensity.compact,
+                  backgroundColor: ((x['rank'] as num?) ?? 99) <= top ? Colors.teal.withValues(alpha: 0.15) : null,
+                  label: Text('${x['rank']} ${x['name']} ${(x['score'] as num?)?.toStringAsFixed(0) ?? ''}',
+                      style: t.bodySmall?.copyWith(fontWeight: ((x['rank'] as num?) ?? 99) <= top ? FontWeight.bold : FontWeight.normal)),
+                  onPressed: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${x['code']}', name: '${x['name']}'))),
+                ),
+            ]),
+          ),
+      ]),
+    );
   }
 }
 

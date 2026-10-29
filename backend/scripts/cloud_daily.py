@@ -159,6 +159,10 @@ def main():
         pub.publish_status(sb, "stock_info", {"date": report["date"], "info": info})
         return len(info)
     step("종목 정보 발행 (시장·업종·테마·시총)", _stock_info, errors)
+    def _stock_fin():                                                # 종목 상세 '실적·외국인': 매출액·영업이익(DART) · 외국인 보유율(KRX)
+        from stockeye.analysis import stock_fin
+        return stock_fin.run(sb, getattr(pit, "financials", None), report["date"])
+    step("종목 실적·외국인 보유율 발행", _stock_fin, errors)
     if report.get("sector_members"):                                # 앱 업종 상세 '전체 종목' (업종마다 전 종목 등락)
         step("업종 전체 종목 발행", lambda: pub.publish_status(sb, "sector_members", {
             "date": report["date"], **report["sector_members"]}), errors)

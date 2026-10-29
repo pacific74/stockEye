@@ -193,6 +193,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 },
                 theme: c['theme'] as String?,
               ),
+              _FinCard(code: widget.code), // 매출액·영업이익·외국인 보유율 (2026-10-29)
 
               // ---- V3 기준 전략: 오늘 상태 · 점수 · 매수/매도 예정 ----
               // 후보 탭에서 열면: '탭 점수 (V3 점수)' 한 장, 아니면 V3 카드
@@ -433,6 +434,76 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
 }
 
 /// 기업 개요: 시장 · 업종 · 주요제품 · 시가총액 · PER/PBR · 상장일 등
+/// 실적·외국인: 매출액 · 영업이익 (최근 연간 + 더 새로운 분기 누적이 있으면 한 줄 더) · 외국인 보유율 — 저녁 배치(DART·KRX), 값이 없으면 안 보임
+class _FinCard extends StatelessWidget {
+  const _FinCard({required this.code});
+  final String code;
+
+  static String _eok(num? v) {
+    if (v == null) return '-';
+    final a = v.abs();
+    final s = a >= 10000 ? '${(a / 10000).toStringAsFixed(a >= 100000 ? 0 : 1)}조' : '${num0(a)}억';
+    return v < 0 ? '−$s' : s;
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<Map<String, List>>(
+        future: Api.stockFin(),
+        builder: (context, snap) {
+          final r = snap.data?[code];
+          if (r == null || r.length < 7) return const SizedBox.shrink();
+          final t = Theme.of(context).textTheme;
+          final grey = t.bodySmall?.copyWith(color: Colors.grey);
+          Widget line(num? rev, num? op, String? label) {
+            if (rev == null && op == null) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text.rich(TextSpan(children: [
+                TextSpan(text: '${label ?? ''}   ', style: grey),
+                const TextSpan(text: '매출액 '),
+                TextSpan(text: _eok(rev), style: const TextStyle(fontWeight: FontWeight.bold)),
+                const TextSpan(text: '   영업이익 '),
+                TextSpan(
+                    text: _eok(op),
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: op == null ? null : (op > 0 ? upColor : (op < 0 ? downColor : null)))),
+              ])),
+            );
+          }
+
+          final frgn = r[6] is num ? r[6] as num : null;
+          final has = r[0] != null || r[1] != null || r[3] != null || r[4] != null || frgn != null;
+          if (!has) return const SizedBox.shrink();
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  const Icon(Icons.bar_chart, size: 18),
+                  const SizedBox(width: 6),
+                  Text('실적 · 외국인', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                ]),
+                line(r[0] as num?, r[1] as num?, r[2] as String?),
+                line(r[3] as num?, r[4] as num?, r[5] as String?),
+                if (frgn != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text.rich(TextSpan(children: [
+                      TextSpan(text: '외국인 보유율   ', style: grey),
+                      TextSpan(text: '${frgn.toStringAsFixed(2)}%', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    ])),
+                  ),
+                Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text('DART 주요계정(연결 우선) · 외국인 보유율은 KRX 전일 기준 · 참고용', style: grey?.copyWith(fontSize: 10.5))),
+              ]),
+            ),
+          );
+        },
+      );
+}
+
 class _ProfileCard extends StatelessWidget {
   const _ProfileCard({required this.profile, this.theme});
   final Json profile;

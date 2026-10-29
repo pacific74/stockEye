@@ -46,6 +46,14 @@ class Api {
         if (m.isEmpty) _stockInfo = null; // 못 받았으면 다음에 다시
         return {for (final e in m.entries) if (e.value is List) e.key: e.value as List};
       }();
+  /// 종목 상세 '실적·외국인' {code: [매출억, 영업이익억, 라벨, 매출억2, 영업이익억2, 라벨2, 외인보유율%]} — 저녁 배치 'stock_fin' · 한 번만 받음 (2026-10-29)
+  static Future<Map<String, List>>? _stockFin;
+  static Future<Map<String, List>> stockFin() => _stockFin ??= () async {
+        final d = useCloud ? await _Cloud.statusOf('stock_fin') : <String, dynamic>{};
+        final m = asMap(d['rows']);
+        if (m.isEmpty) _stockFin = null; // 못 받았으면 다음에 다시
+        return {for (final e in m.entries) if (e.value is List) e.key: e.value as List};
+      }();
   /// 당일 잠정 수급 {code: [외인 억, 기관 억, '11:20']} — 오늘 것만 · 1분 캐시 (PC 22 가 하루 5번 갱신)
   static Future<Map<String, List>>? _flowLive;
   static DateTime _flowAt = DateTime(2000);

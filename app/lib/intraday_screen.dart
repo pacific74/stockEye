@@ -332,7 +332,7 @@ class _Section extends StatelessWidget {
   }
 }
 
-/// 당일단타 '오늘의 후보' (2026-10-29) — 09:10 에 점수 상위 10개 고정, 진입은 후보 안에서만. 상위 5개가 우선
+/// 당일단타 '오늘의 후보' (2026-10-29) — 09:10 에 점수 상위 10개 고정, 진입은 후보 안의 눌림목형만. 상위 5개가 우선
 /// 되돌려 보기(20거래일): 상위 5개 평균 +0.78% · 10개 +0.27% · 전체 −0.32% (수급 없이, 한 달 한 장세 — 참고용)
 class _Shortlist extends StatelessWidget {
   const _Shortlist({required this.sl});
@@ -349,7 +349,7 @@ class _Shortlist extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text.rich(TextSpan(children: [
-          TextSpan(text: '오늘의 후보 ${done ? list.length : 0}', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+          TextSpan(text: '당일단타 후보 ${done ? list.length : 0}', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
           TextSpan(
               text: done
                   ? '  ${sl['at']} 확정 · 진입은 이 안에서만 (앞 $top개 우선)'

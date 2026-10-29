@@ -48,3 +48,21 @@ def test_rank_score_none_when_excluded_or_short(monkeypatch):
     assert de.rank_score(bars.head(6), 99.0, "09:10") is None            # 09:10 까지 5봉 미만이 아니면 계산
     monkeypatch.setattr(de.dt, "evaluate", lambda b, ctx: {"excluded": ["x"], "score": 90.0})
     assert de.rank_score(bars, 99.0, "09:10") is None
+
+
+def test_scan_then_first_entry_matches_replay(monkeypatch):
+    import pandas as pd
+    from stockeye.analysis import daytrade_eval as de
+
+    def fake(b, ctx):
+        n = len(b)
+        return {"status": "진입 조건 충족" if n >= 12 else "관찰", "signal": n >= 12, "excluded": [], "score": 70.0 + n,
+                "warnings": [], "time": "x", "type": "돌파" if n < 15 else "눌림목", "entry": 100, "stop": 98, "t1": 103, "t2": 105, "parts": {}}
+    monkeypatch.setattr(de.dt, "evaluate", fake)
+    t = pd.date_range("2026-10-13 09:00", periods=40, freq="min")
+    bars = pd.DataFrame({"time": t, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 1000.0})
+    sc = de.scan_day(bars, 99.0)
+    assert de.first_entry(sc) == de.replay_day(bars, 99.0)
+    assert de.first_entry(sc, only_type="눌림목")["type"] == "눌림목"
+    assert de.first_entry(sc, start="09:10") is not None
+    assert de.rank_from_scan(sc, "09:10") == 70.0 + 11                    # 09:10 봉까지 11개

@@ -20,6 +20,37 @@ import pandas as pd
 
 log = logging.getLogger("stockeye.daytrade_bt")
 
+# 규칙별 비교: 같은 분봉으로 규칙을 하나씩 켜 보며 (신고가 제외 · 반등장 · 유형 한정)
+VARIANTS = [("규칙 넣기 전 (기준 80)", False, False, None), ("+ 신고가 돌파 제외", True, False, None),
+            ("+ 반등장 규칙", False, True, None), ("+ 둘 다 (지금 DT-0.4)", True, True, None),
+            ("  └ 돌파형만", True, True, "돌파"), ("  └ 눌림목형만", True, True, "눌림목")]
+NOW = 3                                                               # 앱 '검증' 에 올리는 건 지금 규칙(DT-0.4)
+SHORT_AT, SHORT_N = "09:10", (5, 10, 15)
+
+
+def work(a: dict) -> dict:
+    """종목 하나·하루: 규칙 조합(신고가·반등장)마다 분 단위 계산을 한 번씩만 하고, 진입 시점·유형·점수 기준은 그 결과에서 골라냄
+    (예전엔 비교마다 다시 계산해 느렸음 · 별도 프로세스에서도 돌 수 있게 맨 위 함수)"""
+    from stockeye.analysis import daytrade_eval as de
+    bars, pc, adr, hi, reb, ident, compare = a["bars"], a["prev_close"], a["adr"], a["hi"], a["reb"], a["ident"], a["compare"]
+    scans = {}
+
+    def sc(uh, ur):
+        k = (bool(uh), bool(ur))
+        if k not in scans:
+            scans[k] = de.scan_day(bars, pc, adr=adr, extra={"hi_n": hi if uh else None, "rebound": reb if ur else None})
+        return scans[k]
+
+    def entry(uh, ur, start="09:05", min_score=None, only=None):
+        s = de.first_entry(sc(uh, ur), start, min_score, only)
+        if not s:
+            return None
+        return de.grade({**s, **ident}, bars)
+    out = {"v": [entry(uh, ur, only=ot) for _, uh, ur, ot in VARIANTS],
+           "rank": de.rank_from_scan(sc(True, True), SHORT_AT), "short": entry(True, True, SHORT_AT),
+           "low": entry(True, True, min_score=compare) if compare else None}
+    return out
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -28,9 +59,13 @@ def main():
     ap.add_argument("--compare", type=float, default=75.0,
                     help="기준을 이 점수까지 낮췄다면 어땠나도 같이 비교 (기본 75, 0 이면 비교 안 함). 앱에 올리는 건 지금 기준(80)만")
     ap.add_argument("--no-cache", action="store_true", help="받은 분봉을 파일(data/minute_cache)에 저장·재사용하지 않음")
+    ap.add_argument("--workers", type=int, default=0, help="계산에 쓸 프로세스 수 (기본 0 = CPU 코어 수 − 1, 1 이면 한 프로세스)")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
+    if args.workers <= 0:
+        import os
+        args.workers = max(1, min(6, (os.cpu_count() or 2) - 1))
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(message)s", datefmt="%H:%M:%S", stream=sys.stdout)
     logging.getLogger("stockeye").setLevel(logging.INFO)
 
@@ -60,16 +95,15 @@ def main():
     nm = dict(zip(names["code"], names["name"])) if names is not None else {}
     mk = dict(zip(names["code"], names["market"])) if names is not None and "market" in names else {}
     idx_days = regime.from_frame(store.load("index"), keep=400)        # {날짜: {KOSPI: %, KOSDAQ: %}}
-    # 규칙별 비교: 같은 분봉으로 규칙을 하나씩 켜 보며 (신고가 제외 · 반등장 · 유형 한정)
-    VARIANTS = [("규칙 넣기 전 (기준 80)", False, False, None), ("+ 신고가 돌파 제외", True, False, None),
-                ("+ 반등장 규칙", False, True, None), ("+ 둘 다 (지금 DT-0.4)", True, True, None),
-                ("  └ 돌파형만", True, True, "돌파"), ("  └ 눌림목형만", True, True, "눌림목")]
-    NOW = 3                                                           # 앱 '검증' 에 올리는 건 지금 규칙(DT-0.4)
     res = {v[0]: [] for v in VARIANTS}
     cache_dir = data_dir(cfg) / "minute_cache"
     rows, low_rows, t0, reb_days = [], [], time.time(), []
-    SHORT_AT, SHORT_N = "09:10", (5, 10, 15)
     short = {"09:10 이후 진입 (전체 종목)": [], **{f"09:10 점수 상위 {n}개만": [] for n in SHORT_N}}
+    ex = None
+    if args.workers > 1:                                               # 계산(CPU)을 여러 프로세스로 — 분봉 받기·읽기는 그대로 한 줄
+        import multiprocessing as mp
+        from concurrent.futures import ProcessPoolExecutor
+        ex = ProcessPoolExecutor(args.workers, mp_context=mp.get_context("spawn"))
     for di in range(max(1, len(dates) - args.days), len(dates)):
         day, prev = pd.Timestamp(dates[di]), pd.Timestamp(dates[di - 1])
         p = oh[oh["date"] == prev]
@@ -88,7 +122,7 @@ def main():
         win30 = oh[(oh["date"] < day) & oh["code"].isin(top["code"])]
         win30 = win30[win30["date"].isin(dates[max(0, di - 30):di])]    # 앱과 같게 직전 30거래일 고가
         hi30 = {c: (float(g["high"].max()) if len(g) >= 10 else None) for c, g in win30.groupby("code")}
-        pool = []
+        jobs = []
         for code in top["code"]:
             cf = cache_dir / ds / f"{code}.parquet"
             bars = None
@@ -112,38 +146,27 @@ def main():
             if bars.empty:
                 continue
             reb = rebs.get(mk.get(code) if mk.get(code) in rebs else "KOSPI")
-            cache = {}
-
-            def run(use_hi, use_reb, only, min_score=None, start="09:05"):
-                extra = {"hi_n": hi30.get(code) if use_hi else None, "rebound": reb if use_reb else None}
-                k = (extra["hi_n"], bool(extra["rebound"]), only, min_score, start)
-                if k not in cache:
-                    s = de.replay_day(bars, prev_close.get(code), start=start, adr=adrs.get(code), min_score=min_score, extra=extra, only_type=only)
-                    g = None
-                    if s:
-                        s.update({"date": dkey, "code": code, "name": nm.get(code, code)})
-                        g = de.grade(s, bars)
-                    cache[k] = g
-                return cache[k]
-            for vi, (vn, uh, ur, ot) in enumerate(VARIANTS):
-                g = run(uh, ur, ot)
+            jobs.append({"bars": bars, "prev_close": prev_close.get(code), "adr": adrs.get(code), "hi": hi30.get(code), "reb": reb,
+                         "ident": {"date": dkey, "code": code, "name": nm.get(code, code)}, "compare": args.compare})
+        outs = list(ex.map(work, jobs, chunksize=4)) if ex else [work(j) for j in jobs]
+        pool = []
+        for o in outs:
+            for vi, ((vn, _, _, _), g) in enumerate(zip(VARIANTS, o["v"])):
                 if g:
                     res[vn].append(g)
                     if vi == NOW:
                         rows.append(g)
                         n_sig += 1
-            # 후보 10개 방식: 09:10 까지 점수로 순위 → 상위 N 만 09:10 이후 진입 (순위용 점수는 지금 규칙 기준)
-            pool.append((de.rank_score(bars, prev_close.get(code), SHORT_AT, adrs.get(code),
-                                       {"hi_n": hi30.get(code), "rebound": reb}), run(True, True, None, None, SHORT_AT)))
-            if args.compare:                                          # 기준을 낮춰 첫 신호를 따로 (지금 규칙 기준)
-                g2 = run(True, True, None, args.compare)
-                if g2:
-                    low_rows.append(g2)
+            pool.append((o["rank"], o["short"]))
+            if o["low"]:
+                low_rows.append(o["low"])
         ranked = sorted([p for p in pool if p[0] is not None], key=lambda p: -p[0])
         short["09:10 이후 진입 (전체 종목)"].extend(g for _, g in pool if g)
         for n in SHORT_N:
             short[f"09:10 점수 상위 {n}개만"].extend(g for _, g in ranked[:n] if g)
         print(f"{day:%Y-%m-%d}: 신호 {n_sig}건 (누적 {len(rows)} · {(time.time() - t0) / 60:.0f}분)")
+    if ex:
+        ex.shutdown()
     rep = de.report(rows)
     rep.update({"universe": f"전날 거래대금 상위 {args.top}", "note": "호가·뉴스·지수 없이 중립으로 계산한 되돌려 보기 (신고가 제외·반등장 규칙 적용)",
                 "version": dt.VERSION})

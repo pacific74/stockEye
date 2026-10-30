@@ -689,10 +689,10 @@ class _TrackCard extends StatelessWidget {
     }
     final closeT = timeOf('마감 청산');
     final noFillT = timeOf('미체결');
-    // 웹(넓은 화면)에서 당일단타 카드: 높이 통일(430, 넘치면 카드 안에서 스크롤) · 시장·업종 칩을 종목명 옆으로 (2026-10-30)
+    // 웹(넓은 화면)에서 당일단타 카드: 높이 통일(400, 넘치면 카드 안에서 스크롤) · 시장·업종 칩을 종목명 옆으로 (2026-10-30)
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final fixedH = wide && kind == 'daytrade';
-    Widget fix(Widget w) => fixedH ? SizedBox(height: 430, child: SingleChildScrollView(child: w)) : w;
+    Widget fix(Widget w) => fixedH ? SizedBox(height: 400, child: SingleChildScrollView(child: w)) : w;
     final code = '${t['code']}';
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),

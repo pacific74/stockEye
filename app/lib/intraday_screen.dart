@@ -271,9 +271,9 @@ class _Section extends StatelessWidget {
             TextSpan(text: '  $note', style: t.bodySmall?.copyWith(color: Colors.grey)),
           ])),
         );
-    Widget tile(Json r, int i) => _lc
+    Widget tile(Json r, int i, {bool compact = false}) => _lc
         ? LimitcatchTile(r: r, rank: i + 1)
-        : DaytradeTile(r: r, rank: i + 1);
+        : DaytradeTile(r: r, rank: i + 1, compact: compact);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Text(_lc ? '상한가포착' : '당일단타', style: t.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
@@ -296,7 +296,7 @@ class _Section extends StatelessWidget {
       // 상한가 예비 (2026-10-16): +10~20% 급등 초입 — 상한가 갈 만한 종목을 미리 (표시+기록만)
       if (_lc) _PreSection(items: today ? asList(d['pre']) : const []),
       if (!_lc) _Shortlist(sl: today ? asMap(d['shortlist']) : const {}, chips: cands.isEmpty),
-      _grid([for (final (i, r) in cands.indexed) tile(r, ((r['cand_rank'] as num?)?.toInt() ?? 0) > 0 ? (r['cand_rank'] as num).toInt() - 1 : i)]),
+      _grid([for (final (i, r) in cands.indexed) tile(r, ((r['cand_rank'] as num?)?.toInt() ?? 0) > 0 ? (r['cand_rank'] as num).toInt() - 1 : i, compact: true)]),
       sub('진입조건충족', tracked.length, '충족된 시간 순 · 고정'),
       if (tracked.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('아직 없어요', style: t.bodySmall)),
       _grid([

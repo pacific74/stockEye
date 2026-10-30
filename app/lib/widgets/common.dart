@@ -163,8 +163,10 @@ class StockName extends StatelessWidget {
 
 /// 종목 한 줄 정보: [코스피/코스닥] [업종 · 테마] [시총] [외인·기관 5일 순매수] — 당일매매·메인·관심 카드의 종목명 바로 아래 (2026-10-14)
 class StockInfoLine extends StatelessWidget {
-  const StockInfoLine(this.code, {super.key, this.sectorIdx = true});
+  const StockInfoLine(this.code, {super.key, this.sectorIdx = true, this.showHead = true, this.showRest = true});
   final String code;
+  final bool showHead; // 시장(코스피/코스닥) · 업종 칩 — 웹 후보 카드는 종목명 옆으로 따로 (2026-10-30)
+  final bool showRest; // 업종지수 · 시총 · 외인/기관
   final bool sectorIdx; // 업종 옆에 업종지수(오늘 등락 · 1시간마다) 칩 — 당일매매·메인·추천 모두 (2026-10-15)
 
   static String flow(num eok) {
@@ -198,10 +200,11 @@ class StockInfoLine extends StatelessWidget {
                 child: Text(s, style: st?.copyWith(color: c)),
               );
           return Wrap(children: [
-            if (m.isNotEmpty)
+            if (showHead && m.isNotEmpty)
               chip(m == 'KOSPI' ? '코스피' : (m == 'KOSDAQ' ? '코스닥' : m),
                   c: m == 'KOSPI' ? Colors.blueGrey.shade200 : Colors.purple.shade200),
-            if (sec.isNotEmpty || th.isNotEmpty) chip([if (sec.isNotEmpty) sec, if (th.isNotEmpty) th].join(' · ')),
+            if (showHead && (sec.isNotEmpty || th.isNotEmpty)) chip([if (sec.isNotEmpty) sec, if (th.isNotEmpty) th].join(' · ')),
+            if (showRest) ...[
             // 업종지수: 그 업종 전체 시가총액 가중 오늘 등락 (09:10 부터 1시간마다)
             if (sectorIdx && sec.isNotEmpty && snap.data!.length > 2 && asMap(snap.data![2]['map'])[sec] is num)
               () {
@@ -217,6 +220,7 @@ class StockInfoLine extends StatelessWidget {
             if (t != null && t.length > 2 && t[0] is num) chip('외인 오늘 ${flow(t[0] as num)}', c: flowColor(t[0] as num)),
             if (t != null && t.length > 2 && t[1] is num)
               chip('기관 오늘 ${flow(t[1] as num)} · 잠정 ${t[2]}', c: flowColor(t[1] as num)),
+            ],
           ]);
         },
       );

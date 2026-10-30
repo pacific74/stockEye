@@ -80,11 +80,12 @@ class NewsLine extends StatelessWidget {
 
 /// 후보 카드: 순위 · 종목명 [점수] · 현재가 / 상태 · 유형 · VWAP · 거래대금 / 진입 · 손절 · 1·2차 / 근거
 class DaytradeTile extends StatelessWidget {
-  const DaytradeTile({super.key, required this.r, required this.rank, this.price, this.chart = true});
+  const DaytradeTile({super.key, required this.r, required this.rank, this.price, this.chart = true, this.compact = false});
   final Json r;
   final int rank;
   final double? price; // 지금 시세 (없으면 계산 때 가격)
   final bool chart; // 1분봉 차트 (고정 카드 안에 넣을 땐 이미 따로 있어서 끔)
+  final bool compact; // 웹(넓은 화면)에서 높이를 줄여 한 화면에 3줄 · 높이 통일 (2026-10-30 · 당일단타 후보)
 
   @override
   Widget build(BuildContext context) {
@@ -96,6 +97,7 @@ class DaytradeTile extends StatelessWidget {
     final warns = (r['warnings'] as List? ?? const []).map((e) => '$e').toList();
     final reasons = (r['reasons'] as List? ?? const []).map((e) => '$e').toList();
     final vg = r['vwap_gap_pct'] as num?;
+    if (compact && MediaQuery.sizeOf(context).width >= 900) return _compactCard(context, t, st, col, px, ex, warns, vg);
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       shape: st == '진입 조건 충족'
@@ -157,8 +159,76 @@ class DaytradeTile extends StatelessWidget {
     );
   }
 
+  /// 웹용 낮은 카드 (고정 높이 → 줄마다 높이가 같음): [순위] 종목명 점수 [시장][업종] ········ 현재가 ▲등락 / 정보 / 박스 / 경고 / 차트
+  Widget _compactCard(BuildContext context, TextTheme t, String st, Color col, double? px, List<String> ex, List<String> warns, num? vg) {
+    final code = '${r['code']}';
+    final msgs = [for (final x in ex) ('⛔', x, Colors.red), for (final x in warns) ('⚠', x, Colors.orange)].take(2).toList();
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      shape: st == '진입 조건 충족'
+          ? RoundedRectangleBorder(side: BorderSide(color: col, width: 1.5), borderRadius: BorderRadius.circular(12))
+          : null,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => StockDetailScreen(code: code, name: '${r['name']}', source: 'daytrade', intraday: r))),
+        child: SizedBox(
+          height: 300,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                CircleAvatar(
+                    radius: 11,
+                    backgroundColor: col.withValues(alpha: 0.15),
+                    child: Text('$rank', style: TextStyle(color: col, fontSize: 12))),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Wrap(spacing: 4, runSpacing: 0, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      Flexible(child: Text('${r['name']}', overflow: TextOverflow.ellipsis, style: t.titleMedium)),
+                      const SizedBox(width: 6),
+                      ScoreBadge(r['score'] as num?, digits: 1),
+                    ]),
+                    StockInfoLine(code, showRest: false), // [코스닥][업종 · 테마] 종목명 옆
+                  ]),
+                ),
+                const SizedBox(width: 6),
+                if (px != null)
+                  Text(won(px), style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                ChgBadge(Live.last[code]?.ratio ?? (r['chg_pct'] as num?)),
+              ]),
+              StockInfoLine(code, sectorIdx: true, showHead: false), // 업종지수 · 시총 · 외인/기관
+              const SizedBox(height: 2),
+              infoBoxes([
+                InfoBox(st, color: col, bold: true, fill: true),
+                if (r['type'] != null) InfoBox('${r['type']}형'),
+                if (vg != null) InfoBox('VWAP ${vg >= 0 ? '+' : ''}${vg.toStringAsFixed(1)}%', color: vg >= 3 ? Colors.orange : null),
+                if (r['value'] is num) InfoBox('오전 ${((r['value'] as num) / 1e8).toStringAsFixed(0)}억'),
+                if (r['chg_pct'] is num) InfoBox('오늘 ${pct(r['chg_pct'] as num)}', color: (r['chg_pct'] as num) >= 0 ? upColor : downColor),
+              ]),
+              const SizedBox(height: 3),
+              infoBoxes([
+                InfoBox('진입 ${num0(r['entry'] as num?)}', bold: true),
+                InfoBox('손절 ${num0(r['stop'] as num?)}${r['risk_pct'] is num ? ' (−${(r['risk_pct'] as num).toStringAsFixed(1)}%)' : ''}',
+                    color: downColor),
+                InfoBox('1차 ${num0(r['t1'] as num?)}${r['t1_pct'] is num ? ' (+${r['t1_pct']}%)' : ''}', color: upColor),
+                InfoBox('2차 ${num0(r['t2'] as num?)}${r['t2_pct'] is num ? ' (+${r['t2_pct']}%)' : ''}', color: upColor),
+                if (rrBox(r['entry'] as num?, r['stop'] as num?, r['t1'] as num?, r['t2'] as num?) case final rr?) rr,
+              ]),
+              for (final (ic, x, c) in msgs)
+                Text('$ic $x', maxLines: 1, overflow: TextOverflow.ellipsis, style: t.bodySmall?.copyWith(color: c, fontSize: 11.5)),
+              NewsLine(asList(r['news'])),
+              Expanded(child: chart ? _candChart(context, code, px, r, fill: true) : const SizedBox.shrink()),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 진입 대기·관찰 후보 1분봉 차트 (당일매매 화면에서만 · 마지막 봉은 지금가로 덧그림 · 진입·손절·1차 선)
-  Widget _candChart(BuildContext context, String code, double? last, Json r) {
+  Widget _candChart(BuildContext context, String code, double? last, Json r, {bool fill = false}) {
     final mb = <Json>[
       for (final b in dtMinuteBars[code] ?? const [])
         if (b is List && b.length >= 6)
@@ -179,17 +249,15 @@ class DaytradeTile extends StatelessWidget {
       if (last < (b['low'] as double)) b['low'] = last;
     }
     double? n(String k) => (r[k] as num?)?.toDouble();
+    final chartW = PriceChart(bars: mb, showMa: false, levels: [
+      if (n('entry') != null) PriceLevel('진입', n('entry')!, Colors.grey),
+      if (n('stop') != null) PriceLevel('손절', n('stop')!, downColor),
+      if (n('t1') != null) PriceLevel('1차', n('t1')!, upColor),
+    ]);
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
-        SizedBox(
-          height: 150,
-          child: PriceChart(bars: mb, showMa: false, levels: [
-            if (n('entry') != null) PriceLevel('진입', n('entry')!, Colors.grey),
-            if (n('stop') != null) PriceLevel('손절', n('stop')!, downColor),
-            if (n('t1') != null) PriceLevel('1차', n('t1')!, upColor),
-          ]),
-        ),
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min, children: [
+        if (fill) Expanded(child: ClipRect(child: chartW)) else SizedBox(height: 150, child: chartW),
         Text('1분봉 ${mb.first['date']} ~ ${mb.last['date']}',
             textAlign: TextAlign.right,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),

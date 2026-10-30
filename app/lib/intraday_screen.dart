@@ -521,7 +521,6 @@ Widget? _ixLine(BuildContext context, Json t) {
     child: Text.rich(TextSpan(children: [
       TextSpan(text: '지수  ', style: st?.copyWith(color: Colors.grey)),
       ...spans,
-      TextSpan(text: '  (매수 = 전일 대비 · 그 뒤 = 매수 대비)', style: st?.copyWith(color: Colors.grey, fontSize: 10.5)),
     ])),
   );
 }

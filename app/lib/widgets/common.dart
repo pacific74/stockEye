@@ -204,6 +204,7 @@ class StockInfoLine extends StatelessWidget {
               chip(m == 'KOSPI' ? '코스피' : (m == 'KOSDAQ' ? '코스닥' : m),
                   c: m == 'KOSPI' ? Colors.blueGrey.shade200 : Colors.purple.shade200),
             if (showHead && (sec.isNotEmpty || th.isNotEmpty)) chip([if (sec.isNotEmpty) sec, if (th.isNotEmpty) th].join(' · ')),
+            if (showHead && cap(r[3] as num?).isNotEmpty) chip(cap(r[3] as num?)), // 시총도 업종 옆 (2026-10-30)
             if (showRest) ...[
             // 업종지수: 그 업종 전체 시가총액 가중 오늘 등락 (09:10 부터 1시간마다)
             if (sectorIdx && sec.isNotEmpty && snap.data!.length > 2 && asMap(snap.data![2]['map'])[sec] is num)
@@ -212,7 +213,6 @@ class StockInfoLine extends StatelessWidget {
                 return chip('업종지수 ${v > 0 ? '+' : (v < 0 ? '−' : '')}${v.abs().toStringAsFixed(2)}% (${snap.data![2]['time']})',
                     c: v > 0 ? upColor : (v < 0 ? downColor : null));
               }(),
-            if (cap(r[3] as num?).isNotEmpty) chip(cap(r[3] as num?)),
             // 최근 5거래일 순매수 (외국인·기관, 억원) — 매수 빨강 · 매도 파랑
             if (r.length > 4 && r[4] is num) chip('외인 5일 ${flow(r[4] as num)}', c: flowColor(r[4] as num)),
             if (r.length > 5 && r[5] is num) chip('기관 5일 ${flow(r[5] as num)}', c: flowColor(r[5] as num)),

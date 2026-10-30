@@ -34,7 +34,7 @@ BANNER = """==============================================================
 PRICE_EVERY = 10          # 가격만 바뀐 실시간 행은 종목당 10초에 한 번
 
 
-CAND_BARS = 12                                                         # 앱 후보 카드 1분봉: 진입 대기·관찰 위쪽 12개
+CAND_BARS = 16                                                         # 앱 후보 카드 1분봉: 당일단타 후보 10개 + 진입 대기·관찰 위쪽 (모두 합쳐 16개)
 
 
 def _now() -> pd.Timestamp:
@@ -230,7 +230,8 @@ def main():
                 b = run._bars(code, hhmmss)                            # 캐시 + 새 봉만 (종목당 1회 호출)
                 out[code] = pack_bars(b)
         # 진입 대기·관찰 후보도 (고정되지 않은 것 · 2026-10-22) — 후보 카드에 1분봉을 그림. 호출량 때문에 위쪽 CAND_BARS 개까지
-        cand = [r.get("code") for r in (dt.last_items or []) if r.get("code") and r.get("status") in ("진입 대기", "관찰")]
+        cand = [r.get("code") for r in (getattr(dt, "last_cands", None) or []) if r.get("code")] + \
+               [r.get("code") for r in (dt.last_items or []) if r.get("code") and r.get("status") in ("진입 대기", "관찰")]
         for code in [c for c in dict.fromkeys(cand) if c not in out][:CAND_BARS]:
             try:
                 out[code] = pack_bars(dt._bars(code, hhmmss), 90)

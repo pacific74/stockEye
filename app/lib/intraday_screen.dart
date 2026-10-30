@@ -255,7 +255,10 @@ class _Section extends StatelessWidget {
         .where((x) => dtIsToday({'date': x['date']}) || (_lc && x['done'] != true) || '${x['exit_time'] ?? ''}'.startsWith(todayStr))
         .toList();
     final fixed = {for (final x in tracked) '${x['code']}'};
-    final items = today ? asList(d['items']).where((r) => !fixed.contains('${r['code']}')).toList() : <Json>[];
+    // 당일단타 후보 10개 (2026-10-30): 전광판처럼 카드로 — 조건이 맞으면 고정되어 아래 '진입조건충족' 으로 내려감
+    final cands = today && !_lc ? asList(d['cands']).where((r) => !fixed.contains('${r['code']}')).toList() : <Json>[];
+    final candCodes = {for (final r in cands) '${r['code']}'};
+    final items = today ? asList(d['items']).where((r) => !fixed.contains('${r['code']}') && !candCodes.contains('${r['code']}')).toList() : <Json>[];
     final waitKey = _lc ? '강세 후보' : '진입 대기';
     final wait = items.where((r) => r['status'] == waitKey).toList();
     final watch = items.where((r) => r['status'] == '관찰').toList();
@@ -292,7 +295,8 @@ class _Section extends StatelessWidget {
         Text('● 실시간 (체결 때마다 목표·손절 판단)', style: t.bodySmall?.copyWith(color: Colors.green)),
       // 상한가 예비 (2026-10-16): +10~20% 급등 초입 — 상한가 갈 만한 종목을 미리 (표시+기록만)
       if (_lc) _PreSection(items: today ? asList(d['pre']) : const []),
-      if (!_lc) _Shortlist(sl: today ? asMap(d['shortlist']) : const {}),
+      if (!_lc) _Shortlist(sl: today ? asMap(d['shortlist']) : const {}, chips: cands.isEmpty),
+      _grid([for (final (i, r) in cands.indexed) tile(r, ((r['cand_rank'] as num?)?.toInt() ?? 0) > 0 ? (r['cand_rank'] as num).toInt() - 1 : i)]),
       sub('진입조건충족', tracked.length, '충족된 시간 순 · 고정'),
       if (tracked.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('아직 없어요', style: t.bodySmall)),
       _grid([
@@ -335,8 +339,9 @@ class _Section extends StatelessWidget {
 /// 당일단타 '오늘의 후보' (2026-10-29) — 09:10 에 점수 상위 10개 고정, 진입은 후보 안의 눌림목형만. 상위 5개가 우선
 /// 되돌려 보기(20거래일): 상위 5개 평균 +0.78% · 10개 +0.27% · 전체 −0.32% (수급 없이, 한 달 한 장세 — 참고용)
 class _Shortlist extends StatelessWidget {
-  const _Shortlist({required this.sl});
+  const _Shortlist({required this.sl, this.chips = true});
   final Json sl;
+  final bool chips; // 후보 카드(전광판)가 없을 때만 이름표로
 
   @override
   Widget build(BuildContext context) {
@@ -356,7 +361,7 @@ class _Shortlist extends StatelessWidget {
                   : '  ${sl['freeze_at'] ?? '09:10'} 에 점수 상위 ${sl['n'] ?? 10}개를 골라요 · 그 전엔 진입 대기',
               style: t.bodySmall?.copyWith(color: Colors.grey)),
         ])),
-        if (done)
+        if (done && chips)
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Wrap(spacing: 6, runSpacing: 2, children: [

@@ -90,6 +90,7 @@ class Runner:
         from stockeye.analysis import regime
         self.reg_days = regime.days_for(sb, self.day) if sb else {}                  # 지수 일별 등락 기록 (반등장 판정용, 2026-10-27)
         self.last_items: list[dict] = []
+        self.last_cands: list[dict] = []                              # 당일단타 후보 10개의 지금 계산 (앱 전광판)
         from stockeye.analysis import shortlist
         self.sl = shortlist.restore(sb, self.day) if runner == "pc" else shortlist.new_state()   # 오늘의 후보 10 (09:10 고정)
 
@@ -187,7 +188,8 @@ class Runner:
         from concurrent.futures import ThreadPoolExecutor
         live = snap[snap["value"] >= dt.MIN_VALUE]                    # 거래대금 10억 미만은 어차피 제외 → 분봉 안 받음
         top = live.sort_values("value", ascending=False).head(self.top).index.tolist()
-        cands = list(dict.fromkeys(top + [c for c in self.watch if c in live.index] + self.track.codes()))
+        keepers = [x["code"] for x in (self.sl.get("list") or []) if x["code"] in live.index] + [c for c in self.sl.get("late") or [] if c in live.index]
+        cands = list(dict.fromkeys(top + keepers + [c for c in self.watch if c in live.index] + self.track.codes()))   # 후보 10개는 순위가 밀려도 계속 계산
         with ThreadPoolExecutor(self.workers) as ex:                 # 1분봉을 여러 종목 동시에 (KIS 초당 한도 안에서)
             bars = dict(zip(cands, ex.map(lambda c: self._bars(c, hhmmss), cands)))
 
@@ -260,10 +262,13 @@ class Runner:
             self.track.update(code, b, price, score.get(code), now)
         self.track.save()
         self.last_items = keep
+        cand_rows = sorted([r for r in res if r.get("cand_rank") is not None],
+                           key=lambda r: (r["cand_rank"] == 0, r["cand_rank"]))   # 후보 순위 순 (후보 밖에서 추가된 건 맨 뒤)
+        self.last_cands = cand_rows
         return {"date": self.day, "time": now.strftime("%H:%M"), "version": dt.VERSION, "scanned": len(res),
                 "counts": counts, "items": keep, "signals": list(self.signals.values()), "idx_chg": idx_chg,
                 "runner": self.runner, "until": self.until, "tracked": self.track.view(),
-                "shortlist": shortlist.view(self.sl) if gated else None}
+                "shortlist": shortlist.view(self.sl) if gated else None, "cands": cand_rows}
 
     def track_step(self) -> dict:
         """10:00 뒤: 새 종목은 찾지 않고 고정된 종목만 15:20 까지 1분마다 상태·결과 갱신 (종목당 1분봉 1번)"""
@@ -279,7 +284,7 @@ class Runner:
         return {"date": self.day, "time": now.strftime("%H:%M"), "version": dt.VERSION, "scanned": 0,
                 "counts": {}, "items": self.last_items, "signals": list(self.signals.values()), "runner": self.runner,
                 "until": self.until, "scan_closed": True, "tracked": self.track.view(),
-                "shortlist": shortlist.view(self.sl) if self.runner == "pc" else None}
+                "shortlist": shortlist.view(self.sl) if self.runner == "pc" else None, "cands": self.last_cands}
 
     def publish(self, payload: dict) -> None:
         if not self.sb:

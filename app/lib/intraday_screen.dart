@@ -525,6 +525,62 @@ Widget? _ixLine(BuildContext context, Json t) {
   );
 }
 
+/// 지금 종합지수(코스피·코스닥)·업종지수·종목 업종 — 30초 캐시 (매수 종목 카드의 '지수 하락중' 표시용)
+Future<List<dynamic>>? _ixFut;
+DateTime _ixAt = DateTime(2000);
+Future<List<dynamic>> _ixNow() {
+  if (_ixFut != null && DateTime.now().difference(_ixAt).inSeconds < 30) return _ixFut!;
+  _ixAt = DateTime.now();
+  return _ixFut = Future.wait<dynamic>([Live.indices(), Api.sectorIdx(), Api.stockInfo()]);
+}
+
+/// 매수한 단타 종목 카드: 매수한 뒤 종합지수가 0.3%p 이상, 업종지수가 0.5%p 이상 내려가면 '지수 하락중' 깜빡임 (2026-10-30)
+///   기준값 = 매수 순간 PC 가 기록한 지수(t['ix']['buy'] = [종합%, 업종%, 시각, 시장]) · 업종지수는 1시간마다 갱신이라 늦을 수 있음
+class _IxDown extends StatelessWidget {
+  const _IxDown(this.t);
+  final Json t;
+  static const _mkDrop = -0.3, _secDrop = -0.5; // %p
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<List<dynamic>>(
+        future: _ixNow(),
+        builder: (context, snap) {
+          final d = snap.data;
+          final buy = asMap(t['ix'])['buy'];
+          if (d == null || buy is! List || buy.length < 4) return const SizedBox.shrink();
+          num? since(dynamic b, num? e) => b is! num || e == null ? null : ((1 + e / 100) / (1 + b / 100) - 1) * 100;
+          final mk = '${buy[3]}';
+          final mNow = (d[0] as LiveResult).quotes[mk]?.ratio;
+          final info = (d[2] as Map)['${t['code']}'];
+          final sec = info is List && info.length > 1 ? '${info[1]}' : '';
+          final sNow = asMap(asMap(d[1])['map'])[sec];
+          final m = since(buy[0], mNow), sc = since(buy[1], sNow is num ? sNow : null);
+          final mDown = m != null && m <= _mkDrop, sDown = sc != null && sc <= _secDrop;
+          if (!mDown && !sDown) return const SizedBox.shrink();
+          final label = mDown && sDown ? '지수·업종 하락중' : (sDown ? '업종지수 하락중' : '${mk == 'KOSDAQ' ? '코스닥' : '코스피'} 하락중');
+          final detail = [
+            if (mDown) '${mk == 'KOSDAQ' ? '코스닥' : '코스피'} 매수 뒤 ${m!.toStringAsFixed(2)}%',
+            if (sDown) '업종 매수 뒤 ${sc!.toStringAsFixed(2)}%',
+          ].join(' · ');
+          return Tooltip(
+            message: detail,
+            child: Blink(
+              on: true,
+              child: Container(
+                margin: const EdgeInsets.only(right: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                    color: downColor.withValues(alpha: 0.18),
+                    border: Border.all(color: downColor.withValues(alpha: 0.7)),
+                    borderRadius: BorderRadius.circular(6)),
+                child: Text('▼ $label', style: TextStyle(color: downColor, fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          );
+        },
+      );
+}
+
 /// 진입조건충족 한 종목: 종목명·점수·현재가 / 기존 상태설명(고정 카드) / 상태별 시각 / 매매 결과
 class _TrackCard extends StatelessWidget {
   const _TrackCard({required this.t, required this.kind, this.quote, this.candRank});
@@ -671,6 +727,7 @@ class _TrackCard extends StatelessWidget {
                       : StockName('${t['name']}', score: t['score'] as num?, scoreDigits: 1, style: tx.titleMedium)),
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                 Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (kind == 'daytrade' && !done && bought) _IxDown(t), // 지수·업종지수 하락중 (깜빡임)
                   Text(won(last), style: tx.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                   ChgBadge(todayChg), // 오늘 등락률
                 ]),

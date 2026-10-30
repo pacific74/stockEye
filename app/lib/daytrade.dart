@@ -87,6 +87,27 @@ class DaytradeTile extends StatelessWidget {
   final bool chart; // 1분봉 차트 (고정 카드 안에 넣을 땐 이미 따로 있어서 끔)
   final bool compact; // 웹(넓은 화면)에서 높이를 줄여 한 화면에 3줄 · 높이 통일 (2026-10-30 · 당일단타 후보)
 
+  /// 지금가: 넘겨받은 값 → 1분봉(PC 가 1분마다 올림)의 마지막 종가가 계산 시각 뒤 것이면 그것 → 계산 때 가격.
+  /// (10:00 에 새 종목 찾기가 끝난 뒤엔 r['price'] 가 그때 가격으로 멈춰 있어 차트 마지막 봉이 뚝 떨어져 보였음 — 2026-10-30)
+  double? get _barPx {
+    final b = dtMinuteBars['${r['code']}'];
+    if (b == null || b.isEmpty || b.last is! List || (b.last as List).length < 5) return null;
+    final l = b.last as List;
+    return '${l[0]}'.compareTo('${r['time'] ?? ''}') > 0 ? (l[4] as num).toDouble() : null;
+  }
+
+  double? get _px => price ?? _barPx ?? (r['price'] as num?)?.toDouble();
+
+  /// 오늘 등락률: 1분봉 가격을 쓴 경우엔 계산 때 가격·등락률로 전일 종가를 거꾸로 구해 다시 계산
+  num? get _chgNow {
+    final bp = _barPx;
+    final p0 = (r['price'] as num?)?.toDouble(), c0 = (r['chg_pct'] as num?)?.toDouble();
+    if (price == null && bp != null && p0 != null && c0 != null && p0 > 0 && c0 > -100) {
+      return (bp / (p0 / (1 + c0 / 100)) - 1) * 100;
+    }
+    return Live.last['${r['code']}']?.ratio ?? (r['chg_pct'] as num?);
+  }
+
   @override
   Widget build(BuildContext context) {
     // 진입 금지(필수 제외 사유 있음: 심각 악재·평소 변동폭 부족·스프레드 등)는 어차피 안 살 종목 → 흐리게 (2026-10-30)
@@ -99,7 +120,7 @@ class DaytradeTile extends StatelessWidget {
     final t = Theme.of(context).textTheme;
     final st = '${r['status'] ?? ''}';
     final col = dtStatusColor(st);
-    final px = price ?? (r['price'] as num?)?.toDouble();
+    final px = _px;
     final ex = (r['excluded'] as List? ?? const []).map((e) => '$e').toList();
     final warns = (r['warnings'] as List? ?? const []).map((e) => '$e').toList();
     final reasons = (r['reasons'] as List? ?? const []).map((e) => '$e').toList();
@@ -131,7 +152,7 @@ class DaytradeTile extends StatelessWidget {
                         TextSpan(text: '현재가 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
                         TextSpan(text: won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
                       ])),
-                    ChgBadge(Live.last['${r['code']}']?.ratio ?? (r['chg_pct'] as num?)), // 오늘 등락률
+                    ChgBadge(_chgNow), // 오늘 등락률
                   ]),
                 ),
                 StockInfoLine('${r['code']}', sectorIdx: true), // [시장][업종 · 테마][시총]
@@ -141,7 +162,7 @@ class DaytradeTile extends StatelessWidget {
                   if (r['type'] != null) InfoBox('${r['type']}형'),
                   if (vg != null) InfoBox('VWAP ${vg >= 0 ? '+' : ''}${vg.toStringAsFixed(1)}%', color: vg >= 3 ? Colors.orange : null),
                   if (r['value'] is num) InfoBox('오전 ${((r['value'] as num) / 1e8).toStringAsFixed(0)}억'),
-                  if (r['chg_pct'] is num) InfoBox('오늘 ${pct(r['chg_pct'] as num)}', color: (r['chg_pct'] as num) >= 0 ? upColor : downColor),
+                  if (_chgNow != null) InfoBox('오늘 ${pct(_chgNow!)}', color: _chgNow! >= 0 ? upColor : downColor),
                 ]),
                 const SizedBox(height: 3),
                 infoBoxes([
@@ -203,7 +224,7 @@ class DaytradeTile extends StatelessWidget {
                 const SizedBox(width: 6),
                 if (px != null)
                   Text(won(px), style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                ChgBadge(Live.last[code]?.ratio ?? (r['chg_pct'] as num?)),
+                ChgBadge(_chgNow),
               ]),
               StockInfoLine(code, sectorIdx: true, showHead: false), // 업종지수 · 시총 · 외인/기관
               const SizedBox(height: 2),
@@ -212,7 +233,7 @@ class DaytradeTile extends StatelessWidget {
                 if (r['type'] != null) InfoBox('${r['type']}형'),
                 if (vg != null) InfoBox('VWAP ${vg >= 0 ? '+' : ''}${vg.toStringAsFixed(1)}%', color: vg >= 3 ? Colors.orange : null),
                 if (r['value'] is num) InfoBox('오전 ${((r['value'] as num) / 1e8).toStringAsFixed(0)}억'),
-                if (r['chg_pct'] is num) InfoBox('오늘 ${pct(r['chg_pct'] as num)}', color: (r['chg_pct'] as num) >= 0 ? upColor : downColor),
+                if (_chgNow != null) InfoBox('오늘 ${pct(_chgNow!)}', color: _chgNow! >= 0 ? upColor : downColor),
               ]),
               const SizedBox(height: 3),
               infoBoxes([

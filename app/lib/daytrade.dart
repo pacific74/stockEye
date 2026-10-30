@@ -89,6 +89,13 @@ class DaytradeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 진입 금지(필수 제외 사유 있음: 심각 악재·평소 변동폭 부족·스프레드 등)는 어차피 안 살 종목 → 흐리게 (2026-10-30)
+    final dim = (r['excluded'] as List? ?? const []).isNotEmpty;
+    final w = _build(context);
+    return dim ? Opacity(opacity: 0.5, child: w) : w;
+  }
+
+  Widget _build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final st = '${r['status'] ?? ''}';
     final col = dtStatusColor(st);

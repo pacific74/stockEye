@@ -258,6 +258,9 @@ class _Section extends StatelessWidget {
     // 당일단타 후보 10개 (2026-10-30): 전광판처럼 카드로 — 조건이 맞으면 고정되어 아래 '진입조건충족' 으로 내려감
     final cands = today && !_lc ? asList(d['cands']).where((r) => !fixed.contains('${r['code']}')).toList() : <Json>[];
     final candCodes = {for (final r in cands) '${r['code']}'};
+    final candRankOf = <String, int>{
+      for (final x in asList(asMap(d['shortlist'])['list'])) '${x['code']}': (x['rank'] as num?)?.toInt() ?? 0
+    }..removeWhere((k, v) => v <= 0);
     final items = today ? asList(d['items']).where((r) => !fixed.contains('${r['code']}') && !candCodes.contains('${r['code']}')).toList() : <Json>[];
     final waitKey = _lc ? '강세 후보' : '진입 대기';
     final wait = items.where((r) => r['status'] == waitKey).toList();
@@ -301,7 +304,11 @@ class _Section extends StatelessWidget {
       if (tracked.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('아직 없어요', style: t.bodySmall)),
       _grid([
         for (final x in tracked)
-          _TrackCard(t: x, kind: kind, quote: stale && x['done'] != true ? quotes['${x['code']}'] : null),
+          _TrackCard(
+              t: x,
+              kind: kind,
+              quote: stale && x['done'] != true ? quotes['${x['code']}'] : null,
+              candRank: _lc ? null : candRankOf['${x['code']}']),
       ], width: _trackW),
       sub('진입대기', wait.length, _lc ? '+20%↑ · 100억↑ · 75점↑ (바뀔 수 있음)' : '80점↑ · 진입 신호 전 (바뀔 수 있음)'),
       _grid([for (final (i, r) in wait.indexed) tile(r, i)]),
@@ -521,11 +528,12 @@ Widget? _ixLine(BuildContext context, Json t) {
 
 /// 진입조건충족 한 종목: 종목명·점수·현재가 / 기존 상태설명(고정 카드) / 상태별 시각 / 매매 결과
 class _TrackCard extends StatelessWidget {
-  const _TrackCard({required this.t, required this.kind, this.quote});
+  const _TrackCard({required this.t, required this.kind, this.quote, this.candRank});
   final Json t;
   final String kind; // daytrade · limitcatch · closingbet
   bool get lc => kind == 'limitcatch';
   bool get cb => kind == 'closingbet';
+  final int? candRank; // 당일단타 후보 순위 (09:10 확정 · 종목명 앞에 표시)
   final double? quote; // PC 꺼짐 대비 지금가 (있으면 이걸로 표시 · 결과는 저녁 확정)
 
   /// 지금가가 목표·손절의 어디쯤인지 (확정 아님)
@@ -626,21 +634,42 @@ class _TrackCard extends StatelessWidget {
     }
     final closeT = timeOf('마감 청산');
     final noFillT = timeOf('미체결');
+    // 웹(넓은 화면)에서 당일단타 카드: 높이 통일(330, 넘치면 카드 안에서 스크롤) · 시장·업종 칩을 종목명 옆으로 (2026-10-30)
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final fixedH = wide && kind == 'daytrade';
+    Widget fix(Widget w) => fixedH ? SizedBox(height: 330, child: SingleChildScrollView(child: w)) : w;
+    final code = '${t['code']}';
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       shape: RoundedRectangleBorder(
           side: BorderSide(color: done ? _resultColor(t['result'] as String?) : Colors.blueGrey, width: 1.2),
           borderRadius: BorderRadius.circular(12)),
-      child: Padding(
+      child: fix(Padding(
         padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           InkWell(
             onTap: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => StockDetailScreen(
                     code: '${t['code']}', name: '${t['name']}', news: asList(asMap(t['card'])['news'])))),
-            child: Row(children: [
+            child: Row(crossAxisAlignment: wide ? CrossAxisAlignment.start : CrossAxisAlignment.center, children: [
+              if (candRank != null) ...[
+                CircleAvatar(
+                    radius: 11,
+                    backgroundColor: Colors.teal.withValues(alpha: 0.18),
+                    child: Text('$candRank', style: const TextStyle(color: Colors.tealAccent, fontSize: 12, fontWeight: FontWeight.bold))),
+                const SizedBox(width: 8),
+              ],
               Expanded(
-                  child: StockName('${t['name']}', score: t['score'] as num?, scoreDigits: 1, style: tx.titleMedium)),
+                  child: wide
+                      ? Wrap(spacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                          Row(mainAxisSize: MainAxisSize.min, children: [
+                            Flexible(child: Text('${t['name']}', overflow: TextOverflow.ellipsis, style: tx.titleMedium)),
+                            const SizedBox(width: 6),
+                            ScoreBadge(t['score'] as num?, digits: 1),
+                          ]),
+                          StockInfoLine(code, showRest: false), // [코스닥][업종 · 테마] 종목명 옆
+                        ])
+                      : StockName('${t['name']}', score: t['score'] as num?, scoreDigits: 1, style: tx.titleMedium)),
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                 Row(mainAxisSize: MainAxisSize.min, children: [
                   Text(won(last), style: tx.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
@@ -651,7 +680,7 @@ class _TrackCard extends StatelessWidget {
               ]),
             ]),
           ),
-          StockInfoLine('${t['code']}', sectorIdx: true), // [시장][업종 · 테마][시총]
+          StockInfoLine(code, sectorIdx: true, showHead: !wide), // [시장][업종 · 테마][시총] — 웹은 시장·업종이 종목명 옆
           const SizedBox(height: 4),
           infoBoxes([
             InfoBox('${prevDay ? '${'${t['date']}'.substring(5)} ' : ''}${t['time']} 포착', bold: true, fill: true),
@@ -749,7 +778,7 @@ class _TrackCard extends StatelessWidget {
           ]),
           if (chart != null && narrow) Padding(padding: const EdgeInsets.only(top: 6), child: chart), // 폰: 차트는 아래 전체 폭
         ]),
-      ),
+      )),
     );
   }
 }

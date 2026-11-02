@@ -7,6 +7,7 @@
   - 09:10 전: 신호가 떠도 '진입 대기' (후보 선별 중)
   - 09:10 뒤 처음 도는 회차에서 점수 상위 N개(진입 금지 제외)를 고정 → system_status 'daytrade'.shortlist 에 저장 (PC 를 껐다 켜도 같은 후보)
   - 후보 밖 종목은 진입 조건이 맞아도 '진입 대기' — 단, LATE_ADD 점 이상이면 후보로 추가 (⚠ 검증 안 된 값)
+  - 미국 선물(analysis/us_tone.py): 하락(보수)이면 후보 상위 TOP_DOWN 개만 진입 · 상승(적극)이면 후보 밖 추가 기준 LATE_ADD_UP 점
   - TYPES: 진입 유형 제한 — 지금은 눌림목형만 (None 이면 돌파·눌림목 둘 다). 돌파형은 신호가 떠도 '진입 대기'
 """
 from __future__ import annotations
@@ -15,6 +16,8 @@ FREEZE_AT = "09:10"
 N = 10                    # 오늘의 후보 개수
 TOP = 5                   # 그중 우선 (되돌려 보기에서 가장 좋았던 구간)
 LATE_ADD = 90.0           # 후보 밖이라도 이 점수 이상이면 추가 (검증 안 된 초기값)
+LATE_ADD_UP = 85.0        # 미국 선물 상승(적극)이면 후보 밖 추가 기준을 90 → 85점 (검증 안 됨)
+TOP_DOWN = 5              # 미국 선물 하락(보수)이면 후보 상위 5개만 진입 (되돌려 보기: 상위 5개가 가장 좋았음)
 TYPES: tuple[str, ...] | None = ("눌림목",)   # 2026-10-29: 후보 안에서도 눌림목형이 앞섰음 (상위 10개: 눌림목 +0.81% 27건 · 돌파 −0.07% 42건) → 눌림목만
 
 
@@ -49,7 +52,7 @@ def rank_of(st: dict, code: str) -> int | None:
     return None
 
 
-def gate(r: dict, st: dict) -> None:
+def gate(r: dict, st: dict, tone: str | None = None) -> None:
     """'진입 조건 충족' 이면 후보 안인지 확인 → 아니면 '진입 대기' 로 내리고 이유를 경고에 적음"""
     if r.get("status") != "진입 조건 충족":
         return
@@ -58,10 +61,14 @@ def gate(r: dict, st: dict) -> None:
     if not frozen(st):
         why = f"{FREEZE_AT} 에 오늘의 후보 {N}개를 고른 뒤 진입 (후보 선별 중)"
     elif rank_of(st, code) is None and code not in (st.get("late") or []):
-        if float(r.get("score") or 0) >= LATE_ADD:
+        if float(r.get("score") or 0) >= (LATE_ADD_UP if tone == "상승" else LATE_ADD):
             st.setdefault("late", []).append(code)
         else:
             why = f"오늘의 후보 {N}개 밖 (후보 밖 진입은 되돌려 보기에서 손실이 컸음)"
+    if why is None and tone == "하락":
+        rk = rank_of(st, code)
+        if rk is not None and rk > TOP_DOWN:
+            why = f"미국 선물 하락 — 후보 상위 {TOP_DOWN}개만 진입 (보수적)"
     if why is None and TYPES and r.get("type") not in TYPES:
         why = f"{'·'.join(TYPES)}만 진입 ({r.get('type')} 제외)"
     if why:

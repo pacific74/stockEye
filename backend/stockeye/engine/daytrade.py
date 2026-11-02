@@ -52,6 +52,8 @@ VWAP_CHASE = 0.03            # VWAP 대비 3%
 HI_MARGIN = 0.01             # 최근 일봉(KIS 30거래일) 고점의 1% 안까지 올라 '신고가를 뚫는 자리'면 돌파형 제외 — 한 번에 못 넘으면 되밀려 손절 (2026-10-27 사용자, 뉴파워프라즈마)
 REB_ENTRY_UNTIL = "09:40"    # 반등장(전날 급락 → 오늘 갭상승)엔 이 시각 뒤 신규 진입 보류 — 오전 급등이 9시 반~10시에 되밀려 손절 (2026-10-27 사용자)
 REB_CHASE = 0.05             # 반등장엔 초반 급등으로 VWAP 위 3% 는 금방 넘으므로 5% 까지 허용 (일찍 잡기)
+US_DOWN_SCORE = 3.0          # 미국 선물 하락(보수): 진입 기준 +3점 (80 → 83). 상승(적극)은 점수 기준을 안 낮춤 — 되돌려 보기에서 75점은 80점보다 나빴음
+US_CHASE = 0.01              # 미국 선물 상승이면 VWAP 추격 한도 +1%p · 하락이면 −1%p (2026-11-02)
 WARMUP = "09:05"             # 이 전에는 신규 진입 신호 없음
 WATCH, PRIORITY = 70.0, 80.0
 PARTS = {"liq20": ("거래대금·유동성", 20), "vol15": ("거래량·매수세", 15), "pat25": ("가격 구조·진입 패턴", 25),
@@ -287,6 +289,15 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
     gap = p / vw - 1
     w = out["warnings"]
     chase = REB_CHASE if reb else VWAP_CHASE
+    us = ctx.get("us_tone")                                           # 미국 선물: 상승 → 적극 · 하락 → 보수 (analysis/us_tone.py)
+    prio = PRIORITY
+    if us == "상승":
+        chase += US_CHASE
+    elif us == "하락":
+        chase = max(0.015, chase - US_CHASE)
+        prio = PRIORITY + US_DOWN_SCORE
+        if PRIORITY <= score < prio:
+            w.append(f"미국 선물 하락 — 진입 기준 {prio:.0f}점 (보수적)")
     if gap >= chase:
         w.append(f"VWAP 대비 +{gap * 100:.1f}% — 추격 금지 (신규 진입 보류)")
     if hm < WARMUP:
@@ -297,9 +308,9 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
     can_enter = sig and gap < chase and hm >= WARMUP and not late
     if ex:
         status = "진입 금지"
-    elif score >= PRIORITY and can_enter:
+    elif score >= prio and can_enter:
         status = "진입 조건 충족"
-    elif score >= PRIORITY:
+    elif score >= prio:
         status = "진입 대기"
     elif score >= WATCH:
         status = "관찰"
@@ -320,7 +331,7 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
     out.update({"status": status, "score": score, "parts": parts, "type": typ, "signal": sig,
                 "price": p, "chg_pct": round(chg, 2), "vwap": rt(vw), "vwap_gap_pct": round(gap * 100, 2),
                 "value": round(value), "adr_pct": None if a is None else round(a * 100, 1), "spread_pct": None if spread is None else round(spread * 100, 3),
-                "rebound": bool(reb), "or_high": rt(or_high), "level": rt(use.get("level") or p), **pl, "stop_basis": ss["basis"],
+                "rebound": bool(reb), "us_tone": us, "us_pct": ctx.get("us_pct"), "or_high": rt(or_high), "level": rt(use.get("level") or p), **pl, "stop_basis": ss["basis"],
                 "labels": {k: v for k, (v, _) in PARTS.items()}, "maxes": {k: m for k, (_, m) in PARTS.items()}})
     return out
 

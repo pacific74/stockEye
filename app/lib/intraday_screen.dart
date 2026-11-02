@@ -298,6 +298,7 @@ class _Section extends StatelessWidget {
         Text('● 실시간 (체결 때마다 목표·손절 판단)', style: t.bodySmall?.copyWith(color: Colors.green)),
       // 상한가 예비 (2026-10-16): +10~20% 급등 초입 — 상한가 갈 만한 종목을 미리 (표시+기록만)
       if (_lc) _PreSection(items: today ? asList(d['pre']) : const []),
+      if (!_lc && today) _UsTone(us: asMap(d['us'])),
       if (!_lc) _Shortlist(sl: today ? asMap(d['shortlist']) : const {}, chips: cands.isEmpty),
       _grid([for (final (i, r) in cands.indexed) tile(r, ((r['cand_rank'] as num?)?.toInt() ?? 0) > 0 ? (r['cand_rank'] as num).toInt() - 1 : i, compact: true)]),
       sub('진입조건충족', tracked.length, '충족된 시간 순 · 고정'),
@@ -340,6 +341,34 @@ class _Section extends StatelessWidget {
           ),
         ),
     ]);
+  }
+}
+
+/// 미국 선물(나스닥·S&P) 등락 → 오늘 단타 성향 (2026-11-02): 상승 = 적극 매수 · 하락 = 보수적 매수 · 중립 = 그대로
+///   적극: VWAP 추격 한도 +1%p · 후보 밖 추가 85점 / 보수: 진입 기준 83점 · 추격 한도 −1%p · 후보 상위 5개만
+class _UsTone extends StatelessWidget {
+  const _UsTone({required this.us});
+  final Json us;
+
+  @override
+  Widget build(BuildContext context) {
+    final tone = us['tone'];
+    if (tone == null) return const SizedBox.shrink();
+    final t = Theme.of(context).textTheme;
+    final c = tone == '상승' ? upColor : (tone == '하락' ? downColor : Colors.grey);
+    String f(String k, String n) => us[k] is num ? '$n ${(us[k] as num) >= 0 ? '+' : ''}${(us[k] as num).toStringAsFixed(2)}%' : '';
+    final fut = [f('NQ', '나스닥 선물'), f('ES', 'S&P 선물')].where((x) => x.isNotEmpty).join(' · ');
+    final mode = tone == '상승' ? '적극 매수' : (tone == '하락' ? '보수적 매수' : '중립');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
+      child: Text.rich(TextSpan(children: [
+        TextSpan(text: '미국 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
+        TextSpan(text: fut, style: t.bodySmall?.copyWith(color: c, fontWeight: FontWeight.w600)),
+        TextSpan(text: '  →  ', style: t.bodySmall?.copyWith(color: Colors.grey)),
+        TextSpan(text: mode, style: t.bodySmall?.copyWith(color: c, fontWeight: FontWeight.bold)),
+        if (us['at'] != null) TextSpan(text: '  (${us['at']})', style: t.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
+      ])),
+    );
   }
 }
 

@@ -80,6 +80,8 @@ def test_runner_step(monkeypatch):
     monkeypatch.setattr(naver_live, "stocks", lambda codes: snap)
     monkeypatch.setattr(naver_live, "indices", lambda: pd.DataFrame([{"code": "KOSPI", "chg_pct": 0.5}]))
     monkeypatch.setattr(sd, "_now", lambda: pd.Timestamp("2026-10-12 09:19:30"))
+    from stockeye.data.sources import us_futures
+    monkeypatch.setattr(us_futures, "fetch", lambda force=False: None)         # 네트워크 없이 (미국 선물 못 받음 = 중립)
     lst = pd.DataFrame({"code": ["000010", "000020"], "name": ["가", "나"], "market": ["KOSPI", "KOSDAQ"]})
     run = sd.Runner(None, K(), lst, top=10)
     p = run.step()
@@ -167,3 +169,21 @@ def test_support_stop_none_within_3pct():
     far = pd.DataFrame([{"time": t[0], "open": 10700.0, "high": 11100.0, "low": 10700.0, "close": 11100.0, "volume": 1}])
     ss2 = dt.support_stop(far, 11100.0, 10600.0, 11100.0, 10700.0, {}, 0.05)   # 가장 가까운 지지선 10,700 → 3.8%
     assert ss2["stop"] is None and "3% 초과" in ss2["basis"]
+
+
+def test_us_futures_tone_changes_threshold_and_chase():
+    """미국 선물 하락(보수): 진입 기준 83점 · 추격 한도 2% / 상승(적극): 추격 한도 4% / 없음·중립: 그대로"""
+    rows = [(10000, 10040, 9990, 10030, 1000)] * 3 + [(10030, 10050, 10000, 10020, 800)] * 12
+    rows += [(10020, 10045, 10010, 10040, 900)] * 3 + [(10040, 10110, 10040, 10100, 3000)]
+    b = _bars(rows)
+    base = dt.evaluate(b, _ctx(b))
+    up = dt.evaluate(b, _ctx(b, us_tone="상승", us_pct=0.9))
+    down = dt.evaluate(b, _ctx(b, us_tone="하락", us_pct=-0.9))
+    assert base["us_tone"] is None and up["us_tone"] == "상승" and down["us_pct"] == -0.9
+    assert base["score"] == up["score"] == down["score"]                          # 점수 자체는 그대로 (기준·추격 한도만 바뀜)
+    s = base["score"]
+    if s >= 80:
+        assert base["status"] == "진입 조건 충족" and up["status"] == "진입 조건 충족"
+        assert (down["status"] == "진입 조건 충족") == (s >= 83)
+        if s < 83:
+            assert any("미국 선물 하락" in w for w in down["warnings"])

@@ -90,6 +90,7 @@ class Runner:
         from stockeye.analysis import regime
         self.reg_days = regime.days_for(sb, self.day) if sb else {}                  # 지수 일별 등락 기록 (반등장 판정용, 2026-10-27)
         self.last_items: list[dict] = []
+        self.us: dict = {"tone": None}                              # 미국 선물 판단 ({tone, avg, NQ, ES, at})
         self.last_cands: list[dict] = []                              # 당일단타 후보 10개의 지금 계산 (앱 전광판)
         from stockeye.analysis import shortlist
         self.sl = shortlist.restore(sb, self.day) if runner == "pc" else shortlist.new_state()   # 오늘의 후보 10 (09:10 고정)
@@ -186,6 +187,12 @@ class Runner:
         from stockeye.analysis import regime
         reb = {m: regime.for_market(self.reg_days, self.day, idx, m) for m in ("KOSPI", "KOSDAQ")} if not idx.empty else {}
         from concurrent.futures import ThreadPoolExecutor
+        from stockeye.analysis import us_tone
+        from stockeye.data.sources import us_futures
+        try:                                                          # 미국 선물 (나스닥·S&P) → 적극/보수 (못 받으면 중립 = 예전과 동일)
+            self.us = us_tone.tone_of(us_futures.fetch()) if self.runner == "pc" else {"tone": None}
+        except Exception:  # noqa: BLE001
+            self.us = {"tone": None}
         live = snap[snap["value"] >= dt.MIN_VALUE]                    # 거래대금 10억 미만은 어차피 제외 → 분봉 안 받음
         top = live.sort_values("value", ascending=False).head(self.top).index.tolist()
         keepers = [x["code"] for x in (self.sl.get("list") or []) if x["code"] in live.index] + [c for c in self.sl.get("late") or [] if c in live.index]
@@ -202,7 +209,7 @@ class Runner:
                     "value": float(b["value"].iloc[-1]) if "value" in b and b["value"].iloc[-1] > 0 else float(q["value"]),
                     "danger": "관리종목" if code in self.admin else None,
                     "spread": (self.spread.get(code) or (0, None))[1], "news_level": None,
-                    "rebound": reb.get(market or "KOSPI")}
+                    "rebound": reb.get(market or "KOSPI"), "us_tone": self.us.get("tone"), "us_pct": self.us.get("avg")}
 
         first = {}
         for code in cands:
@@ -232,14 +239,14 @@ class Runner:
             log.info("★ 오늘의 후보 %d개 확정: %s", len(self.sl["list"]), ", ".join(f"{x['name']}({x['score']})" for x in self.sl["list"]))
         for r in res:
             if gated:
-                shortlist.gate(r, self.sl)
+                shortlist.gate(r, self.sl, self.us.get("tone"))
                 shortlist.tag(r, self.sl)
             code = r["code"]
             if r["status"] == "진입 조건 충족":
                 key = (code, r["type"])
                 if key not in self.signals:
                     self.signals[key] = {k: r.get(k) for k in ("code", "name", "type", "time", "score", "entry", "stop",
-                                                              "t1", "t2", "risk_pct", "t1_pct", "adr_pct", "vwap", "level", "parts")}
+                                                              "t1", "t2", "risk_pct", "t1_pct", "adr_pct", "vwap", "level", "parts", "us_tone", "us_pct")}
                     self.signals[key]["date"] = self.day
                     log.info("★ 진입 조건 충족 %s %s %s %s원 (손절 %s · 1차 %s)", r["time"], r["name"], r["type"],
                              f"{r['entry']:,.0f}", f"{r['stop']:,.0f}", f"{r['t1']:,.0f}")
@@ -268,7 +275,7 @@ class Runner:
         return {"date": self.day, "time": now.strftime("%H:%M"), "version": dt.VERSION, "scanned": len(res),
                 "counts": counts, "items": keep, "signals": list(self.signals.values()), "idx_chg": idx_chg,
                 "runner": self.runner, "until": self.until, "tracked": self.track.view(),
-                "shortlist": shortlist.view(self.sl) if gated else None, "cands": cand_rows}
+                "shortlist": shortlist.view(self.sl) if gated else None, "cands": cand_rows, "us": self.us}
 
     def track_step(self) -> dict:
         """10:00 뒤: 새 종목은 찾지 않고 고정된 종목만 15:20 까지 1분마다 상태·결과 갱신 (종목당 1분봉 1번)"""
@@ -284,7 +291,7 @@ class Runner:
         return {"date": self.day, "time": now.strftime("%H:%M"), "version": dt.VERSION, "scanned": 0,
                 "counts": {}, "items": self.last_items, "signals": list(self.signals.values()), "runner": self.runner,
                 "until": self.until, "scan_closed": True, "tracked": self.track.view(),
-                "shortlist": shortlist.view(self.sl) if self.runner == "pc" else None, "cands": self.last_cands}
+                "shortlist": shortlist.view(self.sl) if self.runner == "pc" else None, "cands": self.last_cands, "us": self.us}
 
     def publish(self, payload: dict) -> None:
         if not self.sb:

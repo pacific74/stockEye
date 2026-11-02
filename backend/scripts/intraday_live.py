@@ -214,6 +214,54 @@ def main():
                 log.debug("종가배팅 내역 발행 실패: %s", e)
     cb_publish(_now())
 
+    # 급등예상 (2026-11-02): 어제 저녁 목록을 오늘 장중 지켜보기 + 아침 요약 알림 (관찰용 · 매수 신호 아님)
+    from stockeye.analysis import surge_live as sgl
+    sg_watch, sg_payload = None, {}
+    if sb:
+        try:
+            got = sgl.SurgeWatch.load(sb, _now().strftime("%Y-%m-%d"))
+            if got:
+                sg_watch, sg_payload = got
+                print(f"급등예상 목록 {len(sg_watch.items)}종목 ({sg_watch.list_date} 저녁) → 오늘 지켜봄")
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠ 급등예상 준비 실패 (계속 진행): {e}")
+    sg_morning = [False]
+
+    def surge_morning() -> None:
+        """08:50 이후 한 번 — 전날 결과 요약을 관리자 알림으로 (재시작해도 하루 한 번: Storage 표시)"""
+        if sg_morning[0] or not sg_payload:
+            return
+        sg_morning[0] = True
+        day = _now().strftime("%Y-%m-%d")
+        try:
+            try:
+                if sb.download(f"surge/morning/{day}.json"):
+                    return
+            except Exception:  # noqa: BLE001
+                pass                                                   # 파일이 없으면 오류로 오기도 함 → 안 보낸 것으로
+            title, body = sgl.morning_text(sg_payload)
+            for tp in live.topics:
+                live.q.put(lambda tp=tp: print("   급등예상 아침 알림", "보냄" if live.nt.send_topic(tp, title, body) else "⚠ 못 보냄", flush=True))
+            sb.upload(f"surge/morning/{day}.json", b"{}", "application/json")
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠ 급등예상 아침 알림 실패: {e}")
+
+    def surge_step(hm: str) -> None:
+        if not sg_watch or not (sgl.LIVE_START <= hm < sgl.LIVE_END):
+            return
+        q = naver_live.stocks(sg_watch.codes())
+        if q is None or q.empty:
+            return
+        new = sg_watch.update(q.to_dict("records"), hm)
+        rows = {r["code"]: r for r in sg_watch.rows}
+        for it, label in new:
+            if label in ("상한가 도달", "+20%"):
+                t, body = sgl.alert_text(it, label, hm, rows.get(it["code"]))
+                for tp in live.topics:
+                    live.q.put(lambda tp=tp, t=t, body=body: live.nt.send_topic(tp, t, body, priority="high"))
+        from stockeye.cloud import publish as pub
+        pub.publish_status(sb, "surge_live", sg_watch.payload(hm))
+
     def publish_bars(now) -> None:
         """고정 종목(끝난 것 포함) 1분봉 최근 2시간 → system_status 'intraday_bars' (현재가는 앱이 실시간으로 덧그림)"""
         if not sb or now.strftime("%H:%M") < "09:01":
@@ -303,6 +351,8 @@ def main():
     while _now().strftime("%H:%M") < "08:59":
         if _now().strftime("%H:%M") >= "08:51":
             nxt_pre(True)
+        if _now().strftime("%H:%M") >= "08:50":
+            surge_morning()
         print(f"{_now():%H:%M:%S} 장 시작 대기..."); time.sleep(20)
     nxt_pre(False)                                                     # 늦게 켰으면 아침에 저장된 것만
     dt_closed = False
@@ -403,6 +453,12 @@ def main():
                 cb_publish(now)
         except Exception as e:  # noqa: BLE001
             print(f"⚠ 종가배팅 추적 실패: {e}")
+        try:
+            if hm >= "08:50":
+                surge_morning()
+            surge_step(hm)
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠ 급등예상 지켜보기 실패: {e}")
         sector_slot(hm)
         shock_slot(hm)
         pending_slot()
@@ -445,6 +501,11 @@ def main():
     except Exception as e:  # noqa: BLE001
         print(f"⚠ 상한가포착 마무리 실패: {e}")
     live.flush()
+    if sg_watch and sb:
+        try:
+            sgl.save_day(sb, sg_watch)
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠ 급등예상 오늘 기록 저장 실패: {e}")
     print("끝 — 남은 결과는 저녁 배치가 1분봉으로 마무리합니다")
 
 

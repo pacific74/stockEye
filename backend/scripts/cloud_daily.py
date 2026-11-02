@@ -222,6 +222,9 @@ def main():
         step("상한가 예비 결과 매기기", lambda: __import__("stockeye.analysis.limit_pre_eval", fromlist=["run"]).run(
             sb, pit.ohlcv, report["date"]), errors)
 
+        # 급등예상 (2026-11-02): 오늘 종가 기준 다음날 목록(학습 모델) + 지난 목록 채점 → 'surge' · 'surge_stats'
+        step("급등예상 목록·채점", lambda: __import__("stockeye.analysis.surge_eval", fromlist=["run"]).run(sb, pit, report["date"]), errors)
+
         # 당일매매 추적 마무리: PC(실시간)가 꺼졌거나 멈춰 결과가 안 난 고정 종목을 오늘 1분봉으로 마무리 → 관리자 매매일지
         def _intraday_finish():
             from stockeye.trading.intraday_track import finish_day

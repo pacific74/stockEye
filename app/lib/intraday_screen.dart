@@ -8,6 +8,7 @@ import 'closingbet.dart' show ClosingbetTile;
 import 'daytrade.dart' show DaytradeTile, DaytradeFindButton, dtIsToday, lookupLabel, dtMinuteBars;
 import 'format.dart';
 import 'limitcatch.dart' show LimitcatchTile;
+import 'surge.dart' show SurgeSection;
 import 'live.dart';
 import 'screens/stock_detail_screen.dart';
 import 'voice.dart';
@@ -212,6 +213,7 @@ class _IntradayScreenState extends State<IntradayScreen> {
                 children: [
                   _Section(kind: 'daytrade', d: _dt!, at: _at, onDone: _load, stale: _stale(_dt), quotes: _quotes, rtAt: _rtAt),
                   const SizedBox(height: 12),
+                  const SurgeSection(), // 급등예상 (2026-11-02): 어젯밤 목록 · 오늘 지켜보기 · 지난 결과
                   _Section(kind: 'limitcatch', d: _lc!, at: _at, onDone: _load, stale: _stale(_lc), quotes: _quotes, rtAt: _rtAt),
                   const SizedBox(height: 12),
                   _ClosingSection(d: _cb ?? const <String, dynamic>{}, tracked: asList(_cbm['tracked']), at: _at, onDone: _load),
@@ -279,7 +281,7 @@ class _Section extends StatelessWidget {
         : DaytradeTile(r: r, rank: i + 1, compact: compact);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
-        Text(_lc ? '상한가포착' : '당일단타', style: t.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+        Text(_lc ? '급등 포착 (장중 실시간)' : '당일단타', style: t.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
         const SizedBox(width: 8),
         Expanded(
             child: Text(today ? lookupLabel(d, at) : '오늘 결과 없음',

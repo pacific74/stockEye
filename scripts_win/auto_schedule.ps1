@@ -1,6 +1,7 @@
 # StockEye: register weekday tasks in Windows Task Scheduler.
 #   08:50  StockEye Intraday   -> 22_intraday.bat auto  (daytrade + limitcatch, realtime, one process)
 #   14:45  StockEye Closingbet -> 16_closingbet.bat auto
+#   15:45  StockEye Archive    -> 26_archive_minutes.bat auto  (saves the day's 1-minute bars to data\minute_cache; also at logon to catch up missed days)
 # The old separate tasks (StockEye Daytrade / StockEye Limitcatch) are removed: two processes on one KIS key can conflict.
 # Run via 18_auto_schedule.bat (once). "-Off" removes them all.
 param([switch]$Off)
@@ -14,7 +15,8 @@ foreach ($old in @('StockEye Daytrade', 'StockEye Limitcatch')) {
 }
 $tasks = @(
   @{ Name = 'StockEye Intraday';   Bat = '22_intraday.bat';   At = '08:50'; Catchup = $true },
-  @{ Name = 'StockEye Closingbet'; Bat = '16_closingbet.bat'; At = '14:45'; Catchup = $false }  # 14:45 only (no catch-up when the PC was off)
+  @{ Name = 'StockEye Closingbet'; Bat = '16_closingbet.bat'; At = '14:45'; Catchup = $false },  # 14:45 only (no catch-up when the PC was off)
+  @{ Name = 'StockEye Archive';    Bat = '26_archive_minutes.bat'; At = '15:45'; Catchup = $true }   # + at logon: a PC that was off at 15:45 catches up (skips during market hours)
 )
 foreach ($t in $tasks) {
   if (Get-ScheduledTask -TaskName $t.Name -ErrorAction SilentlyContinue) {

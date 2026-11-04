@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%9A%97%3C/text%3E%3C/svg%3E">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>실기시험 시뮬레이터 - TV</title>
+<style>
+  :root { --bg:#0d1117; --panel:rgba(13,17,23,.72); --line:rgba(255,255,255,.14); --txt:#f0f3f6; --sub:#9aa7b4; --good:#3ddc84; --bad:#ff5a52; --amber:#ffb020; --acc:#4da3ff; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--txt); font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif; overflow:hidden; }
+  canvas#view { position:fixed; inset:0; width:100vw; height:100vh; display:block; }
+  .hud { position:fixed; pointer-events:none; }
+  .box { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:12px 16px; backdrop-filter: blur(6px); }
+  #top { left:2vw; top:2vh; max-width:27vw; font-size:clamp(13px,1.2vw,24px); line-height:1.5; }
+  #instr { left:50%; top:2vh; transform:translateX(-50%); max-width:40vw; text-align:center; font-size:clamp(17px,1.9vw,38px); font-weight:700; }
+  #instr.task { border-color:var(--acc); } #instr.go { border-color:var(--good); } #instr.bad { border-color:var(--bad); color:#ffd6d3; }
+  #hint { left:50%; top:calc(2vh + clamp(60px,6vw,110px)); transform:translateX(-50%); font-size:clamp(14px,1.4vw,26px); color:var(--amber); opacity:0; transition:opacity .3s; }
+  #panel { left:2vw; bottom:2vh; min-width:26vw; }
+  #panel .speed { font-size:clamp(40px,5vw,96px); font-weight:800; display:inline-block; line-height:1; }
+  #panel .speed small, #panel .gear small { font-size:.3em; color:var(--sub); margin-left:6px; font-weight:600; }
+  #panel .gear { display:inline-block; margin-left:2vw; font-size:clamp(30px,3.4vw,64px); font-weight:800; color:var(--acc); }
+  #panel .inds { margin-top:10px; display:flex; gap:6px; flex-wrap:wrap; }
+  .ind { font-size:clamp(12px,1vw,20px); padding:3px 9px; border-radius:8px; border:1px solid var(--line); color:var(--sub); }
+  .ind.on { color:#fff; background:rgba(61,220,132,.25); border-color:var(--good); }
+  .ind.amber { color:#111; background:var(--amber); border-color:var(--amber); }
+  .ind.red { color:#fff; background:rgba(255,90,82,.35); border-color:var(--bad); }
+  #panel .pedals { margin-top:8px; font-size:clamp(12px,1vw,20px); color:var(--sub); }
+  #log { right:2vw; top:2vh; width:26vw; max-height:46vh; overflow:hidden; font-size:clamp(13px,1.1vw,22px); display:flex; flex-direction:column; gap:4px; }
+  #log div { padding:5px 10px; border-radius:8px; background:var(--panel); border-left:4px solid var(--sub); }
+  #log .bad { border-color:var(--bad); } #log .fail { border-color:var(--bad); background:rgba(120,20,20,.75); } #log .ok { border-color:var(--good); } #log .info { border-color:var(--acc); }
+  #mini { right:2vw; bottom:2vh; width:clamp(160px,17vw,340px); height:clamp(160px,17vw,340px); padding:0; overflow:hidden; }
+  #mini canvas { width:100%; height:100%; }
+  .good { color:var(--good); } .bad { color:var(--bad); }
+  .chip { display:inline-block; min-width:1.6em; text-align:center; border-radius:6px; margin-right:3px; border:1px solid var(--line); }
+  .chip.good { background:rgba(61,220,132,.3); } .chip.bad { background:rgba(255,90,82,.35); } .chip.cur { border-color:var(--acc); background:rgba(77,163,255,.3); }
+  #toast { left:50%; bottom:22vh; transform:translateX(-50%); font-size:clamp(16px,1.6vw,30px); opacity:0; transition:opacity .25s; }
+  #result { inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); pointer-events:none; }
+  #result .card { min-width:40vw; max-width:70vw; text-align:center; font-size:clamp(16px,1.5vw,28px); line-height:1.6; padding:3vh 3vw; }
+  #result h1 { margin:0 0 1vh; font-size:clamp(40px,5vw,96px); }
+  #connect { inset:0; display:flex; align-items:center; justify-content:center; background:radial-gradient(circle at 30% 20%, #1c2a44, #0b0f16 70%); pointer-events:auto; }
+  #connect .wrap { display:flex; gap:5vw; align-items:center; }
+  #connect h1 { font-size:clamp(28px,3.4vw,64px); margin:0 0 2vh; }
+  #connect p { font-size:clamp(16px,1.5vw,28px); color:var(--sub); line-height:1.6; margin:0 0 1.2vh; }
+  #connect .code { color:#ffd84a; font-weight:800; font-size:1.6em; letter-spacing:.15em; margin:0 .2em; }
+  #connect .url { color:#fff; font-weight:700; font-size:clamp(18px,1.8vw,34px); }
+  #connect img { width:clamp(200px,22vw,420px); background:#fff; border-radius:16px; padding:12px; }
+  #connect .dot { display:inline-block; width:.7em; height:.7em; border-radius:50%; background:var(--bad); margin-right:.4em; }
+  #connect .dot.on { background:var(--good); }
+  #connect .menu { margin-top:3vh; display:flex; flex-wrap:wrap; gap:10px; }
+  #connect .menu span { padding:6px 14px; border-radius:20px; border:1px solid var(--line); font-size:clamp(14px,1.2vw,22px); }
+  #keys { position:fixed; left:2vw; bottom:1vh; font-size:13px; color:#ffffff66; }
+</style>
+<script>if (!/\/$|\.html$/.test(location.pathname)) location.replace(location.pathname + '/' + location.search);</script>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+<script src="./config.js"></script>
+<script src="./vendor/peerjs.min.js"></script>
+<script src="./vendor/qrcode.js"></script>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="top" class="hud box"></div>
+<div id="instr" class="hud box">휴대폰을 연결하세요</div>
+<div id="hint" class="hud box"></div>
+<div id="panel" class="hud box"></div>
+<div id="log" class="hud"></div>
+<div id="mini" class="hud box"><canvas width="340" height="340"></canvas></div>
+<div id="toast" class="hud box"></div>
+<div id="result" class="hud"><div class="card box"><h1></h1><div class="body"></div></div></div>
+<div id="connect" class="hud">
+  <div class="wrap">
+    <div>
+      <h1>🚗 운전면허 · 🚁 드론 실기시험 시뮬레이터</h1>
+      <p>① 휴대폰과 이 화면 모두 인터넷에 연결 (Wi-Fi·데이터 상관없음)</p>
+      <p>② 오른쪽 QR 코드를 휴대폰 카메라로 스캔 (또는 주소 입력)</p>
+      <p class="url" id="url">주소 확인 중…</p>
+      <p>방 코드 <span class="code" id="code">····</span> (QR 대신 휴대폰에서 직접 입력 가능)</p>
+      <p>③ 휴대폰에서 시험 종류를 고르면 시작합니다</p>
+      <p><span class="dot" id="pdot"></span><span id="pstat">휴대폰 연결 대기 중</span></p>
+      <div class="menu"><span>1종 보통(수동)</span><span>2종 보통(자동)</span><span>1종 대형(버스)</span><span>드론 1종</span><span>드론 2종</span></div>
+    </div>
+    <img id="qr" alt="QR">
+  </div>
+</div>
+<div id="keys"></div>
+<script type="module" src="./tv.js"></script>
+</body>
+</html>

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%9A%97%3C/text%3E%3C/svg%3E">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0d1117">
+<title>조종기 - 실기시험 시뮬레이터</title>
+<style>
+  :root { --bg:#0d1117; --card:#161b22; --line:#2b333d; --txt:#f0f3f6; --sub:#8b98a5; --acc:#4da3ff; --good:#3ddc84; --bad:#ff5a52; --amber:#ffb020; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--txt); font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif; overflow:hidden; touch-action:none; overscroll-behavior:none; }
+  .screen { position:fixed; inset:0; display:none; padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  .screen.on { display:flex; }
+  button { font-family:inherit; color:var(--txt); background:var(--card); border:1px solid var(--line); border-radius:12px; font-size:15px; font-weight:700; padding:0; touch-action:none; }
+  button.on { background:rgba(61,220,132,.22); border-color:var(--good); color:#dfffe9; }
+  button.amber { background:var(--amber); color:#111; border-color:var(--amber); }
+  button.red { background:rgba(255,90,82,.25); border-color:var(--bad); }
+  button:active { filter:brightness(1.4); }
+
+  /* 시작 메뉴 */
+  #menu { flex-direction:column; overflow:auto; padding:16px; gap:12px; touch-action:pan-y; }
+  #menu h1 { margin:4px 0; font-size:22px; }
+  #menu .conn { font-size:14px; color:var(--sub); }
+  #menu .dot { display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--bad); margin-right:6px; }
+  #menu .dot.on { background:var(--good); }
+  #menu .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:10px; }
+  #menu .grid button { padding:16px 10px; text-align:left; font-size:17px; line-height:1.4; }
+  #menu .grid button small { display:block; font-weight:400; color:var(--sub); font-size:12.5px; }
+  .seg { display:flex; gap:8px; } .seg button { flex:1; padding:12px; }
+  .seg button.sel { background:var(--acc); border-color:var(--acc); color:#fff; }
+  #menu .tip { font-size:13px; color:var(--sub); line-height:1.6; }
+
+  /* 상단바 */
+  .bar { position:absolute; left:0; right:0; top:0; height:44px; display:flex; align-items:center; gap:8px; padding:4px 8px; background:#0b0f15; border-bottom:1px solid var(--line); z-index:2; }
+  .bar button { height:36px; min-width:44px; padding:0 10px; font-size:14px; }
+  .bar .stat { font-size:14px; white-space:nowrap; } .bar .stat b { font-size:18px; color:#fff; }
+  .bar .instr { flex:1; font-size:13px; color:var(--amber); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .body { position:absolute; left:0; right:0; top:44px; bottom:0; display:flex; padding:8px; gap:8px; }
+
+  /* 자동차 */
+  #wheelBox { flex:0 0 auto; display:flex; align-items:center; justify-content:center; aspect-ratio:1; height:100%; max-width:42vw; position:relative; }
+  #wheel { width:94%; height:94%; border-radius:50%; position:relative; background:radial-gradient(circle, #222a33 0 30%, transparent 31%), conic-gradient(from 0deg, #2c3540, #1b2128, #2c3540); border:14px solid #3a4552; box-shadow:0 0 0 2px #000 inset; touch-action:none; }
+  #wheel .spoke { position:absolute; left:50%; top:50%; width:46%; height:12px; background:#3a4552; transform-origin:0 50%; }
+  #wheel .mark { position:absolute; left:50%; top:-14px; width:12px; height:22px; margin-left:-6px; background:var(--bad); border-radius:3px; }
+  #wheel .hub { position:absolute; left:50%; top:50%; width:26%; height:26%; transform:translate(-50%,-50%); border-radius:50%; background:#11161c; border:2px solid #3a4552; display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--sub); }
+  #wheelVal { position:absolute; bottom:0; left:0; right:0; text-align:center; font-size:12px; color:var(--sub); }
+  #carMid { flex:1; display:grid; grid-template-columns:repeat(2,1fr); grid-auto-rows:1fr; gap:6px; min-width:0; }
+  #carMid button { font-size:13px; }
+  #gearBox { flex:0 0 auto; width:min(11vw,84px); display:grid; gap:6px; }
+  #gearBox button { font-size:20px; }
+  #gearBox button.sel { background:var(--acc); border-color:var(--acc); color:#fff; }
+  #pedals { flex:0 0 auto; display:flex; gap:8px; }
+  .pedal { width:min(10.5vw,84px); height:100%; border-radius:14px; border:2px solid var(--line); background:#12171d; position:relative; overflow:hidden; touch-action:none; display:flex; align-items:flex-start; justify-content:center; padding-top:8px; font-weight:800; font-size:14px; }
+  .pedal .fill { position:absolute; left:0; right:0; bottom:0; height:0; background:rgba(255,255,255,.15); }
+  .pedal.thr .fill { background:rgba(61,220,132,.45); } .pedal.brk .fill { background:rgba(255,90,82,.5); } .pedal.clu .fill { background:rgba(77,163,255,.5); }
+  .pedal span { position:relative; z-index:1; }
+  .pedal.brk { width:min(13vw,100px); }
+
+  /* 드론 */
+  .stickArea { flex:1; display:flex; align-items:center; justify-content:center; position:relative; touch-action:none; }
+  .stick { width:min(40vh,42vw); height:min(40vh,42vw); max-width:300px; max-height:300px; min-width:150px; min-height:150px; border-radius:24px; background:repeating-linear-gradient(0deg, transparent 0 24px, rgba(255,255,255,.04) 24px 25px), repeating-linear-gradient(90deg, transparent 0 24px, rgba(255,255,255,.04) 24px 25px), #12171d; border:2px solid var(--line); position:relative; touch-action:none; }
+  .stick::before, .stick::after { content:""; position:absolute; background:rgba(255,255,255,.12); }
+  .stick::before { left:50%; top:8px; bottom:8px; width:2px; } .stick::after { top:50%; left:8px; right:8px; height:2px; }
+  .knob { position:absolute; width:64px; height:64px; margin:-32px 0 0 -32px; left:50%; top:50%; border-radius:50%; background:radial-gradient(circle at 35% 35%, #6c7a89, #2a323b); border:2px solid #9aa7b4; z-index:1; }
+  .stickLabel { position:absolute; font-size:11px; color:var(--sub); }
+  .stickLabel.t { top:4px; left:50%; transform:translateX(-50%); } .stickLabel.b { bottom:4px; left:50%; transform:translateX(-50%); }
+  .stickLabel.l { left:6px; top:50%; transform:translateY(-50%); } .stickLabel.r { right:6px; top:50%; transform:translateY(-50%); }
+  #droneMid { flex:0 0 auto; width:min(22vw,140px); display:grid; gap:6px; grid-auto-rows:1fr; }
+
+  /* 오버레이 메뉴 */
+  #overlay { position:fixed; inset:0; background:rgba(0,0,0,.75); display:none; z-index:10; align-items:center; justify-content:center; }
+  #overlay.on { display:flex; }
+  #overlay .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; width:min(560px,94vw); max-height:92vh; overflow:auto; touch-action:pan-y; }
+  #overlay h2 { margin:4px 0 10px; font-size:18px; }
+  #overlay .row { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; margin-bottom:12px; }
+  #overlay .row button { padding:12px 8px; }
+  #overlay h3 { margin:8px 0 6px; font-size:14px; color:var(--sub); font-weight:600; }
+
+  #rotate { position:fixed; inset:0; background:var(--bg); display:none; z-index:20; align-items:center; justify-content:center; flex-direction:column; gap:14px; text-align:center; padding:20px; }
+  #rotate .ph { width:60px; height:100px; border:4px solid var(--txt); border-radius:12px; animation:rot 1.6s infinite ease-in-out; }
+  @keyframes rot { 0%,30% { transform:rotate(0); } 60%,100% { transform:rotate(-90deg); } }
+  @media (orientation:portrait) { body.playing #rotate { display:flex; } }
+  #flash { position:fixed; inset:0; pointer-events:none; z-index:9; box-shadow:inset 0 0 0 0 transparent; transition:box-shadow .2s; }
+  #ptoast { position:fixed; left:50%; bottom:12px; transform:translateX(-50%); background:#000c; border:1px solid var(--line); border-radius:10px; padding:6px 12px; font-size:13px; z-index:11; opacity:0; transition:opacity .3s; pointer-events:none; white-space:nowrap; }
+</style>
+</head>
+<body>
+<!-- 시작 메뉴 -->
+<div id="menu" class="screen on">
+  <h1>🎮 실기시험 시뮬레이터 조종기</h1>
+  <div class="conn"><span class="dot" id="dot"></span><span id="conn">서버 연결 중…</span></div>
+  <div id="roomBox" style="display:none;gap:8px"><input id="roomIn" inputmode="numeric" maxlength="6" placeholder="방 코드 (예: 4821)" style="flex:1;font-size:20px;padding:10px;border-radius:10px;border:1px solid #2b333d;background:#0b0f15;color:#fff;user-select:text;-webkit-user-select:text;touch-action:auto"><button id="roomGo" style="padding:0 18px">연결</button></div>
+  <div class="seg" id="modeSeg"><button data-mode="practice" class="sel">연습 모드</button><button data-mode="exam">시험 모드</button></div>
+  <div class="grid">
+    <button data-kind="car" data-variant="1종보통">🚗 1종 보통<small>수동변속 · 클러치 · 장내기능</small></button>
+    <button data-kind="car" data-variant="2종보통">🚙 2종 보통<small>자동변속 · 장내기능</small></button>
+    <button data-kind="car" data-variant="1종대형">🚌 1종 대형<small>버스 · 굴절/S자/경사로</small></button>
+    <button data-kind="drone" data-variant="드론1종">🚁 드론 1종<small>25kg 초과 · 8개 실기항목</small></button>
+    <button data-kind="drone" data-variant="드론2종">🛸 드론 2종<small>7~25kg · 8개 실기항목</small></button>
+  </div>
+  <div class="tip">· 휴대폰을 <b>가로</b>로 돌려서 사용하세요. 시작하면 전체화면으로 바뀝니다.<br>· 연습 모드: 실격돼도 계속 진행, 구간/항목 바로가기 가능 · 목표지점 표시<br>· 시험 모드: 실제 시험처럼 실격·불합격 시 종료</div>
+</div>
+
+<!-- 자동차 조종기 -->
+<div id="car" class="screen">
+  <div class="bar">
+    <button data-open>☰</button>
+    <div class="stat"><b id="cSpd">0</b> km/h · <b id="cGear">P</b> · <span id="cScore">100</span>점</div>
+    <div class="instr" id="cInstr"></div>
+    <button data-cmd="camera">📷</button>
+  </div>
+  <div class="body">
+    <div id="wheelBox"><div id="wheel"><div class="mark"></div><div class="spoke" style="transform:rotate(0deg)"></div><div class="spoke" style="transform:rotate(180deg)"></div><div class="spoke" style="transform:rotate(90deg)"></div><div class="hub">핸들</div></div><div id="wheelVal">0°</div></div>
+    <div id="carMid">
+      <button data-cmd="signal" data-arg="L" id="bSigL" style="font-size:22px">◀</button>
+      <button data-cmd="signal" data-arg="R" id="bSigR" style="font-size:22px">▶</button>
+      <button data-cmd="engine" id="bEngine">시동</button>
+      <button data-cmd="belt" id="bBelt">안전띠</button>
+      <button data-cmd="pbrake" id="bPbrake">주차브레이크</button>
+      <button data-cmd="hazard" id="bHazard">비상등</button>
+      <button data-cmd="lights" id="bLights">전조등</button>
+      <button data-cmd="wiper" id="bWiper">와이퍼</button>
+    </div>
+    <div id="gearBox"></div>
+    <div id="pedals">
+      <div class="pedal clu" id="pClu"><div class="fill"></div><span>클러치</span></div>
+      <div class="pedal brk" id="pBrk"><div class="fill"></div><span>브레이크</span></div>
+      <div class="pedal thr" id="pThr"><div class="fill"></div><span>가속</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 드론 조종기 -->
+<div id="drone" class="screen">
+  <div class="bar">
+    <button data-open>☰</button>
+    <div class="stat">고도 <b id="dAlt">0.0</b>m · <span id="dMode">ATTI</span></div>
+    <div class="instr" id="dInstr"></div>
+    <button data-cmd="camera">📷</button>
+  </div>
+  <div class="body">
+    <div class="stickArea"><div class="stick" id="stickL"><div class="knob"></div><span class="stickLabel t" id="lT"></span><span class="stickLabel b" id="lB"></span><span class="stickLabel l" id="lL"></span><span class="stickLabel r" id="lR"></span></div></div>
+    <div id="droneMid">
+      <button data-cmd="arm" id="bArm" class="red">시동<br>(ARM)</button>
+      <button data-cmd="fmode" id="bFmode">ATTI</button>
+      <button data-cmd="wind" id="bWind">바람<br>약함</button>
+    </div>
+    <div class="stickArea"><div class="stick" id="stickR"><div class="knob"></div><span class="stickLabel t" id="rT"></span><span class="stickLabel b" id="rB"></span><span class="stickLabel l" id="rL"></span><span class="stickLabel r" id="rR"></span></div></div>
+  </div>
+</div>
+
+<!-- 메뉴 오버레이 -->
+<div id="overlay">
+  <div class="card">
+    <h2 id="ovTitle">메뉴</h2>
+    <div class="row">
+      <button id="ovClose">▶ 계속하기</button>
+      <button data-cmd="restart" data-close>↻ 처음부터 다시</button>
+      <button data-cmd="camera">📷 카메라 전환</button>
+      <button id="ovFull">⛶ 전체화면</button>
+    </div>
+    <h3 id="jumpTitle">구간 바로가기 (연습 모드)</h3>
+    <div class="row" id="jumps"></div>
+    <h3>조종 설정</h3>
+    <div class="row" id="settings"></div>
+    <div class="row"><button id="ovHome" class="red">⌂ 시험 종류 선택으로</button></div>
+  </div>
+</div>
+
+<div id="rotate"><div class="ph"></div><div>휴대폰을 <b>가로</b>로 돌려주세요</div></div>
+<div id="flash"></div>
+<div id="ptoast"></div>
+<script src="./config.js"></script>
+<script src="./vendor/peerjs.min.js"></script>
+<script src="./phone.js"></script>
+</body>
+</html>

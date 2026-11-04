@@ -4,7 +4,7 @@
 #                웹 배포: VERCEL_TOKEN (권장) 또는 CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID
 #                (둘 다 없으면 웹 배포만 건너뜀, APK 는 Actions 결과물로 받기)
 # Variables(선택): PAGES_PROJECT = 웹 주소 이름 (기본 stockeye), WEB_URL = 웹 주소 (인증 메일 링크용)
-# 로또·게임만 바뀐 push (지금 배포된 주식눈 커밋 이후 app/web/lotto/ · app/web/games/ 밖은 그대로, 2026-10-16·10-19): 주식눈 빌드 번호를 안 올림
+# 로또·게임·시뮬레이터만 바뀐 push (지금 배포된 주식눈 커밋 이후 app/web/lotto/ · games/ · simulator/ 밖은 그대로, 2026-10-16·10-19·11-04): 주식눈 빌드 번호를 안 올림
 #   → 지금 배포된 version.json 의 번호·시각을 그대로 쓰고 stockeye.apk 도 배포된 것을 받아 그대로 다시 올림
 #     (주식눈 앱에 '업데이트 있어요' 안내가 안 뜸). 배포된 걸 못 받으면 평소처럼 새 번호로 빌드
 name: app-build

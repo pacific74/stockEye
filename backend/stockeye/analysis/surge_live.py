@@ -11,6 +11,7 @@ import logging
 
 log = logging.getLogger(__name__)
 LIVE_START, LIVE_END = "09:00", "15:21"
+PRE_RANK, PRE_GAP, PRE_GAP_MAX = 5.0, 10.0, 10      # 아침 보강 기준 (프리마켓 %)
 LEVELS = (("lu", 29.0, "상한가 도달"), ("h20", 20.0, "+20%"), ("h15", 15.0, "+15%"), ("h10", 10.0, "+10%"))
 
 
@@ -54,6 +55,38 @@ class SurgeWatch:
     def codes(self) -> list[str]:
         return [i["code"] for i in self.items]
 
+    def add_pre(self, pre: dict, scores: list | None, names: dict | None = None) -> list[dict]:
+        """아침 보강 (SG-1.1) — NXT 프리마켓 등락(pre = {코드: [가격, 전일종가 대비 %]})을 목록에 붙이고, 갭으로 새로 지켜볼 종목을 더함.
+          · 목록 21~100위 중 프리마켓 +PRE_RANK% 이상 → 'rank' 보강
+          · 목록 밖 전체 중 프리마켓 +PRE_GAP% 이상 상위 PRE_GAP_MAX개 → 'gap' 보강
+        저녁 일봉으로는 못 보는 밤사이 뉴스·공시 갭을 반영하려는 것. 반환 = 새로 더한 종목"""
+        names = names or {}
+        have = {i["code"] for i in self.items}
+        for it in self.items:
+            v = pre.get(it["code"])
+            if v:
+                it["pre"] = v[1]
+        rk = {c: (i + 1, sc) for i, (c, sc) in enumerate(scores or [])}
+        add = []
+        for c, (r, sc) in rk.items():
+            v = pre.get(c)
+            if c in have or r <= len(self.items) or not v or v[1] < PRE_RANK:
+                continue
+            add.append(self._extra(c, v, names, "rank", r, sc))
+        gap = [(c, v) for c, v in pre.items() if c not in have and c not in rk and v and v[1] >= PRE_GAP]
+        gap.sort(key=lambda x: -x[1][1])
+        for c, v in gap[:PRE_GAP_MAX]:
+            add.append(self._extra(c, v, names, "gap", None, None))
+        self.items += add
+        return add
+
+    @staticmethod
+    def _extra(code: str, v: list, names: dict, src: str, rank, score) -> dict:
+        px, pct = float(v[0]), float(v[1])
+        return {"rank": rank, "code": code, "name": names.get(code, code), "close": round(px / (1 + pct / 100), 2),
+                "score": score, "pre": pct, "src": src,
+                "reasons": [f"프리마켓 {pct:+.1f}%", "점수 %d위" % rank if rank else "목록 밖 갭"]}
+
     def update(self, quotes: list[dict], hm: str) -> list[tuple[dict, str]]:
         """시세(코드별 open/high/low/close) 반영 → 새로 닿은 레벨 [(item, 레벨이름)] (알림 대상은 호출쪽이 고름)"""
         q = {str(r["code"]): r for r in quotes}
@@ -63,7 +96,7 @@ class SurgeWatch:
             pc = it.get("close")
             if not r or not pc:
                 rows.append({"code": it["code"], "name": it.get("name"), "rank": it.get("rank"), "score": it.get("score"),
-                             "status": "시세 없음"})
+                             "status": "시세 없음", "pre": it.get("pre"), "src": it.get("src")})
                 continue
             chg, hi = (r["close"] / pc - 1) * 100, (r["high"] / pc - 1) * 100
             lo, gap = (r["low"] / pc - 1) * 100, (r["open"] / pc - 1) * 100
@@ -74,14 +107,17 @@ class SurgeWatch:
                     new.append((it, label))
             rows.append({"code": it["code"], "name": it.get("name"), "rank": it.get("rank"), "score": it.get("score"),
                          "price": r["close"], "chg": round(chg, 2), "high": round(hi, 2), "low": round(lo, 2), "gap": round(gap, 2),
-                         "status": stage(chg, hi), "first": dict(f), "reasons": it.get("reasons")})
+                         "status": stage(chg, hi), "first": dict(f), "reasons": it.get("reasons"),
+                         "pre": it.get("pre"), "src": it.get("src")})
         self.rows = rows
         return new
 
     def payload(self, hm: str) -> dict:
         n = len(self.rows)
         cnt = lambda k: sum(1 for r in self.rows if k in (r.get("first") or {}))  # noqa: E731
-        return {"date": self.day, "time": hm, "list_date": self.list_date, "n": n,
+        ex = [r for r in self.rows if r.get("src")]
+        return {"date": self.day, "time": hm, "list_date": self.list_date, "n": n, "n_extra": len(ex),
+                "extra_reached": sum(1 for r in ex if "lu" in (r.get("first") or {})),
                 "reached": cnt("lu"), "h20": cnt("h20"), "h15": cnt("h15"), "h10": cnt("h10"),
                 "locked": sum(1 for r in self.rows if r.get("status") == "상한가"), "rows": self.rows}
 
@@ -117,6 +153,14 @@ def morning_text(p: dict) -> tuple[str, str]:
     if top:
         lines.append("오늘 관찰 상위: " + ", ".join(f"{i['rank']}.{i['name']}" for i in top))
     return "급등예상 아침 요약", "\n".join(lines)
+
+
+def pre_text(add: list[dict], n_pre: int) -> tuple[str, str]:
+    """아침 보강 알림 (제목, 본문)"""
+    if not add:
+        return "급등예상 아침 보강", f"프리마켓 {n_pre}종목 확인 — 갭으로 새로 더할 종목 없음"
+    lines = [f"{'점수 %d위' % a['rank'] if a.get('rank') else '목록 밖'} · {a['name']} 프리마켓 {a['pre']:+.1f}%" for a in add[:12]]
+    return "급등예상 아침 보강", f"프리마켓 {n_pre}종목 확인 — {len(add)}종목 더 지켜봄\n" + "\n".join(lines)
 
 
 def save_day(sb, w: SurgeWatch) -> None:

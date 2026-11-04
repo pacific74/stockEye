@@ -39,3 +39,25 @@ def test_morning_text():
     assert "아침" in t and "상한가 닿음 10.0%" in b and "다(100위 밖)" in b and "1.가" in b
     t2, b2 = sl.morning_text({"items": [], "prev": None})
     assert "아직 없음" in b2
+
+
+def test_add_pre_rank_and_gap():
+    from stockeye.analysis import surge_live as sl
+    items = [{"rank": i + 1, "code": f"{i:06d}", "name": f"n{i}", "close": 1000.0, "score": 5.0, "reasons": []} for i in range(3)]
+    w = sl.SurgeWatch(items, "2026-11-04", "2026-11-05")
+    scores = [[f"{i:06d}", 9 - i] for i in range(10)]          # 000000.. 순위
+    pre = {"000001": [1030.0, 3.0], "000005": [1080.0, 8.0], "000006": [1010.0, 1.0],
+           "999991": [1150.0, 15.0], "999992": [1070.0, 7.0], "000002": [1100.0, 10.0]}
+    add = w.add_pre(pre, scores, {"999991": "갭주"})
+    codes = {a["code"]: a for a in add}
+    assert set(codes) == {"000005", "999991"}                    # 21위 이상 +5% / 목록 밖 +10% 만
+    assert codes["000005"]["src"] == "rank" and codes["000005"]["rank"] == 6
+    assert codes["999991"]["src"] == "gap" and abs(codes["999991"]["close"] - 1000.0) < 0.01
+    assert w.items[1]["pre"] == 3.0                              # 기존 목록에도 프리마켓 등락 붙음
+    q = [{"code": "999991", "open": 1200, "high": 1300, "low": 1150, "close": 1300}]
+    w.update(q, "09:10")
+    r = {x["code"]: x for x in w.rows}["999991"]
+    assert r["src"] == "gap" and r["status"] == "상한가"
+    assert w.payload("09:10")["n_extra"] == 2
+    t, b = sl.pre_text(add, 2000)
+    assert "2종목" in b

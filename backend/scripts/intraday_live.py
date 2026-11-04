@@ -246,6 +246,37 @@ def main():
         except Exception as e:  # noqa: BLE001
             print(f"⚠ 급등예상 아침 알림 실패: {e}")
 
+    sg_pre_done = [False]
+
+    def surge_pre(pre: dict) -> None:
+        """NXT 프리마켓이 모이면 한 번 — 급등예상 목록에 갭 반영 + 갭으로 새로 지켜볼 종목 더하기 (재시작해도 한 번: Storage 표시)"""
+        if sg_pre_done[0] or not sg_watch or not pre:
+            return
+        sg_pre_done[0] = True
+        try:
+            day = _now().strftime("%Y-%m-%d")
+            scores = []
+            try:
+                import json as _j
+                lst = _j.loads(sb.download(f"surge/lists/{sg_watch.list_date}.json") or b"{}")
+                scores = lst.get("scores") or []
+            except Exception:  # noqa: BLE001
+                pass
+            add = sg_watch.add_pre(pre, scores, dt.names)
+            print(f"급등예상 아침 보강 {len(add)}종목 추가")
+            seen = False
+            try:
+                seen = bool(sb.download(f"surge/morning/{day}-pre.json"))
+            except Exception:  # noqa: BLE001
+                pass
+            if not seen:
+                t, body = sgl.pre_text(add, len(pre))
+                for tp in live.topics:
+                    live.q.put(lambda tp=tp, t=t, body=body: live.nt.send_topic(tp, t, body))
+                sb.upload(f"surge/morning/{day}-pre.json", b"{}", "application/json")
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠ 급등예상 아침 보강 실패: {e}")
+
     def surge_step(hm: str) -> None:
         if not sg_watch or not (sgl.LIVE_START <= hm < sgl.LIVE_END):
             return
@@ -338,6 +369,7 @@ def main():
             except Exception as e:  # noqa: BLE001
                 print(f"⚠ NXT 프리마켓 기록 실패: {e}")
         nxt_done[0] = True
+        surge_pre(pre)
         for tr in (dt.track, lc.track):
             tr.nxt_pre = pre
         hit = False

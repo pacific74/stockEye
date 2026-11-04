@@ -98,6 +98,8 @@ class _SurgeSectionState extends State<SurgeSection> {
             ]),
             Wrap(children: [
               if (live && st.isNotEmpty) _chip(t, st, surgeStatusColor(st)),
+              if (r['src'] != null) _chip(t, r['src'] == 'gap' ? '아침 갭 보강' : '아침 보강', Colors.purple),
+              if (r['pre'] is num) _chip(t, '프리마켓 ${(r['pre'] as num) >= 0 ? '+' : ''}${r['pre']}%', Colors.purple),
               if (r['score'] is num) _chip(t, '점수 ${(r['score'] as num).toStringAsFixed(1)}', Colors.grey),
               if (live && r['high'] is num) _chip(t, '고가 ${(r['high'] as num) >= 0 ? '+' : ''}${r['high']}%', Colors.grey),
               for (final (k, lb) in labels)
@@ -171,6 +173,12 @@ class _SurgeSectionState extends State<SurgeSection> {
           child: Text(
               '${f(lv['time'])} 기준 · ${f(lv['n'])}종목 중 상한가 닿음 ${f(lv['reached'])} · +20% ${f(lv['h20'])} · +15% ${f(lv['h15'])} · +10% ${f(lv['h10'])}',
               style: t.bodySmall?.copyWith(color: Colors.green)),
+        ),
+      if (liveToday && (lv['n_extra'] as num? ?? 0) > 0)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text('아침 보강 ${lv['n_extra']}종목(프리마켓 갭) 중 상한가 닿음 ${f(lv['extra_reached'])}',
+              style: t.bodySmall?.copyWith(color: Colors.purple)),
         ),
       _prevCard(context, sg),
       Padding(

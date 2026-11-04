@@ -36,9 +36,9 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
         {
           ..._withPnl(h, live['${h['code']}'], (meta['${h['code']}']?['score'] as num?)?.toDouble()),
           'market': meta['${h['code']}']?['market'] ?? h['market'],
-          // V3 기준: 매수일 포함 20거래일째 종가 매도 예정 (앞으로의 휴장일은 추정)
-          'sell_date': holdingSellDate(v3m, h['buy_date'] as String?),
-          'sell_left': tradingDaysLeft(cal, today, holdingSellDate(v3m, h['buy_date'] as String?)),
+          // V3 기준: 매수일 포함 20거래일째 종가 매도 예정 (앞으로의 휴장일은 추정) — V3 추천에서 산 종목만 (직접 추가·다른 탭 종목은 없음)
+          'sell_date': _isV3(h) ? holdingSellDate(v3m, h['buy_date'] as String?) : null,
+          'sell_left': _isV3(h) ? tradingDaysLeft(cal, today, holdingSellDate(v3m, h['buy_date'] as String?)) : null,
         },
     ];
   }
@@ -63,6 +63,13 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   }
 
   void _reload() => setState(() => _f = _load());
+
+  /// V3 추천(관심 탭 'V3')에서 산 종목인가 — 20거래일 매도 예정은 이런 종목에만
+  static bool _isV3(Json h) {
+    final o = _originOf(h);
+    final tabs = (o?['tabs'] as List? ?? const []).map((e) => '$e').toList();
+    return tabs.contains('v3') || h['list_key'] == 'v3';
+  }
 
   /// 저녁 점검(position_reviews) 또는 저장된 계획(positions.plan.origin)의 관심 출처
   static Json? _originOf(Json h) {
@@ -368,7 +375,7 @@ Future<void> showAddHoldingDialog(BuildContext context,
                   }),
               const Padding(
                 padding: EdgeInsets.only(top: 8),
-                child: Text('V3 기준: 손절·목표가 없이 매수일 포함 20거래일째 종가에 매도 예정',
+                child: Text('V3 추천에서 산 종목만: 손절·목표가 없이 매수일 포함 20거래일째 종가에 매도 예정 (직접 추가한 종목은 매도 예정일 없음)',
                     style: TextStyle(fontSize: 12, color: Colors.grey)),
               ),
             ]),

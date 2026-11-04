@@ -54,12 +54,14 @@ class LocalRepo:
 
 
 def review(holdings: list[dict], x: pd.DataFrame, as_of_date, report_index: dict | None = None,
-           max_hold_days: int = 15, calendar: list[str] | None = None) -> list[dict]:
+           max_hold_days: int = 15, calendar: list[str] | None = None, v3_ids: set | None = None) -> list[dict]:
     """보유종목 상태 점검. x = 최근일 피처 단면, report_index = 코드→(점수, 태그).
-    calendar(거래일 달력)가 있으면 V3 기준: 매수일 포함 20거래일째가 매도 예정일 → 임박·도래 알림 (손절·익절 알림 없음)"""
+    calendar(거래일 달력)가 있으면 V3 기준: 매수일 포함 20거래일째가 매도 예정일 → 임박·도래 알림 (손절·익절 알림 없음)
+    v3_ids: V3 추천에서 산 보유종목 id (2026-11-04). 주어지면 그 종목만 20거래일 매도 예정을 붙이고,
+            직접 추가한 종목·다른 관심 탭에서 산 종목은 매도 예정일·임박 알림 없이 '보유 중' (None 이면 예전처럼 전부)"""
     report_index = report_index or {}
     if calendar is not None:
-        return _review_v3(holdings, x, as_of_date, report_index, calendar)
+        return _review_v3(holdings, x, as_of_date, report_index, calendar, v3_ids)
     out = []
     for h in holdings:
         code = h["code"]
@@ -106,7 +108,7 @@ def review(holdings: list[dict], x: pd.DataFrame, as_of_date, report_index: dict
     return out
 
 
-def _review_v3(holdings, x, as_of_date, report_index, cal) -> list[dict]:
+def _review_v3(holdings, x, as_of_date, report_index, cal, v3_ids=None) -> list[dict]:
     from .engine import v3
     today = pd.Timestamp(as_of_date).strftime("%Y-%m-%d")
     out = []
@@ -125,7 +127,10 @@ def _review_v3(holdings, x, as_of_date, report_index, cal) -> list[dict]:
                      "pnl": int((px - avg) * float(h.get("qty") or 0)),
                      "ret1_pct": round(float(r["ret1"]) * 100, 2) if pd.notna(r["ret1"]) else None})
         bd = (h.get("buy_date") or "")[:10]
-        sell = v3.nth_day(cal, bd, v3.RULES["hold"]) if bd else None
+        is_v3 = v3_ids is None or h.get("id") in v3_ids          # 20거래일 매도 예정은 V3 추천에서 산 종목만
+        sell = v3.nth_day(cal, bd, v3.RULES["hold"]) if bd and is_v3 else None
+        if bd and not is_v3:
+            item["hold_days"] = sum(1 for d in cal if bd <= d <= today)
         if sell:
             left = sum(1 for d in cal if today < d <= sell)
             item.update({"sell_date": sell, "days_left": left,

@@ -190,8 +190,10 @@ def publish_journal(sb: Supabase, cfg: dict, journal, pit=None, report: dict | N
     if cal is None and report.get("v3"):
         from ..engine import v3 as _v3
         cal = _v3.calendar(pit.trading_dates())
-    reviews = pf.review(holds, x, report["date"], idx, cfg["backtest"]["max_hold_days"], calendar=cal)
     origins = watch_origins(sb, opens)                    # 관심 탭에서 산 종목: 어느 탭 · 그때 매수구간 · 손절가
+    # 20거래일 매도 예정은 V3 추천에서 산 종목만 (직접 추가·다른 관심 탭에서 산 종목은 안 붙임 · 2026-11-04)
+    v3_ids = {p["id"] for p in opens if "v3" in ((origins.get(p["id"]) or {}).get("tabs") or []) or p.get("list_key") == "v3"}
+    reviews = pf.review(holds, x, report["date"], idx, cfg["backtest"]["max_hold_days"], calendar=cal, v3_ids=v3_ids)
     for r in reviews:
         r["origin"] = origins.get(r["id"])
     try:    # 장마감 리포트 하단 '보유종목 코멘트' (지지선·매물대·업종)

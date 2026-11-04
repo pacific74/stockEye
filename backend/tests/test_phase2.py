@@ -142,3 +142,19 @@ def test_review_breakeven_after_t1():
     assert r["status"] == "매수가매도" and not any("손절" in a for a in r["alerts"])
     r = review([{**h, "max_price": 104.0, "stop": 98.5}], x, "2026-10-14")[0]
     assert r["status"] == "손절 검토"
+
+
+def test_review_v3_sell_date_only_for_v3_origin():
+    """20거래일 매도 예정은 V3 추천에서 산 종목만 — 직접 추가·다른 탭 종목은 매도 예정일·임박 없이 '보유 중' (2026-11-04)"""
+    import pandas as pd
+    from stockeye.portfolio import review
+    cal = [d.strftime("%Y-%m-%d") for d in pd.bdate_range("2026-09-01", periods=60)]
+    x = pd.DataFrame([{"close": 100.0, "low": 99.0, "high": 101.0, "ret1": 0.0, "sma20": float("nan"), "rsi14": 50.0}], index=["A"])
+    hs = [{"id": "v", "code": "A", "avg_price": 100.0, "qty": 1, "buy_date": "2026-09-01"},
+          {"id": "m", "code": "A", "avg_price": 100.0, "qty": 1, "buy_date": "2026-09-01"}]
+    today = cal[25]
+    r = {h["id"]: h for h in review(hs, x, today, {}, calendar=cal, v3_ids={"v"})}
+    assert r["v"]["status"] == "매도 예정일" and r["v"]["sell_date"]
+    assert r["m"]["status"] == "보유 중" and "sell_date" not in r["m"] and not r["m"]["alerts"] and r["m"]["hold_days"] > 20
+    r_old = review(hs, x, today, {}, calendar=cal)                      # v3_ids 없으면 예전처럼 전부
+    assert all(h["status"] == "매도 예정일" for h in r_old)

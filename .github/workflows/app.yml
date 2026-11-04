@@ -57,7 +57,7 @@ jobs:
             echo "배포된 커밋($OLD_COMMIT)을 못 찾음 → 평소처럼 빌드"; exit 0; fi
           CHANGED=$(git diff --name-only "$OLD_COMMIT" "$GITHUB_SHA" -- . ../.github/workflows/app.yml || true)
           echo "배포된 주식눈($OLD_COMMIT · 빌드 $OLD_BUILD) 이후 바뀐 파일:"; echo "$CHANGED"
-          if [ -z "$CHANGED" ] || echo "$CHANGED" | grep -qvE '^app/web/(lotto|games)/'; then
+          if [ -z "$CHANGED" ] || echo "$CHANGED" | grep -qvE '^app/web/(lotto|games|simulator)/'; then
             echo "주식눈 코드도 바뀜 → 평소처럼 새 번호로 빌드"; exit 0; fi
           if curl -fsSL "$SITE/stockeye.apk" -o "$RUNNER_TEMP/keep/stockeye.apk" \
              && [ "$(stat -c %s "$RUNNER_TEMP/keep/stockeye.apk")" -gt 1000000 ]; then

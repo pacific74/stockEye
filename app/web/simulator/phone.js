@@ -5,47 +5,79 @@
     get(k, d) { try { const v = localStorage.getItem('sim.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
     set(k, v) { try { localStorage.setItem('sim.' + k, JSON.stringify(v)); } catch { /* 저장 불가 무시 */ } },
   };
-  const cfg = { autoCenter: store.get('autoCenter', true), wheelRange: store.get('wheelRange', 540), stickMode: store.get('stickMode', 2) };
+  const cfg = { autoCenter: store.get('autoCenter', true), wheelRange: store.get('wheelRange', 540), stickMode: 2 };
 
   const CFG = window.SIM_CONFIG;
   let peer = null, conn = null, scene = null, mode = 'practice', st = {};
   let room = new URLSearchParams(location.search).get('room') || store.get('room', '');
-  let everConnected = false, retryT = 0, openT = 0;
+  let everConnected = false, retryT = 0, openT = 0, lastRx = 0, missCount = 0, linkUp = false;
   // ---------------- 통신 (PeerJS / WebRTC) ----------------
-  function status(text, ok) { $('conn').textContent = text; $('dot').className = 'dot' + (ok ? ' on' : ''); }
+  function status(text, ok) {
+    $('conn').textContent = text; $('dot').className = 'dot' + (ok ? ' on' : '');
+    linkUp = !!ok;
+    const nb = $('netBanner'); if (nb) { nb.textContent = text; nb.style.display = ok ? 'none' : 'block'; }
+  }
+  function freshPeer() { try { peer && peer.destroy(); } catch { /* 무시 */ } peer = null; }
   function ensurePeer(cb) {
-    if (peer && !peer.destroyed && peer.open) return cb();
-    if (peer && !peer.destroyed) { peer.once('open', cb); return; }
-    peer = new Peer({ ...CFG.peer, config: { iceServers: CFG.iceServers }, debug: 0 });
-    peer.on('open', cb);
-    peer.on('disconnected', () => { setTimeout(() => { try { peer.reconnect(); } catch { /* 무시 */ } }, 1500); });
-    peer.on('error', (e) => {
+    if (peer && !peer.destroyed && peer.open && !peer.disconnected) return cb();
+    if (peer && (peer.destroyed || peer.disconnected)) freshPeer();   // 화면 꺼짐 등으로 끊긴 연결은 새로 만든다
+    if (peer) { peer.once('open', cb); return; }
+    const p = peer = new Peer({ ...CFG.peer, config: { iceServers: CFG.iceServers }, debug: 0 });
+    p.on('open', cb);
+    p.on('disconnected', () => { if (peer === p) { freshPeer(); scheduleRetry(1000); } });
+    p.on('error', (e) => {
+      if (peer !== p) return;
       if (e.type === 'peer-unavailable') {
-        if (everConnected) { status(`방 ${room} · TV 화면 다시 찾는 중…`, false); scheduleRetry(2500); }
-        else { askRoom('방 코드가 맞지 않거나 TV 화면이 꺼져 있습니다. TV의 코드를 다시 입력하세요'); }
-      } else if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(e.type)) {
+        missCount++;
+        if (everConnected && missCount < 8) { status(`방 ${room} · TV 화면 다시 찾는 중… (${missCount})`, false); scheduleRetry(2500); }
+        else { everConnected = false; askRoom('TV 화면을 찾지 못했습니다. TV 화면의 방 코드를 확인해서 입력하세요 (TV를 새로 열었으면 코드가 바뀌었을 수 있어요)'); }
+      } else {
         status('인터넷 연결을 확인하세요 — 재시도 중…', false);
-        try { peer.destroy(); } catch { /* 무시 */ } peer = null; scheduleRetry(3000);
+        freshPeer(); scheduleRetry(3000);
       }
     });
   }
   function scheduleRetry(ms) { clearTimeout(retryT); retryT = setTimeout(connect, ms); }
+  function dropConn() { const c = conn; conn = null; try { c && c.close(); } catch { /* 무시 */ } }
   function connect() {
     clearTimeout(retryT); clearTimeout(openT);
     if (!room) { askRoom('TV 화면에 보이는 4자리 방 코드를 입력하세요'); return; }
     status(`방 ${room} · 연결 중…`, false);
     ensurePeer(() => {
-      try { conn && conn.close(); } catch { /* 무시 */ }
+      dropConn();
       const c = conn = peer.connect(CFG.idPrefix + room, { reliable: true, serialization: 'json' });
       clearTimeout(openT);
-      const timer = openT = setTimeout(() => { if (c.open || conn !== c) return; try { c.close(); } catch { /* 무시 */ } if (conn === c) conn = null; if (everConnected) { status('연결이 오래 걸립니다 — 다시 시도 중…', false); scheduleRetry(500); } else askRoom('TV 화면을 찾지 못했습니다. 방 코드를 확인하고 다시 입력하세요 (TV와 휴대폰 모두 인터넷 연결 필요)'); }, 8000);
-      c.on('open', () => { clearTimeout(timer); everConnected = true; store.set('room', room); $('roomBox').style.display = 'none'; status(`방 ${room} 연결됨 · TV 확인 중…`, true); send({ t: 'hello-phone' }); });
-      c.on('data', (m) => { if (m && typeof m === 'object') onMsg(m); });
-      c.on('close', () => { clearTimeout(timer); if (conn === c) { status(`방 ${room} · 연결 끊김 — 재연결 중…`, false); scheduleRetry(1500); } });
+      openT = setTimeout(() => {
+        if (c.open || conn !== c) return;
+        dropConn();
+        if (everConnected) { status('연결이 오래 걸립니다 — 다시 시도 중…', false); freshPeer(); scheduleRetry(500); }
+        else askRoom('TV 화면을 찾지 못했습니다. 방 코드를 확인하고 다시 입력하세요 (TV와 휴대폰 모두 인터넷 연결 필요)');
+      }, 9000);
+      c.on('open', () => {
+        clearTimeout(openT); everConnected = true; missCount = 0; lastRx = performance.now();
+        store.set('room', room); $('roomBox').style.display = 'none';
+        status(`방 ${room} 연결됨 · TV 확인 중…`, true); send({ t: 'hello-phone' });
+      });
+      c.on('data', (m) => { lastRx = performance.now(); if (m && typeof m === 'object') onMsg(m); });
+      c.on('close', () => { if (conn === c) { conn = null; status(`방 ${room} · 연결 끊김 — 재연결 중…`, false); scheduleRetry(1200); } });
       c.on('error', () => { /* close 에서 처리 */ });
     });
   }
   function send(m) { if (conn && conn.open) { try { conn.send(m); } catch { /* 무시 */ } } }
+  // 화면을 껐다 켜거나 다른 앱에 갔다 오면: 연결 상태를 확인하고 바로 다시 붙는다
+  function wake() {
+    if (!room) return;
+    if (conn && conn.open && performance.now() - lastRx < 2500) { send({ t: 'hello-phone' }); return; }
+    dropConn(); freshPeer(); missCount = 0; connect();
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(wake, 300); });
+  window.addEventListener('pageshow', (e) => { if (e.persisted) setTimeout(wake, 300); });
+  window.addEventListener('online', () => setTimeout(wake, 500));
+  // TV 신호가 4초 넘게 안 오면 끊긴 것으로 보고 다시 연결
+  setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    if (conn && conn.open && performance.now() - lastRx > 4000) { status(`방 ${room} · 신호 없음 — 재연결 중…`, false); dropConn(); freshPeer(); connect(); }
+  }, 1000);
   connect();
 
   function askRoom(msg) {
@@ -129,7 +161,9 @@
       add(() => `핸들 자동복귀: ${cfg.autoCenter ? '켬' : '끔'}`, () => { cfg.autoCenter = !cfg.autoCenter; store.set('autoCenter', cfg.autoCenter); });
       add(() => `핸들 회전범위: ±${cfg.wheelRange / 2}°`, () => { cfg.wheelRange = cfg.wheelRange === 540 ? 900 : cfg.wheelRange === 900 ? 360 : 540; store.set('wheelRange', cfg.wheelRange); });
     } else {
-      add(() => `조종 모드: Mode ${cfg.stickMode} ${cfg.stickMode === 2 ? '(왼쪽 스로틀)' : '(오른쪽 스로틀)'}`, () => { cfg.stickMode = cfg.stickMode === 2 ? 1 : 2; store.set('stickMode', cfg.stickMode); stickLabels(); });
+      const info = document.createElement('div'); info.style.cssText = 'grid-column:1/-1;font-size:13px;color:#8b98a5;line-height:1.6';
+      info.innerHTML = '<b style="color:#fff">Mode 2</b> (국내 드론 실기시험 표준)<br>왼쪽 스틱: 위·아래 = 상승·하강, 좌·우 = 기수 회전<br>오른쪽 스틱: 위·아래 = 전진·후진, 좌·우 = 좌·우 이동';
+      S.appendChild(info);
     }
   }
 
@@ -176,7 +210,7 @@
   function stick(el, S) {
     const knob = el.querySelector('.knob'); let pid = null;
     const set = (e) => {
-      const r = el.getBoundingClientRect(); const half = r.width / 2 - 20;
+      const r = el.getBoundingClientRect(); const half = r.width * 0.33;
       S.x = Math.max(-1, Math.min(1, (e.clientX - (r.left + r.width / 2)) / half));
       S.y = Math.max(-1, Math.min(1, -(e.clientY - (r.top + r.height / 2)) / half));
     };
@@ -184,16 +218,10 @@
     el.addEventListener('pointermove', (e) => { if (e.pointerId === pid) set(e); });
     const up = (e) => { if (e.pointerId === pid) { pid = null; S.x = 0; S.y = 0; } };
     el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
-    return () => { const r = el.clientWidth / 2 - 20; knob.style.left = `calc(50% + ${S.x * r}px)`; knob.style.top = `calc(50% - ${S.y * r}px)`; };
+    return () => { const r = el.clientWidth * 0.33; knob.style.left = `calc(50% + ${S.x * r}px)`; knob.style.top = `calc(50% - ${S.y * r}px)`; };
   }
   const stickDraw = [stick($('stickL'), sticks.L), stick($('stickR'), sticks.R)];
-  function stickLabels() {
-    const m2 = cfg.stickMode === 2;
-    const L = m2 ? ['상승', '하강', '좌회전(기수)', '우회전(기수)'] : ['전진', '후진', '좌회전(기수)', '우회전(기수)'];
-    const R = m2 ? ['전진', '후진', '좌이동', '우이동'] : ['상승', '하강', '좌이동', '우이동'];
-    ['lT', 'lB', 'lL', 'lR'].forEach((id, i) => $(id).textContent = L[i]);
-    ['rT', 'rB', 'rL', 'rR'].forEach((id, i) => $(id).textContent = R[i]);
-  }
+  function stickLabels() { /* Mode 2 고정 — 라벨은 HTML 에 있음 */ }
   function droneInput() {
     const dz = (v) => Math.abs(v) < 0.06 ? 0 : (v - Math.sign(v) * 0.06) / 0.94;
     const L = sticks.L, R = sticks.R;
@@ -208,6 +236,7 @@
   // ---------------- 상태 표시 ----------------
   function render() {
     if (!scene) return;
+    if (st.instr) { if ($('dInstr').textContent !== st.instr) $('dInstr').textContent = st.instr; if ($('cInstr').textContent !== st.instr) $('cInstr').textContent = st.instr; }
     if (st.kind === 'car') {
       $('cSpd').textContent = Math.abs(st.kmh); $('cGear').textContent = st.gear; $('cScore').textContent = st.score;
       const on = (id, v, cls = 'on') => { const el = $(id); if (!el) return; el.classList.remove('on', 'amber', 'red'); if (v) el.classList.add(cls); };
@@ -215,10 +244,49 @@
       on('bSigL', st.signal === 'L', 'amber'); on('bSigR', st.signal === 'R', 'amber'); on('bLights', st.lights); on('bWiper', st.wiper);
       document.querySelectorAll('#gearBox button').forEach(b => b.classList.toggle('sel', b.dataset.arg === st.gear));
     } else if (st.kind === 'drone') {
-      $('dAlt').textContent = st.alt.toFixed(1); $('dMode').textContent = `${st.fmode} · ${st.item}`;
-      const a = $('bArm'); a.classList.toggle('on', st.armed); a.classList.toggle('red', !st.armed); a.innerHTML = st.armed ? '시동 ON<br>(착륙 후 끄기)' : '시동<br>(ARM)';
-      $('bFmode').textContent = st.fmode === 'ATTI' ? 'ATTI 모드' : 'GPS 모드';
-      $('bWind').innerHTML = `바람<br>${['없음', '약함', '강함'][st.wind]}`;
+      $('dAlt').textContent = st.alt.toFixed(1);
+      $('lHs').textContent = (st.hs ?? 0).toFixed(1); $('lVs').textContent = (st.vs ?? 0).toFixed(1);
+      $('lDist').textContent = (st.dist ?? 0).toFixed(1); $('lHd').textContent = Math.round(st.hd ?? 0);
+      $('lMode').textContent = st.fmode === 'ATTI' ? 'ATTI' : 'GPS';
+      const la = $('lArm'); la.textContent = st.armed ? '모터 ON' : '모터 OFF'; la.className = st.armed ? 'on' : 'off';
+      $('lWind').textContent = `바람 ${['없음', '약함', '강함'][st.wind]} ${(st.ws ?? 0).toFixed(1)}m/s`;
+      $('lItem').textContent = st.item || '';
+      const bat = Math.round(st.bat ?? 100); const lb = $('lBat'); lb.textContent = `🔋 ${bat}%`; lb.style.color = bat < 30 ? '#ff7a72' : '#4be08f';
+      ['led1', 'led2', 'led3', 'led4'].forEach((id, i) => { $(id).className = bat > i * 25 ? (bat < 30 ? 'low' : 'on') : ''; });
+      const a = $('bArm'); a.classList.toggle('armed', st.armed);
+      $('bFmode').classList.toggle('hot', st.fmode !== 'ATTI'); $('bFmode').firstChild.textContent = st.fmode === 'ATTI' ? 'A' : 'G';
+      $('bWind').classList.toggle('hot', st.wind > 0);
+      if (st.results) $('lChips').innerHTML = st.results.map((r, i) => `<span class="${r || (i === st.idx ? 'cur' : '')}">${i + 1}</span>`).join('');
+      const d = st.dev;
+      $('lDev').innerHTML = !d ? '' : d.land ? `패드 중심까지 <b class="${d.dh <= d.tol ? 'good' : 'bad'}">${d.dh.toFixed(1)}m</b> (허용 ${d.tol}m)`
+        : `목표 오차 수평 <b class="${d.dh <= d.tol ? 'good' : 'bad'}">${d.dh.toFixed(1)}m</b> · 고도 <b class="${d.dv <= 0.8 ? 'good' : 'bad'}">${d.dv.toFixed(1)}m</b>`;
+      drawLcdMap();
+    }
+  }
+
+  // 액정 미니맵 (위에서 본 비행장, 조종자 아래쪽)
+  function drawLcdMap() {
+    const cv = $('lMap'); const L = scene && scene.layout; if (!cv || !L) return;
+    const W = cv.clientWidth * (window.devicePixelRatio || 1), H = cv.clientHeight * (window.devicePixelRatio || 1);
+    if (!W || !H) return;
+    if (cv.width !== Math.round(W)) { cv.width = Math.round(W); cv.height = Math.round(H); }
+    const g = cv.getContext('2d'); g.clearRect(0, 0, cv.width, cv.height);
+    const span = Math.max(L.D * 2 + 10, L.C.z + L.circleR * 2 + 6);
+    const sc = Math.min(cv.width, cv.height) / span;
+    const cz = (L.C.z + L.circleR * 2) / 2;
+    const X = x => cv.width / 2 - x * sc, Y = z => cv.height / 2 - (z - cz) * sc + 4;
+    g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 1;
+    for (let k = -30; k <= 60; k += 5) { g.beginPath(); g.moveTo(0, Y(k)); g.lineTo(cv.width, Y(k)); g.stroke(); g.beginPath(); g.moveTo(X(k), 0); g.lineTo(X(k), cv.height); g.stroke(); }
+    g.strokeStyle = 'rgba(255,255,255,.45)'; g.beginPath(); g.arc(X(0), Y(L.C.z + L.circleR), L.circleR * sc, 0, 7); g.stroke();
+    g.beginPath(); g.moveTo(X(L.A.x), Y(L.A.z)); g.lineTo(X(L.B.x), Y(L.B.z)); g.stroke();
+    const f = Math.max(9, sc * 1.4);
+    const pt = (p, c, t) => { g.fillStyle = c; g.beginPath(); g.arc(X(p.x), Y(p.z), Math.max(3, sc * 0.5), 0, 7); g.fill(); g.fillStyle = '#dfe7ee'; g.font = `${f}px sans-serif`; g.fillText(t, X(p.x) + 5, Y(p.z) - 4); };
+    pt(L.H, '#ffffff', 'H'); pt(L.EM, '#ff5a52', '비상'); pt(L.C, '#ffd84a', 'E'); pt(L.A, '#8fd3ff', 'A'); pt(L.B, '#ffb0b0', 'B');
+    g.fillStyle = '#4da3ff'; g.fillRect(X(0) - 4, Y(0) - 4, 8, 8);
+    if (st.tgt) { g.strokeStyle = '#00ffaa'; g.lineWidth = 2; g.beginPath(); g.arc(X(st.tgt[0]), Y(st.tgt[1]), Math.max(4, sc * 1.0), 0, 7); g.stroke(); }
+    if (st.x != null) {
+      g.save(); g.translate(X(st.x), Y(st.z)); g.rotate(-(st.hd || 0) * Math.PI / 180);
+      g.fillStyle = '#ff3b30'; g.beginPath(); const k = Math.max(7, sc * 1.2); g.moveTo(0, -k); g.lineTo(k * 0.7, k * 0.8); g.lineTo(0, k * 0.4); g.lineTo(-k * 0.7, k * 0.8); g.closePath(); g.fill(); g.restore();
     }
   }
 
@@ -235,7 +303,7 @@
     } else if (scene && scene.kind === 'drone') {
       stickDraw.forEach(f => f());
       send({ t: 'in', d: droneInput() });
-    }
+    } else if (now - (tick.ping || 0) > 1000) { tick.ping = now; send({ t: 'ping' }); }
   }
   setInterval(tick, 33);
   stickLabels();

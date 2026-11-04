@@ -143,6 +143,7 @@ export class DroneSim {
 
   // ---------- 상태 ----------
   reset() {
+    this.battery = 100;
     this.ex = { idx: 0, results: this.items.map(() => null), faults: this.items.map(() => []), done: false, time: 0 };
     this._placeFor(this.items[0].start);
     this._beginItem(0);
@@ -307,6 +308,7 @@ export class DroneSim {
     }
     if (s.pos.y > 60 || Math.hypot(s.pos.x, s.pos.z - 20) > 90) { this._crash('비행구역 이탈'); }
     s.propSpin += (s.armed ? 60 : 0) * dt;
+    if (s.armed) this.battery = Math.max(5, this.battery - dt * (s.onGround ? 0.02 : 0.12));
   }
 
   _crash(why) {
@@ -469,7 +471,17 @@ export class DroneSim {
   }
   phoneState() {
     const s = this.st, E = this.ex;
-    return { kind: 'drone', variant: this.variant, mode: this.mode, alt: +s.pos.y.toFixed(1), armed: s.armed, fmode: this.flightMode, wind: this.windLevel, cam: this.camMode, item: E.done ? '종료' : `${E.idx + 1}. ${this.items[E.idx].name}`, instr: this.hud.currentInstr };
+    const w = this._windNow || { x: 0, z: 0 };
+    const stp = E.steps && E.steps[E.si];
+    const tgt = !E.done && stp ? (stp.target ? [stp.target[0], stp.target[2]] : stp.pad ? [stp.pad[0], stp.pad[1]] : null) : null;
+    const dev = this._dev ? { dh: +this._dev.dh.toFixed(2), dv: +this._dev.dv.toFixed(2), tol: this._dev.tol, land: !!this._dev.land } : null;
+    return {
+      kind: 'drone', variant: this.variant, mode: this.mode, alt: +s.pos.y.toFixed(1), armed: s.armed, fmode: this.flightMode, wind: this.windLevel, cam: this.camMode,
+      item: E.done ? '실기 종료' : `${E.idx + 1}. ${this.items[E.idx].name}`, instr: this.hud.currentInstr,
+      x: +s.pos.x.toFixed(2), z: +s.pos.z.toFixed(2), hd: +(((wrapDeg(s.yaw / DEG)) + 360) % 360).toFixed(0),
+      hs: +Math.hypot(s.vel.x, s.vel.z).toFixed(1), vs: +s.vel.y.toFixed(1), dist: +Math.hypot(s.pos.x, s.pos.z).toFixed(1),
+      ws: +Math.hypot(w.x, w.z).toFixed(1), bat: +this.battery.toFixed(0), results: E.results, idx: E.done ? -1 : E.idx, dev, tgt,
+    };
   }
   event(kind, text) { this.onEvent && this.onEvent(kind, text); }
 }

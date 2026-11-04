@@ -53,7 +53,8 @@ function connect() {
   });
   peer.on('connection', (c) => {
     c.on('open', () => { conns.add(c); updatePhones(); if (sim) sendScene(); else c.send({ t: 'scene', kind: null }); });
-    c.on('data', (m) => { if (m && typeof m === 'object') onMessage(m); });
+    c.lastRx = performance.now();
+    c.on('data', (m) => { c.lastRx = performance.now(); if (m && typeof m === 'object') onMessage(m); });
     const drop = () => { if (conns.delete(c)) updatePhones(); };
     c.on('close', drop); c.on('error', drop);
   });
@@ -68,6 +69,12 @@ function updatePhones() {
   setNet(phones ? `휴대폰 ${phones}대 연결됨 — 휴대폰에서 시험을 선택하세요` : '휴대폰 연결 대기 중', phones > 0);
   send({ t: 'status', phones, tvs: 1, room });
 }
+// 끊긴 휴대폰 정리(신호 5초 없음) + 중계서버 연결 유지
+setInterval(() => {
+  const now = performance.now();
+  for (const c of [...conns]) if (now - (c.lastRx || 0) > 5000) { conns.delete(c); try { c.close(); } catch { /* 무시 */ } updatePhones(); }
+  if (peer && !peer.destroyed && peer.disconnected) { try { peer.reconnect(); } catch { /* 무시 */ } }
+}, 2000);
 function send(m) { for (const c of conns) { if (c.open) { try { c.send(m); } catch { /* 무시 */ } } } }
 connect();
 
@@ -94,7 +101,7 @@ function stopSim() {
   if (sim && sim.scene) disposeScene(sim.scene);
   sim = null; $('connect').style.display = 'flex'; hud.hideResult(); send({ t: 'scene', kind: null });
 }
-function sendScene() { if (sim) send({ t: 'scene', kind: sim.kind, variant: sim.variant, mode: sim.mode, jumps: sim.jumpList(), manual: sim.course ? sim.course.manual : false }); }
+function sendScene() { if (sim) send({ t: 'scene', kind: sim.kind, variant: sim.variant, mode: sim.mode, jumps: sim.jumpList(), manual: sim.course ? sim.course.manual : false, layout: sim.kind === 'drone' ? sim.L : null }); }
 function disposeScene(scene) {
   scene.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { (Array.isArray(o.material) ? o.material : [o.material]).forEach(mt => { if (mt.map) mt.map.dispose(); mt.dispose(); }); } });
 }
@@ -167,7 +174,7 @@ function loop() {
   hudT += dt;
   if (hudT > 0.1) { hudT = 0; $('panel').innerHTML = sim.hudPanel(); $('top').innerHTML = sim.hudTop(); sim.drawMinimap(mctx, mini.width, mini.height); }
   stateT += dt;
-  if (stateT > 0.15) { stateT = 0; send({ t: 'state', d: sim.phoneState() }); }
+  if (stateT > (sim.kind === 'drone' ? 0.1 : 0.15)) { stateT = 0; send({ t: 'state', d: sim.phoneState() }); }
 }
 resize();
 loop();

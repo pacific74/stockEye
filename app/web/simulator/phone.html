@@ -59,17 +59,49 @@
   .pedal span { position:relative; z-index:1; }
   .pedal.brk { width:min(13vw,100px); }
 
-  /* 드론 */
-  .stickArea { flex:1; display:flex; align-items:center; justify-content:center; position:relative; touch-action:none; }
-  .stick { width:min(40vh,42vw); height:min(40vh,42vw); max-width:300px; max-height:300px; min-width:150px; min-height:150px; border-radius:24px; background:repeating-linear-gradient(0deg, transparent 0 24px, rgba(255,255,255,.04) 24px 25px), repeating-linear-gradient(90deg, transparent 0 24px, rgba(255,255,255,.04) 24px 25px), #12171d; border:2px solid var(--line); position:relative; touch-action:none; }
-  .stick::before, .stick::after { content:""; position:absolute; background:rgba(255,255,255,.12); }
-  .stick::before { left:50%; top:8px; bottom:8px; width:2px; } .stick::after { top:50%; left:8px; right:8px; height:2px; }
-  .knob { position:absolute; width:64px; height:64px; margin:-32px 0 0 -32px; left:50%; top:50%; border-radius:50%; background:radial-gradient(circle at 35% 35%, #6c7a89, #2a323b); border:2px solid #9aa7b4; z-index:1; }
-  .stickLabel { position:absolute; font-size:11px; color:var(--sub); }
-  .stickLabel.t { top:4px; left:50%; transform:translateX(-50%); } .stickLabel.b { bottom:4px; left:50%; transform:translateX(-50%); }
-  .stickLabel.l { left:6px; top:50%; transform:translateY(-50%); } .stickLabel.r { right:6px; top:50%; transform:translateY(-50%); }
-  #droneMid { flex:0 0 auto; width:min(22vw,140px); display:grid; gap:6px; grid-auto-rows:1fr; }
-
+  /* 드론 — 스마트 조종기 */
+  #drone { background:radial-gradient(ellipse at 50% 40%, #3a3f46, #15181c 75%); }
+  .rc { position:absolute; left:max(6px, env(safe-area-inset-left)); right:max(6px, env(safe-area-inset-right)); top:16px; bottom:6px; border-radius:46px 46px 54px 54px;
+        background:linear-gradient(180deg, #8a9098 0%, #737a82 45%, #5e646b 100%); box-shadow:inset 0 2px 0 rgba(255,255,255,.35), inset 0 -6px 14px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.6);
+        display:flex; align-items:stretch; gap:10px; padding:14px 16px 12px; }
+  .ant { position:absolute; top:-14px; width:16px; height:30px; border-radius:6px 6px 3px 3px; background:linear-gradient(90deg,#1c1f23,#34383e,#1c1f23); z-index:-1; }
+  .ant.l { left:22%; transform:rotate(-8deg); } .ant.r { right:22%; transform:rotate(8deg); }
+  .brand { position:absolute; bottom:3px; left:50%; transform:translateX(-50%); font-size:9px; letter-spacing:.3em; color:rgba(255,255,255,.45); }
+  .gimbal { flex:0 0 auto; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; }
+  .well { width:min(calc(100vh - 100px), 31vw, 250px); aspect-ratio:1; border-radius:50%; position:relative; touch-action:none;
+          background:radial-gradient(circle, #24272b 0 58%, #2e3237 59% 66%, #1b1d20 67% 100%); box-shadow:inset 0 4px 10px rgba(0,0,0,.8), 0 1px 0 rgba(255,255,255,.3); }
+  .well::before, .well::after { content:""; position:absolute; background:rgba(255,255,255,.07); }
+  .well::before { left:50%; top:14%; bottom:14%; width:2px; margin-left:-1px; } .well::after { top:50%; left:14%; right:14%; height:2px; margin-top:-1px; }
+  .knob { position:absolute; width:34%; height:34%; left:50%; top:50%; transform:translate(-50%,-50%); border-radius:50%; z-index:1; pointer-events:none;
+          background:radial-gradient(circle at 40% 35%, #4b5057, #1d2024 70%); box-shadow:0 6px 10px rgba(0,0,0,.7), inset 0 2px 2px rgba(255,255,255,.18); }
+  .knob i { position:absolute; inset:16%; border-radius:50%; background:repeating-radial-gradient(circle, #2a2e33 0 2px, #1a1c1f 2px 4px); }
+  .stickLabel { position:absolute; font-size:10px; color:rgba(255,255,255,.55); pointer-events:none; }
+  .stickLabel.t { top:5%; left:50%; transform:translateX(-50%); } .stickLabel.b { bottom:5%; left:50%; transform:translateX(-50%); }
+  .stickLabel.l { left:3%; top:50%; transform:translateY(-50%); } .stickLabel.r { right:3%; top:50%; transform:translateY(-50%); }
+  .gcap { font-size:10px; color:rgba(255,255,255,.7); }
+  .mid { flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; }
+  .hw { display:flex; align-items:center; justify-content:center; gap:8px; height:40px; }
+  .hbtn { width:40px; height:40px; border-radius:50%; background:radial-gradient(circle at 40% 35%, #5a6068, #2b2f34); border:1px solid #23262a; color:#e9edf1; font-size:16px; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1; box-shadow:0 2px 3px rgba(0,0,0,.5); }
+  .hbtn small { font-size:8px; margin-top:2px; font-weight:600; }
+  .hbtn.arm { width:46px; height:46px; }
+  .hbtn.armed { background:radial-gradient(circle at 40% 35%, #3fe08a, #137a43); color:#04140b; }
+  .hbtn.hot { background:radial-gradient(circle at 40% 35%, #ffd36b, #b9860b); color:#1d1300; }
+  .leds { display:flex; gap:3px; padding:0 4px; } .leds i { width:6px; height:3px; border-radius:2px; background:#2a2d31; }
+  .leds i.on { background:#4be08f; box-shadow:0 0 4px #4be08f; } .leds i.low { background:#ff5a52; box-shadow:0 0 4px #ff5a52; }
+  .lcd { flex:1; min-height:0; border-radius:12px; background:#05070a; border:3px solid #1b1e22; box-shadow:inset 0 0 0 1px #000, 0 1px 0 rgba(255,255,255,.25);
+         display:flex; flex-direction:column; overflow:hidden; font-size:11px; color:#e8f0f6; }
+  .lbar { display:flex; align-items:center; gap:8px; padding:3px 8px; background:linear-gradient(#141a22,#0b0f14); white-space:nowrap; overflow:hidden; }
+  .lbar b { color:#4da3ff; } .lbar .off { color:#ff7a72; } .lbar .on { color:#4be08f; } .lbar .item { flex:1; overflow:hidden; text-overflow:ellipsis; color:#cfd8e0; } .lbar .bat { color:#4be08f; }
+  .lmain { flex:1; min-height:0; display:flex; gap:6px; padding:4px 6px; }
+  #lMap { height:100%; width:46%; flex:0 0 46%; background:radial-gradient(circle,#0f2a1a,#071209); border-radius:8px; }
+  .lside { flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }
+  .lside .instr { font-size:12.5px; font-weight:700; color:#ffd36b; line-height:1.3; max-height:4em; overflow:hidden; }
+  .chips { display:flex; gap:3px; flex-wrap:wrap; } .chips span { min-width:18px; text-align:center; font-size:10px; border-radius:4px; border:1px solid #2b333d; padding:0 2px; }
+  .chips .S { background:rgba(61,220,132,.35); } .chips .U { background:rgba(255,90,82,.45); } .chips .cur { border-color:#4da3ff; background:rgba(77,163,255,.3); }
+  .dev { font-size:11px; color:#9fb0bf; } .dev b.good { color:#4be08f; } .dev b.bad { color:#ff7a72; }
+  .ltele { display:flex; justify-content:space-around; padding:3px 4px 4px; background:linear-gradient(#0b0f14,#141a22); }
+  .ltele div { text-align:center; } .ltele small { display:block; font-size:8.5px; color:#8b98a5; } .ltele b { font-size:16px; } .ltele u { text-decoration:none; font-size:9px; color:#8b98a5; margin-left:1px; }
+  @media (max-height:340px) { .ltele b { font-size:13px; } .hw { height:34px; } .hbtn { width:34px; height:34px; } .hbtn.arm { width:38px; height:38px; } }
   /* 오버레이 메뉴 */
   #overlay { position:fixed; inset:0; background:rgba(0,0,0,.75); display:none; z-index:10; align-items:center; justify-content:center; }
   #overlay.on { display:flex; }
@@ -84,7 +116,9 @@
   @keyframes rot { 0%,30% { transform:rotate(0); } 60%,100% { transform:rotate(-90deg); } }
   @media (orientation:portrait) { body.playing #rotate { display:flex; } }
   #flash { position:fixed; inset:0; pointer-events:none; z-index:9; box-shadow:inset 0 0 0 0 transparent; transition:box-shadow .2s; }
-  #ptoast { position:fixed; left:50%; bottom:12px; transform:translateX(-50%); background:#000c; border:1px solid var(--line); border-radius:10px; padding:6px 12px; font-size:13px; z-index:11; opacity:0; transition:opacity .3s; pointer-events:none; white-space:nowrap; }
+  #netBanner { position:fixed; left:50%; top:6px; transform:translateX(-50%); z-index:12; display:none; background:#b3261e; color:#fff; font-size:13px; font-weight:700; padding:5px 12px; border-radius:10px; white-space:nowrap; pointer-events:none; }
+  body:not(.playing) #netBanner { display:none !important; }
+  #ptoast { position:fixed; left:50%; top:62px; transform:translateX(-50%); background:#000c; border:1px solid var(--line); border-radius:10px; padding:6px 12px; font-size:13px; z-index:11; opacity:0; transition:opacity .3s; pointer-events:none; white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -133,23 +167,51 @@
   </div>
 </div>
 
-<!-- 드론 조종기 -->
+<!-- 드론 조종기 (스마트 조종기 모양) -->
 <div id="drone" class="screen">
-  <div class="bar">
-    <button data-open>☰</button>
-    <div class="stat">고도 <b id="dAlt">0.0</b>m · <span id="dMode">ATTI</span></div>
-    <div class="instr" id="dInstr"></div>
-    <button data-cmd="camera">📷</button>
-  </div>
-  <div class="body">
-    <div class="stickArea"><div class="stick" id="stickL"><div class="knob"></div><span class="stickLabel t" id="lT"></span><span class="stickLabel b" id="lB"></span><span class="stickLabel l" id="lL"></span><span class="stickLabel r" id="lR"></span></div></div>
-    <div id="droneMid">
-      <button data-cmd="arm" id="bArm" class="red">시동<br>(ARM)</button>
-      <button data-cmd="fmode" id="bFmode">ATTI</button>
-      <button data-cmd="wind" id="bWind">바람<br>약함</button>
+  <div class="rc">
+    <div class="ant l"></div><div class="ant r"></div>
+    <div class="gimbal" id="gL">
+      <div class="well" id="stickL"><div class="knob"><i></i></div>
+        <span class="stickLabel t">상승</span><span class="stickLabel b">하강</span><span class="stickLabel l">좌회전</span><span class="stickLabel r">우회전</span></div>
+      <div class="gcap">왼쪽 · 고도 / 기수</div>
     </div>
-    <div class="stickArea"><div class="stick" id="stickR"><div class="knob"></div><span class="stickLabel t" id="rT"></span><span class="stickLabel b" id="rB"></span><span class="stickLabel l" id="rL"></span><span class="stickLabel r" id="rR"></span></div></div>
+    <div class="mid">
+      <div class="hw">
+        <button class="hbtn" data-open title="메뉴">☰</button>
+        <button class="hbtn arm" data-cmd="arm" id="bArm">⏻<small>시동</small></button>
+        <div class="leds"><i id="led1"></i><i id="led2"></i><i id="led3"></i><i id="led4"></i></div>
+        <button class="hbtn" data-cmd="fmode" id="bFmode">A<small>모드</small></button>
+        <button class="hbtn" data-cmd="wind" id="bWind">≋<small>바람</small></button>
+        <button class="hbtn" data-cmd="camera" title="카메라">📷</button>
+      </div>
+      <div class="lcd">
+        <div class="lbar"><b id="lMode">ATTI</b><span id="lArm" class="off">모터 OFF</span><span id="lWind">바람 -</span><span id="lItem" class="item"></span><span id="lBat" class="bat">🔋 100%</span></div>
+        <div class="lmain">
+          <canvas id="lMap" width="300" height="300"></canvas>
+          <div class="lside">
+            <div class="instr" id="dInstr"></div>
+            <div class="chips" id="lChips"></div>
+            <div class="dev" id="lDev"></div>
+          </div>
+        </div>
+        <div class="ltele">
+          <div><small>H 고도</small><b id="dAlt">0.0</b><u>m</u></div>
+          <div><small>H.S 수평</small><b id="lHs">0.0</b><u>m/s</u></div>
+          <div><small>V.S 수직</small><b id="lVs">0.0</b><u>m/s</u></div>
+          <div><small>D 거리</small><b id="lDist">0.0</b><u>m</u></div>
+          <div><small>기수</small><b id="lHd">0</b><u>°</u></div>
+        </div>
+      </div>
+    </div>
+    <div class="gimbal" id="gR">
+      <div class="well" id="stickR"><div class="knob"><i></i></div>
+        <span class="stickLabel t">전진</span><span class="stickLabel b">후진</span><span class="stickLabel l">좌이동</span><span class="stickLabel r">우이동</span></div>
+      <div class="gcap">오른쪽 · 전후 / 좌우</div>
+    </div>
+    <div class="brand">MODE 2</div>
   </div>
+  <span id="dMode" hidden></span>
 </div>
 
 <!-- 메뉴 오버레이 -->
@@ -173,6 +235,7 @@
 <div id="rotate"><div class="ph"></div><div>휴대폰을 <b>가로</b>로 돌려주세요</div></div>
 <div id="flash"></div>
 <div id="ptoast"></div>
+<div id="netBanner"></div>
 <script src="./config.js"></script>
 <script src="./vendor/peerjs.min.js"></script>
 <script src="./phone.js"></script>

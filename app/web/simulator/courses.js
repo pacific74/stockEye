@@ -135,78 +135,81 @@ export function inRect(r, x, z, margin = 0) {
   return Math.abs(a) <= r.hu + margin && Math.abs(b) <= r.hv + margin;
 }
 
-// ===================== 드론 실기 코스 =====================
-// 조종자 위치 (0,0). 앞쪽 +z. 조종자 기준 왼쪽 = +x, 오른쪽 = -x.
-// H: 이착륙장, C: 중앙 기준점(E), A: 왼쪽, B: 오른쪽, EM: 비상착륙장
+// ===================== 드론 실기 코스 (무인멀티콥터 실기시험장 규격) =====================
+// 시험장 35m × 80m. 조종자 P 를 원점(0,0), 앞쪽 = +z, 조종자 기준 왼쪽 = +x, 오른쪽 = −x.
+// P → H(이착륙장) 15m, H → A 7.5m (A 중심 지름 15m 원), B = 9시(왼쪽), C = 12시, D = 3시(오른쪽),
+// E = A 에서 앞으로 50m, F(비상착륙장) = H 오른쪽(D 줄). 이착륙장·비상착륙장 2m × 2m.
 export function droneLayout(cls) {
-  const big = cls === 1;
-  const D = big ? 15 : 12.5;              // 좌우 기준점 거리
-  const H = { x: 0, z: 15 };
-  const C = { x: 0, z: 15 + D };
+  const R = 7.5;
+  const H = { x: 0, z: 15 }, A = { x: 0, z: 22.5 };
   return {
-    H, C, D,
-    A: { x: D, z: C.z }, B: { x: -D, z: C.z },
-    EM: { x: 9, z: 12 },
-    alt: 3, top: big ? 7.5 : 6,
-    circleR: big ? 7.5 : 6,
-    padR: 1.0,
+    cls, R, circleR: R,
+    P: { x: 0, z: 0 }, H, A,
+    B: { x: R, z: A.z }, C: { x: 0, z: A.z + R }, D: { x: -R, z: A.z },
+    E: { x: 0, z: A.z + 50 }, F: { x: -R, z: H.z },
+    field: { w: 35, len: 80 },
+    alt: 4,          // 비행 고도 (3~5m)
+    top: 11.5,       // 삼각비행 정점 고도 (10.5~12.5m)
+    padR: 1.0,       // 2m × 2m 패드 반폭
   };
 }
 
-// 실기 항목 정의(연습용 단순화 버전). 각 step: kind arm|goto|yaw|land|disarm
+// 실기 항목 (한국교통안전공단 실기 순서 기준, 연습용으로 단순화)
+// step: kind arm | goto | yaw | land
 export function droneItems(cls) {
   const L = droneLayout(cls);
   const a = L.alt;
   const P = (p, y) => [p.x, y, p.z];
   const items = [];
-  items.push({ name: '이륙비행', limit: 60, start: 'ground_H', steps: [
-    { kind: 'arm', text: '시동을 거세요 (시동 버튼)' },
-    { kind: 'goto', text: `수직으로 ${a}m 까지 이륙 후 5초 정지`, target: P(L.H, a), hold: 5, heading: 0 },
+  items.push({ name: '이륙 및 공중 점검', limit: 60, start: 'ground_H', steps: [
+    { kind: 'arm', text: '시동을 거세요 (⏻ 버튼)' },
+    { kind: 'goto', text: `H 패드 안에서 수직으로 ${a}m(3~5m)까지 이륙 후 정지`, target: P(L.H, a), hold: 5, heading: 0, vtol: 1.0 },
   ] });
-  items.push({ name: '공중 정지비행(호버링)', limit: 100, start: 'hover_H', steps: [
-    { kind: 'goto', text: '중앙(E) 기준점으로 전진 후 5초 정지', target: P(L.C, a), hold: 5, heading: 0 },
-    { kind: 'yaw', text: '기수를 왼쪽 90°로 돌려 5초 정지', heading: 90, hold: 5, target: P(L.C, a) },
-    { kind: 'yaw', text: '기수를 오른쪽 90°로 돌려 5초 정지', heading: -90, hold: 5, target: P(L.C, a) },
-    { kind: 'yaw', text: '기수를 정면으로 돌리세요', heading: 0, hold: 2, target: P(L.C, a) },
+  items.push({ name: '좌·우 측면 호버링', limit: 100, start: 'hover_H', steps: [
+    { kind: 'goto', text: 'A 지점으로 전진 후 정지', target: P(L.A, a), hold: 3, heading: 0 },
+    { kind: 'yaw', text: '기수를 오른쪽(D, 3시)으로 돌려 측면 호버링', heading: -90, hold: 5, target: P(L.A, a) },
+    { kind: 'yaw', text: '기수를 왼쪽(B, 9시)으로 돌려 측면 호버링', heading: 90, hold: 5, target: P(L.A, a) },
+    { kind: 'yaw', text: '기수를 정면(12시)으로 돌리세요', heading: 0, hold: 2, target: P(L.A, a) },
   ] });
-  items.push({ name: '직진 및 후진 수평비행', limit: 100, start: 'hover_C', steps: [
-    { kind: 'yaw', text: '기수를 A 지점(왼쪽)으로 향하세요', heading: 90, hold: 2, target: P(L.C, a) },
-    { kind: 'goto', text: 'A 지점까지 직진 후 정지', target: P(L.A, a), hold: 3, heading: 90, strictHead: true },
-    { kind: 'goto', text: '중앙(E)까지 후진 후 정지', target: P(L.C, a), hold: 3, heading: 90, strictHead: true },
-    { kind: 'yaw', text: '기수를 정면으로 돌리세요', heading: 0, hold: 2, target: P(L.C, a) },
+  items.push({ name: '직진 및 후진 수평비행', limit: 150, start: 'hover_A', steps: [
+    { kind: 'goto', text: 'A → E 지점(50m)까지 직진 후 정지 — 좌우 1m 이내', target: P(L.E, a), hold: 3, heading: 0, pathTol: 1.0, strictHead: true, tol: 1.5 },
+    { kind: 'goto', text: '기수 정면 유지한 채 A 지점까지 후진 후 정지', target: P(L.A, a), hold: 3, heading: 0, pathTol: 1.0, strictHead: true },
   ] });
-  items.push({ name: '삼각비행', limit: 120, start: 'hover_C', steps: [
-    { kind: 'goto', text: 'B 지점(오른쪽)으로 수평 이동 후 정지', target: P(L.B, a), hold: 3, heading: 0 },
-    { kind: 'goto', text: `대각선으로 상승하여 중앙 ${L.top}m 상공으로`, target: P(L.C, L.top), hold: 2, heading: 0 },
-    { kind: 'goto', text: '대각선으로 하강하여 A 지점(왼쪽)으로', target: P(L.A, a), hold: 3, heading: 0 },
-    { kind: 'goto', text: '중앙(E)으로 수평 이동 후 정지', target: P(L.C, a), hold: 3, heading: 0 },
+  items.push({ name: '삼각비행', limit: 120, start: 'hover_A', steps: [
+    { kind: 'goto', text: 'A → D 지점(오른쪽)으로 수평 이동 후 정지', target: P(L.D, a), hold: 2, heading: 0, vPathTol: 0.5 },
+    { kind: 'goto', text: `대각선(45°)으로 상승하며 A 상공 ${L.top}m(10.5~12.5m)으로`, target: P(L.A, L.top), hold: 2, heading: 0, vtol: 1.0 },
+    { kind: 'goto', text: '대각선으로 하강하며 B 지점(왼쪽)으로', target: P(L.B, a), hold: 2, heading: 0 },
+    { kind: 'goto', text: 'A 지점으로 수평 이동 후 정지', target: P(L.A, a), hold: 3, heading: 0, vPathTol: 0.5 },
   ] });
-  // 원주비행: 중앙(E)에서 시작해 앞쪽 원을 한 바퀴 (기수는 진행방향)
-  const R = L.circleR; const cz = L.C.z + R;
+  // 원주비행: H 에서 기수를 오른쪽으로 → D → C → B → H (반시계, 위에서 보면 진행방향 앞쪽)
   const circ = [];
+  const names = ['', 'D 방향', 'D', 'C 방향', 'C', 'B 방향', 'B', 'H 방향', 'H'];
   for (let k = 1; k <= 8; k++) {
     const ph = (Math.PI / 4) * k;
-    const x = R * Math.sin(ph), z = cz - R * Math.cos(ph);
-    const hd = 90 - (ph * 180 / Math.PI);
-    circ.push({ kind: 'goto', text: `원주비행 ${k}/8 — 기수를 진행방향으로 유지`, target: [x, a, z], hold: 0, tol: 1.6, heading: k === 8 ? null : wrapDeg(hd), headTol: 35, circle: { cx: 0, cz, R } });
+    const x = -L.R * Math.sin(ph), z = L.A.z - L.R * Math.cos(ph);
+    circ.push({ kind: 'goto', text: `원주비행 ${k}/8 (${names[k]}) — 기수는 진행방향, 고도 유지`, target: [x, a, z], hold: 0, tol: 1.8, heading: 0, headTol: 35, circle: { cx: L.A.x, cz: L.A.z, R: L.R } });
   }
-  items.push({ name: '원주비행(러더턴)', limit: 120, start: 'hover_C', steps: [
-    { kind: 'yaw', text: '기수를 왼쪽(진행방향)으로 돌리세요', heading: 90, hold: 1, target: P(L.C, a) },
+  items.push({ name: '원주비행(러더턴)', limit: 120, start: 'hover_A', steps: [
+    { kind: 'goto', text: 'H 패드 상공으로 이동', target: P(L.H, a), hold: 2, heading: 0 },
+    { kind: 'yaw', text: '기수를 오른쪽(진행방향)으로 돌리세요', heading: -90, hold: 1, target: P(L.H, a) },
     ...circ,
-    { kind: 'yaw', text: '중앙(E)에서 기수를 정면으로 하고 정지', heading: 0, hold: 3, target: P(L.C, a) },
+    { kind: 'yaw', text: 'H 상공에서 기수를 정면으로 정렬 후 정지', heading: 0, hold: 3, target: P(L.H, a) },
   ] });
-  items.push({ name: '비상조작', limit: 60, start: 'hover_C', emergency: true, steps: [
-    { kind: 'goto', text: '중앙(E) 고도 5m 까지 상승', target: P(L.C, 5), hold: 2, heading: 0 },
-    { kind: 'land', text: '⚠ 비상! 비상착륙장으로 신속히 이동하여 착륙', pad: [L.EM.x, L.EM.z], radius: 1.5, timeLimit: 25 },
+  items.push({ name: '비상조작', limit: 60, start: 'hover_H', emergency: true, steps: [
+    { kind: 'goto', text: `H 상공에서 2m 상승 (${a + 2}m)`, target: P(L.H, a + 2), hold: 1, heading: 0 },
+    { kind: 'land', text: '⚠ 비상! 대각선으로 하강하며 F(비상착륙장)에 신속히 착륙', pad: [L.F.x, L.F.z], radius: L.padR + 0.2, timeLimit: 20 },
   ] });
-  items.push({ name: '정상접근 및 착륙', limit: 90, start: 'hover_C', steps: [
-    { kind: 'goto', text: '이착륙장(H) 상공 3m 로 접근 후 정지', target: P(L.H, a), hold: 3, heading: 0 },
-    { kind: 'land', text: '수직으로 강하하여 이착륙장에 착륙', pad: [L.H.x, L.H.z], radius: L.padR },
+  items.push({ name: '정상접근 및 착륙', limit: 90, start: 'ground_F', steps: [
+    { kind: 'arm', text: '(ATTI 모드) F 에서 시동을 거세요' },
+    { kind: 'goto', text: `F 에서 ${a}m 까지 이륙`, target: P(L.F, a), hold: 2, heading: 0 },
+    { kind: 'goto', text: 'H 패드 상공으로 수평 이동 후 정지', target: P(L.H, a), hold: 3, heading: 0, vPathTol: 0.8 },
+    { kind: 'land', text: '수직으로 강하하여 H 패드에 착륙', pad: [L.H.x, L.H.z], radius: L.padR },
   ] });
-  items.push({ name: '측풍접근 및 착륙', limit: 110, start: 'hover_side', crosswind: true, steps: [
-    { kind: 'goto', text: '측풍 대기 지점(오른쪽 8m)에서 기수 왼쪽 90°로 정지', target: [L.H.x - 8, a, L.H.z], hold: 3, heading: 90 },
-    { kind: 'goto', text: '측풍을 받으며 이착륙장(H) 상공으로 접근', target: P(L.H, a), hold: 3, heading: 90, strictHead: true },
-    { kind: 'land', text: '이착륙장에 착륙', pad: [L.H.x, L.H.z], radius: L.padR },
+  items.push({ name: '측풍접근 및 착륙', limit: 110, start: 'ground_H', crosswind: true, steps: [
+    { kind: 'goto', text: 'D 지점으로 이동 후 정지 (측풍: D → B 방향)', target: P(L.D, a), hold: 2, heading: 0 },
+    { kind: 'yaw', text: '기수를 오른쪽(D 방향)으로 돌리세요', heading: -90, hold: 2, target: P(L.D, a) },
+    { kind: 'goto', text: '기수 유지, 측풍을 받으며 H 상공으로 접근', target: P(L.H, a), hold: 3, heading: -90, strictHead: true },
+    { kind: 'land', text: 'H 패드에 착륙', pad: [L.H.x, L.H.z], radius: L.padR },
   ] });
   return { layout: L, items };
 }

@@ -31,50 +31,66 @@ export class DroneSim {
 
   _buildScene() {
     const S = this.scene = new THREE.Scene();
-    S.background = new THREE.Color(0xa9d3f5);
-    S.fog = new THREE.Fog(0xa9d3f5, 90, 320);
-    this.camera = new THREE.PerspectiveCamera(55, 16 / 9, 0.05, 800);
-    S.add(new THREE.HemisphereLight(0xffffff, 0x5a7a3a, 1.1));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.3); sun.position.set(-40, 80, 60); S.add(sun);
-    const grass = new THREE.Mesh(new THREE.PlaneGeometry(800, 800), new THREE.MeshLambertMaterial({ color: 0x6aa04a }));
-    grass.rotation.x = -Math.PI / 2; S.add(grass);
-    // 비행장 잔디 구획선
     const L = this.L;
-    const field = new THREE.Mesh(new THREE.PlaneGeometry(L.D * 2 + 24, L.C.z + 26), new THREE.MeshLambertMaterial({ color: 0x7cb85a }));
-    field.rotation.x = -Math.PI / 2; field.position.set(0, 0.005, (L.C.z + 26) / 2 - 4); S.add(field);
-    // 조종자 위치
+    S.background = skyTexture();
+    S.fog = new THREE.Fog(0xcfe6fb, 160, 520);
+    this.camera = new THREE.PerspectiveCamera(55, 16 / 9, 0.05, 1200);
+    S.add(new THREE.HemisphereLight(0xffffff, 0x5a7a3a, 1.15));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.35); sun.position.set(-60, 120, 80); S.add(sun);
+    // 바깥 흙/잔디
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400), new THREE.MeshLambertMaterial({ color: 0x7a9a55 }));
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.02; S.add(ground);
+    // 시험장 35×80m (줄무늬 잔디)
+    const F = L.field;
+    const stripes = [[0, 15, 0x8fc56a], [15, 30, 0xa9d488], [30, 72.5, 0x8fc56a], [72.5, 80, 0xa9d488]];
+    for (const [z0, z1, c] of stripes) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(F.w, z1 - z0), new THREE.MeshLambertMaterial({ color: c }));
+      m.rotation.x = -Math.PI / 2; m.position.set(0, 0.004, (z0 + z1) / 2); S.add(m);
+    }
+    const white = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const line = (x0, z0, x1, z1, w = 0.12, mat = white) => { const Lh = Math.hypot(x1 - x0, z1 - z0); const m = new THREE.Mesh(new THREE.PlaneGeometry(Lh, w), mat); m.rotation.set(-Math.PI / 2, 0, -Math.atan2(z1 - z0, x1 - x0)); m.position.set((x0 + x1) / 2, 0.012, (z0 + z1) / 2); S.add(m); };
+    line(-F.w / 2, 0, F.w / 2, 0); line(-F.w / 2, F.len, F.w / 2, F.len); line(-F.w / 2, 0, -F.w / 2, F.len); line(F.w / 2, 0, F.w / 2, F.len);
+    // 점선 안내선 (P → B·A·D)
+    const dash = new THREE.MeshBasicMaterial({ color: 0x5a7d2a });
+    for (const x of [L.B.x, 0, L.D.x]) for (let z = 1; z < L.A.z - 0.5; z += 1.2) line(x, z, x, Math.min(z + 0.6, L.A.z), 0.1, dash);
+    // 원주비행 원 (지름 15m)
+    const ring = new THREE.Mesh(new THREE.RingGeometry(L.R - 0.12, L.R + 0.12, 96), new THREE.MeshBasicMaterial({ color: 0x1b1b1b }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(L.A.x, 0.015, L.A.z); S.add(ring);
+    // 조종자 P
+    S.add(this._pad(L.P.x, L.P.z + 0.2, 0x2aa7e6, 'P', 1.6, 0xffffff, '#ffffff'));
     const pilot = new THREE.Group();
-    const box = new THREE.Mesh(new THREE.BoxGeometry(2, 0.05, 2), new THREE.MeshLambertMaterial({ color: 0xdddddd })); box.position.y = 0.03; pilot.add(box);
-    const fig = this.pilotFig = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 1.6, 10), new THREE.MeshLambertMaterial({ color: 0x1f4e9a })); fig.position.y = 0.8; pilot.add(fig);
-    S.add(pilot);
-    const pl = makeLabel('조종자', '#fff'); pl.position.set(0, 2.6, -0.5); pl.scale.multiplyScalar(0.7); S.add(pl);
-    // 이착륙장 H
-    S.add(this._pad(L.H.x, L.H.z, 0xf5f5f5, 'H', L.padR * 2 + 0.6));
-    // 비상착륙장
-    S.add(this._pad(L.EM.x, L.EM.z, 0xffe4e4, '비상', 3.4, 0xd02020));
-    // 기준점 깃발: E(중앙) A(왼) B(오른)
-    for (const [p, n, c] of [[L.C, 'E', '#ffd84a'], [L.A, 'A', '#8fd3ff'], [L.B, 'B', '#ffb0b0']]) {
-      S.add(this._flag(p.x, p.z, n, c));
-    }
-    // 원주비행 원 표시
-    const ring = new THREE.Mesh(new THREE.RingGeometry(L.circleR - 0.08, L.circleR + 0.08, 64), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 }));
-    ring.rotation.x = -Math.PI / 2; ring.position.set(0, 0.02, L.C.z + L.circleR); S.add(ring);
-    // 기준선
-    const line = (x0, z0, x1, z1) => { const L2 = Math.hypot(x1 - x0, z1 - z0); const m = new THREE.Mesh(new THREE.PlaneGeometry(L2, 0.1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 })); m.rotation.set(-Math.PI / 2, 0, -Math.atan2(z1 - z0, x1 - x0)); m.position.set((x0 + x1) / 2, 0.02, (z0 + z1) / 2); S.add(m); };
-    line(L.A.x, L.A.z, L.B.x, L.B.z); line(0, 0, 0, L.C.z);
-    // 풍향 깃발(윈드삭)
+    const fig = this.pilotFig = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 1.6, 10), new THREE.MeshLambertMaterial({ color: 0x1f2f4a })); fig.position.y = 0.8; pilot.add(fig);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), new THREE.MeshLambertMaterial({ color: 0xffffff })); head.position.y = 1.78; pilot.add(head); this.pilotHead = head;
+    pilot.position.set(0, 0, -0.6); S.add(pilot);
+    // 안전 펜스 (조종자 뒤)
+    const fenceM = new THREE.MeshLambertMaterial({ color: 0x2e7d32, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+    const fence = new THREE.Mesh(new THREE.PlaneGeometry(F.w + 10, 1.8), fenceM); fence.position.set(0, 0.9, -3); S.add(fence);
+    // 이착륙장 H (파란 H, 2×2m 녹색 매트), 비상착륙장 F
+    S.add(this._pad(L.H.x, L.H.z, 0x2e6b3a, 'H', 2, 0xffffff, '#1f3fd1', true));
+    S.add(this._pad(L.F.x, L.F.z, 0x2e6b3a, 'F', 2, 0xffffff, '#3f5f1f', true));
+    // 호버링 포인트 A~E: 라바콘 + 수술
+    this.cones = [];
+    for (const k of ['A', 'B', 'C', 'D', 'E']) this.cones.push(this._cone(L[k].x, L[k].z, k));
+    // 윈드삭 (주황·흰 줄무늬)
     this.sock = new THREE.Group();
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 4), new THREE.MeshLambertMaterial({ color: 0xcccccc })); pole.position.y = 2; this.sock.add(pole);
-    this.sockCone = new THREE.Mesh(new THREE.ConeGeometry(0.35, 1.6, 12, 1, true), new THREE.MeshLambertMaterial({ color: 0xff6a00, side: THREE.DoubleSide }));
-    this.sockCone.rotation.x = -Math.PI / 2; this.sockCone.position.set(0, 3.8, 0.8);
-    this.sockPivot = new THREE.Group(); this.sockPivot.add(this.sockCone); this.sock.add(this.sockPivot);
-    this.sock.position.set(-L.D - 5, 0, 8); S.add(this.sock);
-    // 주변 나무
-    const tm = new THREE.MeshLambertMaterial({ color: 0x2f6b2f });
-    for (let i = 0; i < 50; i++) {
-      const a = (i / 50) * Math.PI * 2; const r = 70 + (i * 37 % 30);
-      const t = new THREE.Mesh(new THREE.ConeGeometry(2.2, 7, 7), tm); t.position.set(Math.cos(a) * r, 3.5, 20 + Math.sin(a) * r); S.add(t);
-    }
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 6), new THREE.MeshLambertMaterial({ color: 0xdddddd })); pole.position.y = 3; this.sock.add(pole);
+    const st = document.createElement('canvas'); st.width = 256; st.height = 16; const sg = st.getContext('2d');
+    for (let i = 0; i < 5; i++) { sg.fillStyle = i % 2 ? '#ffffff' : '#ff6a13'; sg.fillRect(i * 256 / 5, 0, 256 / 5, 16); }
+    const stTex = new THREE.CanvasTexture(st); stTex.colorSpace = THREE.SRGBColorSpace;
+    const sockGeo = new THREE.CylinderGeometry(0.22, 0.42, 2.2, 16, 1, true); sockGeo.rotateX(Math.PI / 2); sockGeo.translate(0, 0, 1.1);
+    // 줄무늬가 길이 방향으로 나오도록 UV 회전
+    const uv = sockGeo.attributes.uv; for (let i = 0; i < uv.count; i++) { const u = uv.getX(i), v = uv.getY(i); uv.setXY(i, v, u); }
+    this.sockCone = new THREE.Mesh(sockGeo, new THREE.MeshLambertMaterial({ map: stTex, side: THREE.DoubleSide }));
+    this.sockPivot = new THREE.Group(); this.sockPivot.position.y = 5.8; this.sockPivot.add(this.sockCone); this.sock.add(this.sockPivot);
+    this.sock.position.set(F.w / 2 + 3, 0, 6); S.add(this.sock);
+    // 체크무늬 현수막
+    const ck = document.createElement('canvas'); ck.width = 512; ck.height = 64; const cg = ck.getContext('2d');
+    for (let i = 0; i < 32; i++) for (let j = 0; j < 4; j++) { cg.fillStyle = (i + j) % 2 ? '#ffffff' : '#1b2a6b'; cg.fillRect(i * 16, j * 16, 16, 16); }
+    const ckTex = new THREE.CanvasTexture(ck); ckTex.colorSpace = THREE.SRGBColorSpace;
+    const banner = new THREE.Mesh(new THREE.PlaneGeometry(14, 1.6), new THREE.MeshLambertMaterial({ map: ckTex, side: THREE.DoubleSide }));
+    banner.position.set(-F.w / 2 - 4, 0.9, 40); banner.rotation.y = Math.PI / 2; S.add(banner);
+    const banner2 = banner.clone(); banner2.position.set(10, 0.9, F.len + 6); banner2.rotation.y = 0; S.add(banner2);
+    this._scenery();
     // 목표 표시 (연습모드)
     this.ghost = new THREE.Group();
     const gs = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 12), new THREE.MeshBasicMaterial({ color: 0x00ffaa, transparent: true, opacity: 0.6 }));
@@ -90,21 +106,98 @@ export class DroneSim {
     S.add(this.drone.group);
   }
 
-  _pad(x, z, color, text, size, lineColor = 0x222222) {
+  // 주변 배경: 산, 아파트 단지, 나무, 구름
+  _scenery() {
+    const S = this.scene, rnd = mulberry(11);
+    // 산 (낮은 언덕들)
+    const hillM = [0x3f7a3a, 0x4d8a42, 0x2f6a33].map(c => new THREE.MeshLambertMaterial({ color: c }));
+    for (let i = 0; i < 14; i++) {
+      const a = -0.9 + (i / 13) * 1.8 + (rnd() - 0.5) * 0.1;
+      const r = 300 + rnd() * 120;
+      const h = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), hillM[i % 3]);
+      h.scale.set(60 + rnd() * 70, 25 + rnd() * 45, 50 + rnd() * 40);
+      h.position.set(Math.sin(a) * r, -2, 40 + Math.cos(a) * r); S.add(h);
+    }
+    // 아파트 단지 (하얀 고층)
+    const win = document.createElement('canvas'); win.width = 64; win.height = 128; const wg = win.getContext('2d');
+    wg.fillStyle = '#e9ecef'; wg.fillRect(0, 0, 64, 128); wg.fillStyle = '#9fb3c8';
+    for (let y = 4; y < 128; y += 8) for (let x = 4; x < 64; x += 12) wg.fillRect(x, y, 7, 4);
+    const wTex = new THREE.CanvasTexture(win); wTex.colorSpace = THREE.SRGBColorSpace; wTex.wrapS = wTex.wrapT = THREE.RepeatWrapping;
+    for (let i = 0; i < 26; i++) {
+      const a = -1.1 + rnd() * 1.0;
+      const r = 230 + rnd() * 60;
+      const hgt = 30 + rnd() * 35;
+      const t = wTex.clone(); t.needsUpdate = true; t.repeat.set(2, hgt / 12);
+      const b = new THREE.Mesh(new THREE.BoxGeometry(14, hgt, 10), new THREE.MeshLambertMaterial({ map: t }));
+      b.position.set(Math.sin(a) * r, hgt / 2, 40 + Math.cos(a) * r); b.rotation.y = rnd() * 0.5; S.add(b);
+    }
+    // 나무 (시험장 주변)
+    const leaf = [0x2f6b2f, 0x3c7d34, 0x285c2a].map(c => new THREE.MeshLambertMaterial({ color: c }));
+    const trunk = new THREE.MeshLambertMaterial({ color: 0x6b4a2b });
+    for (let i = 0; i < 90; i++) {
+      const g = new THREE.Group();
+      const round = rnd() < 0.5;
+      const top = round ? new THREE.Mesh(new THREE.SphereGeometry(2 + rnd() * 1.5, 8, 6), leaf[i % 3]) : new THREE.Mesh(new THREE.ConeGeometry(2, 6 + rnd() * 3, 7), leaf[i % 3]);
+      top.position.y = round ? 4.5 : 5; g.add(top);
+      const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 3), trunk); tr.position.y = 1.5; g.add(tr);
+      let x, z;
+      const side = i % 3;
+      if (side === 0) { x = 30 + rnd() * 40; z = -10 + rnd() * 110; }
+      else if (side === 1) { x = -30 - rnd() * 40; z = -10 + rnd() * 110; }
+      else { x = -60 + rnd() * 120; z = 95 + rnd() * 40; }
+      g.position.set(x, 0, z); g.scale.setScalar(0.8 + rnd() * 0.6); S.add(g);
+    }
+    // 구름
+    const cloudTex = cloudTexture();
+    for (let i = 0; i < 18; i++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, transparent: true, opacity: 0.9, depthWrite: false, fog: false }));
+      const a = -1.3 + rnd() * 2.6, r = 380 + rnd() * 200;
+      sp.position.set(Math.sin(a) * r, 70 + rnd() * 110, 40 + Math.cos(a) * r);
+      const w = 90 + rnd() * 120; sp.scale.set(w, w * 0.4, 1); S.add(sp);
+    }
+  }
+
+  _pad(x, z, color, text, size, lineColor = 0x222222, textColor = null, mat = false) {
     const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
-    g.fillStyle = '#' + color.toString(16).padStart(6, '0'); g.fillRect(0, 0, 256, 256);
-    g.strokeStyle = '#' + lineColor.toString(16).padStart(6, '0'); g.lineWidth = 14; g.strokeRect(7, 7, 242, 242);
-    g.fillStyle = g.strokeStyle; g.font = `bold ${text.length > 1 ? 80 : 170}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 128, 136);
+    const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+    g.fillStyle = hex(color); g.fillRect(0, 0, 256, 256);
+    if (mat) { // 인조잔디 매트 질감 + 흰 테두리
+      for (let i = 0; i < 1600; i++) { g.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.08)'; g.fillRect(Math.random() * 256, Math.random() * 256, 2, 2); }
+      g.strokeStyle = hex(lineColor); g.lineWidth = 8; g.strokeRect(14, 14, 228, 228);
+      g.fillStyle = textColor || '#fff'; g.fillRect(78, 78, 100, 100);
+      g.fillStyle = '#ffffff'; g.font = 'bold 90px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 128, 134);
+    } else {
+      g.fillStyle = textColor || hex(lineColor); g.font = 'bold 170px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 128, 136);
+    }
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
     const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshLambertMaterial({ map: tex }));
     m.rotation.x = -Math.PI / 2; m.rotation.z = Math.PI; m.position.set(x, 0.03, z); return m;
   }
-  _flag(x, z, name, color) {
+
+  // 호버링 포인트 라바콘 (꼭대기에 수술 — 드론 바람에 휘날림)
+  _cone(x, z, name) {
     const g = new THREE.Group();
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2), new THREE.MeshLambertMaterial({ color: 0xffffff })); pole.position.y = 1; g.add(pole);
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.7, 12), new THREE.MeshLambertMaterial({ color: new THREE.Color(color) })); cone.position.y = 0.35; g.add(cone);
-    const lb = makeLabel(name, color); lb.position.y = 2.6; lb.scale.multiplyScalar(0.8); g.add(lb);
-    g.position.set(x, 0, z); return g;
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.04, 0.42), new THREE.MeshLambertMaterial({ color: 0x222222 })); base.position.y = 0.02; g.add(base);
+    const c = document.createElement('canvas'); c.width = 64; c.height = 64; const cg = c.getContext('2d');
+    cg.fillStyle = '#ff5a14'; cg.fillRect(0, 0, 64, 64); cg.fillStyle = '#ffffff'; cg.fillRect(0, 22, 64, 10); cg.fillRect(0, 40, 64, 7);
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.7, 20, 1, true), new THREE.MeshLambertMaterial({ map: tex })); cone.position.y = 0.39; g.add(cone);
+    // 수술: 가는 띠 여러 개
+    const tassel = new THREE.Group(); tassel.position.y = 0.76; g.add(tassel);
+    const strips = [];
+    const cols = [0xff9ab0, 0xffffff, 0xffc2d1, 0xff7f9a];
+    for (let i = 0; i < 22; i++) {
+      const piv = new THREE.Group();
+      const len = 0.3 + Math.random() * 0.15;
+      const sGeo = new THREE.PlaneGeometry(0.035, len); sGeo.translate(0, len / 2, 0);
+      const m = new THREE.Mesh(sGeo, new THREE.MeshLambertMaterial({ color: cols[i % 4], side: THREE.DoubleSide }));
+      piv.add(m); piv.rotation.y = (i / 22) * Math.PI * 2;
+      piv.userData = { ph: Math.random() * 6.28, f: 5 + Math.random() * 6, base: 0.25 + Math.random() * 0.35 };
+      tassel.add(piv); strips.push(piv);
+    }
+    const lb = makeLabel(name, '#ff3b30'); lb.position.y = 2.1; lb.scale.multiplyScalar(0.38); g.add(lb);
+    g.position.set(x, 0, z); this.scene.add(g);
+    return { x, z, strips, g };
   }
 
   _buildDrone() {
@@ -153,16 +246,17 @@ export class DroneSim {
   _placeFor(start) {
     const L = this.L;
     const st = this.st = { pos: new THREE.Vector3(L.H.x, 0, L.H.z), vel: new THREE.Vector3(), yaw: 0, pitch: 0, roll: 0, armed: false, onGround: true, propSpin: 0, crashT: 0, lowThrT: 0 };
-    if (start === 'hover_H') { st.pos.set(L.H.x, L.alt, L.H.z); st.armed = true; st.onGround = false; }
-    if (start === 'hover_C') { st.pos.set(L.C.x, L.alt, L.C.z); st.armed = true; st.onGround = false; }
-    if (start === 'hover_side') { st.pos.set(L.H.x, L.alt, L.H.z); st.armed = true; st.onGround = false; }
+    const hover = (p) => { st.pos.set(p.x, L.alt, p.z); st.armed = true; st.onGround = false; };
+    if (start === 'hover_H') hover(L.H);
+    if (start === 'hover_A') hover(L.A);
+    if (start === 'ground_F') st.pos.set(L.F.x, 0, L.F.z);
   }
 
   _beginItem(i) {
     const E = this.ex; E.idx = i; E.itemT = 0; E.timeFault = false;
     const item = this.items[i];
     let steps = item.steps.map(s => ({ ...s }));
-    if (item.start !== 'ground_H' && (this.st.onGround || !this.st.armed)) {
+    if (steps[0].kind !== 'arm' && (this.st.onGround || !this.st.armed)) {
       const p = this.st.pos;
       steps = [
         { kind: 'arm', text: '시동을 거세요 (다음 항목 준비)', free: true },
@@ -253,9 +347,10 @@ export class DroneSim {
     const item = this.items[this.ex.idx];
     let mag = [0, 1.4, 3.0][this.windLevel];
     let dir = this.windDir;
-    if (item && item.crosswind && !this.ex.done) { mag = Math.max(mag, 2.2); dir = 0; } // 측풍(앞쪽→조종자 방향)
+    if (item && item.crosswind && !this.ex.done) { mag = Math.max(mag, 2.2); dir = -Math.PI / 2; } // 측풍: D(오른쪽) → B(왼쪽) 방향으로 붐
     const gust = 1 + 0.35 * Math.sin(this.t * 0.7) + 0.2 * Math.sin(this.t * 2.3 + 1);
-    return new THREE.Vector3(Math.sin(dir) * mag * gust, 0, -Math.cos(dir) * mag * gust * (item && item.crosswind ? 1 : 1));
+    // dir: 바람이 불어오는 방향 (0 = 앞쪽에서 조종자 쪽으로). -90° = 오른쪽(D)에서 왼쪽(B)으로
+    return new THREE.Vector3(-Math.sin(dir) * mag * gust, 0, -Math.cos(dir) * mag * gust);
   }
 
   _physics(dt) {
@@ -339,14 +434,17 @@ export class DroneSim {
     if (st.kind === 'goto' || st.kind === 'yaw') {
       const T = new THREE.Vector3(...st.target);
       const dh = Math.hypot(s.pos.x - T.x, s.pos.z - T.z), dv = Math.abs(s.pos.y - T.y);
-      const tol = st.tol || 1.0, vtol = 0.8;
+      const tol = st.tol || 1.0, vtol = st.vtol || 0.8;
       this._dev = { dh, dv, tol };
       let wantHd = st.heading;
-    if (st.circle && st.heading != null) { const ph = Math.atan2(s.pos.x - st.circle.cx, st.circle.cz + 0 - s.pos.z + 0) ; wantHd = wrapDeg(90 - (Math.atan2(s.pos.x, (st.circle.cz - s.pos.z)) * 180 / Math.PI)); void ph; }
+    if (st.circle && st.heading != null) { // 원의 접선 방향 (H → D → C → B → H)
+      const rx = s.pos.x - st.circle.cx, rz = s.pos.z - st.circle.cz;
+      wantHd = wrapDeg(Math.atan2(rz, -rx) / DEG);
+    }
     st.wantHd = wantHd;
     const hdErr = wantHd == null ? 0 : Math.abs(wrapDeg(yawDeg - wantHd));
       if (st.kind === 'yaw') {
-        if (dh > 1.6 || dv > 1.3) this._fault('기수 회전 중 위치 이탈');
+        if (st.t > 2.5 && (dh > 1.6 || dv > 1.3)) this._fault('기수 회전 중 위치 이탈');
         if (hdErr < 8) { st.holdT += dt; if (st.holdT >= st.hold) this._nextStep(); } else st.holdT = 0;
         return;
       }
@@ -358,8 +456,8 @@ export class DroneSim {
           if (dv > 1.5) this._fault('원주비행 고도 유지 불량');
         } else if (st.from) {
           const d = segDist(s.pos, st.from, T);
-          if (d.h > 2.2) this._fault('비행 경로 이탈(수평)');
-          if (d.v > 1.6) this._fault('비행 경로 이탈(고도)');
+          if (d.h > (st.pathTol || 2.2)) this._fault(st.pathTol ? `비행 경로 이탈(좌우 ${st.pathTol}m 초과)` : '비행 경로 이탈(수평)');
+          if (d.v > (st.vPathTol || 1.6)) this._fault(st.vPathTol ? `고도 편차 ${st.vPathTol}m 초과` : '비행 경로 이탈(고도)');
         }
         if ((st.circle || st.strictHead) && wantHd != null && st.t > 2 && hdErr > (st.headTol || 30)) this._fault('기수 방향 유지 불량');
         if (dh <= tol && dv <= vtol) { st.arrived = true; st.holdT = 0; if (!st.hold) { this._nextStep(); return; } }
@@ -410,18 +508,35 @@ export class DroneSim {
     const w = this._windNow || new THREE.Vector3();
     const wm = Math.hypot(w.x, w.z);
     this.sockPivot.rotation.y = Math.atan2(w.x, w.z);
-    this.sockCone.rotation.x = -Math.PI / 2 + Math.max(0, 1.2 - wm * 0.4);
+    this.sockCone.rotation.x = Math.max(0, 1.25 - wm * 0.38) + Math.sin(this.t * 3.1) * 0.04;
+    // 라바콘 수술: 바람 + 드론 하강풍(가까울수록 세게)
+    const t = this.t;
+    for (const c of this.cones) {
+      const dx = c.x - s.pos.x, dz = c.z - s.pos.z, dh = Math.hypot(dx, dz);
+      const down = s.armed && !s.onGround ? Math.max(0, 1 - dh / (this.P.span * 2.2)) * Math.max(0, 1 - s.pos.y / 9) : 0;
+      const dirW = Math.atan2(w.x, w.z), dirD = Math.atan2(dx, dz);
+      const strength = Math.min(1.4, wm * 0.12 + down * 1.6);
+      c.flutter = down;
+      for (const p of c.strips) {
+        const u = p.userData;
+        const amp = 0.06 + strength * 0.9;
+        const lean = Math.min(1.35, u.base * 0.4 + strength);
+        // 띠 바깥쪽으로 퍼짐 + 펄럭임
+        p.children[0].rotation.x = -(lean + Math.sin(t * u.f * (1 + strength) + u.ph) * amp);
+        void dirW; void dirD;
+      }
+    }
   }
 
   _camera(dt) {
     const s = this.st, cam = this.camera; cam.up.set(0, 1, 0);
-    this.pilotFig.visible = this.camMode !== 'pilot';
+    this.pilotFig.visible = this.pilotHead.visible = this.camMode !== 'pilot';
     if (this.camMode === 'pilot') {
       cam.position.set(0, 1.7, -1.0);
       const look = this._look || (this._look = s.pos.clone());
       look.lerp(new THREE.Vector3(s.pos.x, s.pos.y + 0.3, s.pos.z), Math.min(1, dt * 4));
       const dist = cam.position.distanceTo(look);
-      cam.fov = Math.max(24, Math.min(60, 2 * Math.atan(7 / dist) / DEG));
+      cam.fov = Math.max(11, Math.min(60, 2 * Math.atan(7 / dist) / DEG));
       cam.lookAt(look);
     } else if (this.camMode === 'chase') {
       const f = new THREE.Vector3(Math.sin(s.yaw), 0, Math.cos(s.yaw));
@@ -432,8 +547,8 @@ export class DroneSim {
       cam.lookAt(s.pos.x + f.x * 3, s.pos.y, s.pos.z + f.z * 3);
       return cam.updateProjectionMatrix();
     } else {
-      cam.position.set(0, 55, this.L.C.z * 0.55); cam.up.set(0, 0, 1); cam.fov = 50;
-      cam.lookAt(0, 0, this.L.C.z * 0.55);
+      cam.position.set(0, 95, 38); cam.up.set(0, 0, 1); cam.fov = 50;
+      cam.lookAt(0, 0, 38);
     }
     this._cp = null;
     cam.updateProjectionMatrix();
@@ -456,19 +571,7 @@ export class DroneSim {
     const list = this.items.map((it, i) => `<span class="chip ${E.results[i] === 'S' ? 'good' : E.results[i] === 'U' ? 'bad' : i === E.idx && !E.done ? 'cur' : ''}">${i + 1}</span>`).join('');
     return `<b>${this.P.title}</b> · ${this.mode === 'exam' ? '시험모드' : '연습모드'}<br>${list} · 비행 ${fmt(E.time)}`;
   }
-  drawMinimap(ctx, w, h) {
-    const L = this.L; const span = Math.max(L.D * 2 + 20, L.C.z + 20);
-    const sc = Math.min(w, h) / span;
-    const X = x => w / 2 - x * sc, Y = z => h - 10 - z * sc;
-    ctx.clearRect(0, 0, w, h);
-    ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(X(0), Y(L.C.z + L.circleR), L.circleR * sc, 0, 7); ctx.stroke();
-    const pt = (p, c, t) => { ctx.fillStyle = c; ctx.fillRect(X(p.x) - 4, Y(p.z) - 4, 8, 8); ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif'; ctx.fillText(t, X(p.x) + 6, Y(p.z) + 4); };
-    pt({ x: 0, z: 0 }, '#4af', '조종자'); pt(L.H, '#fff', 'H'); pt(L.EM, '#f55', '비상'); pt(L.C, '#fd4', 'E'); pt(L.A, '#8df', 'A'); pt(L.B, '#fbb', 'B');
-    const s = this.st;
-    ctx.save(); ctx.translate(X(s.pos.x), Y(s.pos.z)); ctx.rotate(-s.yaw);
-    ctx.fillStyle = '#ff3b30'; ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(6, 7); ctx.lineTo(-6, 7); ctx.closePath(); ctx.fill(); ctx.restore();
-  }
+  drawMinimap(ctx, w, h) { drawDroneMap(ctx, w, h, this.L, { x: this.st.pos.x, z: this.st.pos.z, hd: this.st.yaw / DEG }); }
   phoneState() {
     const s = this.st, E = this.ex;
     const w = this._windNow || { x: 0, z: 0 };
@@ -492,3 +595,31 @@ function segDist(p, a, b) {
   const q = a.clone().addScaledVector(ab, t);
   return { h: Math.hypot(p.x - q.x, p.z - q.z), v: Math.abs(p.y - q.y) };
 }
+
+// 위에서 본 시험장 지도 (TV 미니맵·휴대폰 액정 공용 로직은 phone.js 에 동일)
+function drawDroneMap(ctx, w, h, L, me) {
+  const F = L.field; const sc = Math.min((w - 12) / F.w, (h - 12) / F.len);
+  const X = x => w / 2 - x * sc, Y = z => h / 2 + (F.len / 2 - z) * sc;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(110,170,80,.35)'; ctx.fillRect(X(F.w / 2), Y(F.len), F.w * sc, F.len * sc);
+  ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 1; ctx.strokeRect(X(F.w / 2), Y(F.len), F.w * sc, F.len * sc);
+  ctx.beginPath(); ctx.arc(X(L.A.x), Y(L.A.z), L.R * sc, 0, 7); ctx.stroke();
+  const pt = (p, c, t, sq) => { ctx.fillStyle = c; if (sq) ctx.fillRect(X(p.x) - 4, Y(p.z) - 4, 8, 8); else { ctx.beginPath(); ctx.moveTo(X(p.x), Y(p.z) - 5); ctx.lineTo(X(p.x) + 4, Y(p.z) + 3); ctx.lineTo(X(p.x) - 4, Y(p.z) + 3); ctx.fill(); } ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif'; ctx.fillText(t, X(p.x) + 6, Y(p.z) + 4); };
+  pt(L.P, '#2aa7e6', 'P', 1); pt(L.H, '#1f3fd1', 'H', 1); pt(L.F, '#3f5f1f', 'F', 1);
+  for (const k of ['A', 'B', 'C', 'D', 'E']) pt(L[k], '#ff3b30', k);
+  ctx.save(); ctx.translate(X(me.x), Y(me.z)); ctx.rotate(-me.hd * Math.PI / 180);
+  ctx.fillStyle = '#ffd60a'; ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(6, 6); ctx.lineTo(0, 3); ctx.lineTo(-6, 6); ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function skyTexture() {
+  const c = document.createElement('canvas'); c.width = 4; c.height = 256; const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, '#2f7fe0'); gr.addColorStop(0.55, '#7db8f0'); gr.addColorStop(1, '#d7ecfb');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function cloudTexture() {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128; const g = c.getContext('2d');
+  const blob = (x, y, r) => { const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(255,255,255,.95)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); };
+  [[70, 75, 45], [120, 60, 55], [175, 75, 45], [100, 85, 40], [150, 88, 40], [210, 85, 30], [40, 88, 28]].forEach(b => blob(...b));
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }

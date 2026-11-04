@@ -15,7 +15,7 @@
   function status(text, ok) {
     $('conn').textContent = text; $('dot').className = 'dot' + (ok ? ' on' : '');
     linkUp = !!ok;
-    const nb = $('netBanner'); if (nb) { nb.textContent = text; nb.style.display = ok ? 'none' : 'block'; }
+    const nb = $('netBanner'); if (nb) { nb.textContent = text + '  ↻ 눌러서 재연결'; nb.style.display = ok ? 'none' : 'block'; }
   }
   function freshPeer() { try { peer && peer.destroy(); } catch { /* 무시 */ } peer = null; }
   function ensurePeer(cb) {
@@ -78,10 +78,12 @@
     if (document.visibilityState !== 'visible') return;
     if (conn && conn.open && performance.now() - lastRx > 4000) { status(`방 ${room} · 신호 없음 — 재연결 중…`, false); dropConn(); freshPeer(); connect(); }
   }, 1000);
+  $('netBanner').addEventListener('pointerdown', () => wake());
   connect();
 
   function askRoom(msg) {
     $('conn').textContent = msg; $('roomBox').style.display = 'flex'; $('roomIn').value = room || '';
+    show('menu');
   }
   $('roomGo').onclick = () => {
     const v = $('roomIn').value.replace(/[^0-9]/g, '');
@@ -266,27 +268,32 @@
 
   // 액정 미니맵 (위에서 본 비행장, 조종자 아래쪽)
   function drawLcdMap() {
-    const cv = $('lMap'); const L = scene && scene.layout; if (!cv || !L) return;
-    const W = cv.clientWidth * (window.devicePixelRatio || 1), H = cv.clientHeight * (window.devicePixelRatio || 1);
+    const cv = $('lMap'); const L = scene && scene.layout; if (!cv || !L || !L.field) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.round(cv.clientWidth * dpr), H = Math.round(cv.clientHeight * dpr);
     if (!W || !H) return;
-    if (cv.width !== Math.round(W)) { cv.width = Math.round(W); cv.height = Math.round(H); }
-    const g = cv.getContext('2d'); g.clearRect(0, 0, cv.width, cv.height);
-    const span = Math.max(L.D * 2 + 10, L.C.z + L.circleR * 2 + 6);
-    const sc = Math.min(cv.width, cv.height) / span;
-    const cz = (L.C.z + L.circleR * 2) / 2;
-    const X = x => cv.width / 2 - x * sc, Y = z => cv.height / 2 - (z - cz) * sc + 4;
-    g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 1;
-    for (let k = -30; k <= 60; k += 5) { g.beginPath(); g.moveTo(0, Y(k)); g.lineTo(cv.width, Y(k)); g.stroke(); g.beginPath(); g.moveTo(X(k), 0); g.lineTo(X(k), cv.height); g.stroke(); }
-    g.strokeStyle = 'rgba(255,255,255,.45)'; g.beginPath(); g.arc(X(0), Y(L.C.z + L.circleR), L.circleR * sc, 0, 7); g.stroke();
-    g.beginPath(); g.moveTo(X(L.A.x), Y(L.A.z)); g.lineTo(X(L.B.x), Y(L.B.z)); g.stroke();
-    const f = Math.max(9, sc * 1.4);
-    const pt = (p, c, t) => { g.fillStyle = c; g.beginPath(); g.arc(X(p.x), Y(p.z), Math.max(3, sc * 0.5), 0, 7); g.fill(); g.fillStyle = '#dfe7ee'; g.font = `${f}px sans-serif`; g.fillText(t, X(p.x) + 5, Y(p.z) - 4); };
-    pt(L.H, '#ffffff', 'H'); pt(L.EM, '#ff5a52', '비상'); pt(L.C, '#ffd84a', 'E'); pt(L.A, '#8fd3ff', 'A'); pt(L.B, '#ffb0b0', 'B');
-    g.fillStyle = '#4da3ff'; g.fillRect(X(0) - 4, Y(0) - 4, 8, 8);
-    if (st.tgt) { g.strokeStyle = '#00ffaa'; g.lineWidth = 2; g.beginPath(); g.arc(X(st.tgt[0]), Y(st.tgt[1]), Math.max(4, sc * 1.0), 0, 7); g.stroke(); }
+    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+    const g = cv.getContext('2d'); g.clearRect(0, 0, W, H);
+    // 지도는 드론 근처를 확대 (시험장 35×80m 전체가 길쭉해서)
+    const F = L.field;
+    const viewLen = 45, sc = Math.min((W - 8) / F.w, (H - 8) / viewLen);
+    const cz = Math.max(viewLen / 2 - 2, Math.min(F.len - viewLen / 2 + 2, (st.z ?? L.A.z) + 6));
+    const X = x => W / 2 - x * sc, Y = z => H / 2 + (cz - z) * sc;
+    g.fillStyle = 'rgba(90,150,70,.45)'; g.fillRect(X(F.w / 2), Y(F.len), F.w * sc, F.len * sc);
+    g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = dpr; g.strokeRect(X(F.w / 2), Y(F.len), F.w * sc, F.len * sc);
+    g.strokeStyle = 'rgba(255,255,255,.8)'; g.beginPath(); g.arc(X(L.A.x), Y(L.A.z), L.R * sc, 0, 7); g.stroke();
+    const fs = Math.max(10 * dpr, sc * 1.3);
+    g.font = `bold ${fs}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const sq = (p, c, t) => { const k = Math.max(5 * dpr, sc * 1.0); g.fillStyle = c; g.fillRect(X(p.x) - k, Y(p.z) - k, k * 2, k * 2); g.fillStyle = '#fff'; g.fillText(t, X(p.x), Y(p.z) + 1); };
+    const tri = (p, t) => { const k = Math.max(5 * dpr, sc * 0.9); g.fillStyle = '#ff3b30'; g.beginPath(); g.moveTo(X(p.x), Y(p.z) - k); g.lineTo(X(p.x) + k, Y(p.z) + k * 0.8); g.lineTo(X(p.x) - k, Y(p.z) + k * 0.8); g.fill(); g.fillStyle = '#fff'; g.fillText(t, X(p.x), Y(p.z) - k * 1.9); };
+    sq(L.P, '#2aa7e6', 'P'); sq(L.H, '#1f3fd1', 'H'); sq(L.F, '#3f5f1f', 'F');
+    for (const k of ['A', 'B', 'C', 'D', 'E']) tri(L[k], k);
+    if (st.tgt) { g.strokeStyle = '#00ffaa'; g.lineWidth = 2 * dpr; g.beginPath(); g.arc(X(st.tgt[0]), Y(st.tgt[1]), Math.max(6 * dpr, sc * 1.2), 0, 7); g.stroke(); }
     if (st.x != null) {
       g.save(); g.translate(X(st.x), Y(st.z)); g.rotate(-(st.hd || 0) * Math.PI / 180);
-      g.fillStyle = '#ff3b30'; g.beginPath(); const k = Math.max(7, sc * 1.2); g.moveTo(0, -k); g.lineTo(k * 0.7, k * 0.8); g.lineTo(0, k * 0.4); g.lineTo(-k * 0.7, k * 0.8); g.closePath(); g.fill(); g.restore();
+      const k = Math.max(8 * dpr, sc * 1.4);
+      g.fillStyle = '#ffd60a'; g.strokeStyle = '#000'; g.lineWidth = dpr;
+      g.beginPath(); g.moveTo(0, -k); g.lineTo(k * 0.7, k * 0.8); g.lineTo(0, k * 0.4); g.lineTo(-k * 0.7, k * 0.8); g.closePath(); g.fill(); g.stroke(); g.restore();
     }
   }
 

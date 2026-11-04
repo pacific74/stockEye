@@ -66,6 +66,8 @@ function connect() {
 }
 function updatePhones() {
   phones = conns.size;
+  document.body.classList.toggle('nophone', phones === 0);
+  $('mqs').textContent = phones ? `휴대폰 ${phones}대 연결됨` : '연결 끊김 — QR을 찍으세요';
   setNet(phones ? `휴대폰 ${phones}대 연결됨 — 휴대폰에서 시험을 선택하세요` : '휴대폰 연결 대기 중', phones > 0);
   send({ t: 'status', phones, tvs: 1, room });
 }
@@ -93,13 +95,13 @@ function startSim(kind, variant, mode) {
   if (sim && sim.scene) disposeScene(sim.scene);
   sim = kind === 'drone' ? new DroneSim(variant, mode, hud) : new CarSim(variant, mode, hud);
   sim.onEvent = (kind2, text) => send({ t: 'event', kind: kind2, text });
-  $('connect').style.display = 'none';
+  $('connect').style.display = 'none'; document.body.classList.add('playing');
   resize();
   sendScene();
 }
 function stopSim() {
   if (sim && sim.scene) disposeScene(sim.scene);
-  sim = null; $('connect').style.display = 'flex'; hud.hideResult(); send({ t: 'scene', kind: null });
+  sim = null; document.body.classList.remove('playing'); $('connect').style.display = 'flex'; hud.hideResult(); send({ t: 'scene', kind: null });
 }
 function sendScene() { if (sim) send({ t: 'scene', kind: sim.kind, variant: sim.variant, mode: sim.mode, jumps: sim.jumpList(), manual: sim.course ? sim.course.manual : false, layout: sim.kind === 'drone' ? sim.L : null }); }
 function disposeScene(scene) {
@@ -149,7 +151,8 @@ function showConnectInfo() {
   const ph = new URLSearchParams(location.search).get('peerhost'); if (ph) qs.set('peerhost', ph);
   const url = `${base}phone.html?${qs}`;
   $('url').textContent = url.replace(/^https?:\/\//, '');
-  try { const q = qrcode(0, 'M'); q.addData(url); q.make(); $('qr').src = q.createDataURL(8, 2); } catch { /* QR 실패 시 주소만 표시 */ }
+  try { const q = qrcode(0, 'M'); q.addData(url); q.make(); const d = q.createDataURL(8, 2); $('qr').src = d; $('qr2').src = d; } catch { /* QR 실패 시 주소만 표시 */ }
+  $('code2').textContent = room;
 }
 $('keys').textContent = 'PC 키보드 테스트: 숫자 1~5 시작(Shift=시험) · C 카메라 · Esc 메뉴';
 

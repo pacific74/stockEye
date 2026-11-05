@@ -106,7 +106,9 @@ class Live:
             return (f"매수발생 · {t['name']}",
                     f"{name} {t.get('buy_time') or t['time']} {'매수 범위 매수' if tracker.kind == 'closingbet' else '진입조건충족'}"
                     f"\n매수 {t['entry']:,.0f} · 손절 {t['stop']:,.0f}"
-                    + (f" · 1차 {t['t1']:,.0f}" if t.get("t1") else ""))
+                    + (f" · 1차 {t['t1']:,.0f}" if t.get("t1") else "")
+                    + (f"\n★ 09:00 선발 (프리 {_pc(t, 'pre')} · 애프터 {_pc(t, 'after')})" if (t.get("card") or {}).get("early") else "")
+                    + (f"\n유형 {(t.get('card') or {}).get('type')}" if (t.get("card") or {}).get("type") else ""))
         if state == "매도신호포착":
             return (f"매도발생 · {t['name']}",
                     f"{name} {t['events'][-1]['time']} 매도신호포착 (매물 급증) · 지금 {t.get('last') or 0:,.0f}")
@@ -155,6 +157,12 @@ class Live:
             tracker.save()
             self.push(tracker, t)
         self.q.put(job)
+
+
+def _pc(t: dict, k: str) -> str:
+    """알림 문구용: 선발 근거 (프리·애프터 %)"""
+    x = ((t.get("card") or {}).get("early_info") or {}).get(k)
+    return "-" if x is None else f"{x:+.1f}%"
 
 
 def main():
@@ -264,6 +272,7 @@ def main():
                 pass
             add = sg_watch.add_pre(pre, scores, dt.names)
             dt.boost = {c for c, _ in scores} | {i["code"] for i in sg_watch.items}
+            dt.flow = {c: float(v) for c, v in (lst.get("flow") or {}).items()}
             print(f"급등예상 아침 보강 {len(add)}종목 추가")
             seen = False
             try:
@@ -287,7 +296,7 @@ def main():
         new = sg_watch.update(q.to_dict("records"), hm)
         rows = {r["code"]: r for r in sg_watch.rows}
         for it, label in new:
-            if label in ("상한가 도달", "+20%"):
+            if label in sgl.ALERT_LEVELS:
                 t, body = sgl.alert_text(it, label, hm, rows.get(it["code"]))
                 for tp in live.topics:
                     live.q.put(lambda tp=tp, t=t, body=body: live.nt.send_topic(tp, t, body, priority="high"))
@@ -370,6 +379,12 @@ def main():
             except Exception as e:  # noqa: BLE001
                 print(f"⚠ NXT 프리마켓 기록 실패: {e}")
         nxt_done[0] = True
+        try:
+            from stockeye.analysis import nxt_ctx as _nc
+            dt.after = {c: v for c, v in (_nc.load_after(sb, day) if sb else {}).items() if isinstance(v, (list, tuple)) and len(v) >= 2}
+            print(f"어제 저녁 애프터마켓 {len(dt.after)}종목 읽음")
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠ 애프터마켓 기록 읽기 실패 (프리마켓만으로 선발): {e}")
         dt.pre = {c: v for c, v in pre.items() if isinstance(v, (list, tuple)) and len(v) >= 2}   # 당일단타 09:00 후보 선발용
         surge_pre(pre)
         for tr in (dt.track, lc.track):

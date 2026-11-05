@@ -62,7 +62,7 @@ def run(sb, pit, today: str) -> dict:
     last = panel.date.max()
     model, info = sg.fit(panel)
     res = sg.pick(panel, model, last)
-    lst = {"date": str(last.date()), "version": sg.VERSION, "model": info, "items": res["items"], "scores": res["scores"],
+    lst = {"date": str(last.date()), "version": sg.VERSION, "model": info, "items": res["items"], "scores": res["scores"], "flow": res.get("flow") or {},
            "n_universe": res.get("n_universe")}
     _up(sb, f"surge/lists/{lst['date']}.json", lst)
 

@@ -313,8 +313,11 @@ class _Section extends StatelessWidget {
               quote: stale && x['done'] != true ? quotes['${x['code']}'] : null,
               candRank: _lc ? null : candRankOf['${x['code']}']),
       ], width: _trackW),
-      sub('진입대기', wait.length, _lc ? '+20%↑ · 100억↑ · 75점↑ (바뀔 수 있음)' : '80점↑ · 진입 신호 전 (바뀔 수 있음)'),
-      _grid([for (final (i, r) in wait.indexed) tile(r, i)]),
+      if (_lc) ...[
+        // 당일단타는 '진입대기'·'기준 미달' 구역을 안 보임 (2026-11-05 사용자) — 후보 10개 카드와 진입조건충족만
+        sub('진입대기', wait.length, '+20%↑ · 100억↑ · 75점↑ (바뀔 수 있음)'),
+        _grid([for (final (i, r) in wait.indexed) tile(r, i)]),
+      ],
       if (watch.isNotEmpty)
         Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -328,7 +331,7 @@ class _Section extends StatelessWidget {
             children: [_grid([for (final (i, r) in watch.take(10).indexed) tile(r, i)])],
           ),
         ),
-      if (rest.isNotEmpty)
+      if (_lc && rest.isNotEmpty)
         Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
@@ -407,7 +410,7 @@ class _Shortlist extends StatelessWidget {
                 ActionChip(
                   visualDensity: VisualDensity.compact,
                   backgroundColor: Colors.purple.withValues(alpha: 0.12),
-                  label: Text('${x['name']} 프리 ${(x['pre'] as num?) != null && (x['pre'] as num) >= 0 ? '+' : ''}${x['pre']}%', style: t.bodySmall),
+                  label: Text('${x['name']} 프리 ${x['pre'] ?? '-'}% · 애프터 ${x['after'] ?? '-'}%', style: t.bodySmall),
                   onPressed: () => Navigator.push(context,
                       MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${x['code']}', name: '${x['name']}'))),
                 ),

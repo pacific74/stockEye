@@ -93,3 +93,28 @@ def test_tag_early_before_freeze():
     sl.tag(r, st)
     assert r["cand_rank"] == 0 and r["early"]
     assert sl.view(st)["early"][0]["code"] == "e1"
+
+
+def test_early_pick_after_market_and_flow():
+    pre = {"a": [1000, 0.5], "b": [1000, 4.0], "c": [1000, -2.0]}
+    after = {"a": [1000, 6.0], "b": [1000, 2.0], "c": [1000, 7.0], "z": [1000, 9.0]}
+    info = {k: {"adr": 0.08, "pv": 5e9, "name": k} for k in "abcz"}
+    out = sl.early_pick(pre, info, after=after, flow={"a": 0.10})
+    codes = [x["code"] for x in out]
+    assert "c" not in codes                              # 애프터는 올랐지만 프리마켓이 0% 미만이면 제외
+    assert codes[0] == "z" or codes[0] == "a"
+    a = next(x for x in out if x["code"] == "a")
+    assert a["after"] == 6.0 and a["flow"] == 5.0        # 수급 가산은 최대 5
+    assert a["score"] == round(0.5 + 3.0 + 5.0, 1)
+
+
+def test_types_allow_breakout_by_default():
+    st = sl.new_state()
+    sl.freeze(st, [_r("a", 85)], "09:05")
+    r = _r("a", 85, "진입 조건 충족", typ="돌파")
+    sl.gate(r, st)
+    assert r["status"] == "진입 조건 충족"               # 2026-11-05: 돌파형도 허용 (조건별 확률 비교용)
+    r["early_info"] = None
+    st["early"] = [{"code": "a", "pre": 5.0, "after": 3.0}]
+    sl.tag(r, st)
+    assert r["early_info"] == {"pre": 5.0, "after": 3.0}

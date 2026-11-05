@@ -23,7 +23,7 @@ TOP = 5                   # 그중 우선 (되돌려 보기에서 가장 좋았�
 LATE_ADD = 90.0           # 후보 밖이라도 이 점수 이상이면 추가 (검증 안 된 초기값)
 LATE_ADD_UP = 85.0        # 미국 선물 상승(적극)이면 후보 밖 추가 기준을 90 → 85점 (검증 안 됨)
 TOP_DOWN = 5              # 미국 선물 하락(보수)이면 후보 상위 5개만 진입 (되돌려 보기: 상위 5개가 가장 좋았음)
-TYPES: tuple[str, ...] | None = ("눌림목",)   # 2026-10-29: 후보 안에서도 눌림목형이 앞섰음 (상위 10개: 눌림목 +0.81% 27건 · 돌파 −0.07% 42건) → 눌림목만
+TYPES: tuple[str, ...] | None = None   # 2026-10-29: 후보 안에서도 눌림목형이 앞섰음 (상위 10개: 눌림목 +0.81% 27건 · 돌파 −0.07% 42건) → 눌림목만
 
 
 def new_state() -> dict:
@@ -42,25 +42,34 @@ def pick(res: list[dict], n: int = N) -> list[dict]:
              "type": r.get("type"), "rank": i} for i, r in enumerate(ok[:n], 1)]
 
 
-def early_pick(pre: dict, info: dict, boost: set | None = None, n: int = EARLY_N) -> list[dict]:
-    """09:00 선발 — 프리마켓(pre = {코드: [가격, 전일종가 대비 %]}) 등락 +EARLY_MIN~MAX% 종목 중
-    info[code] = {adr, pv(전일 거래대금), name} 로 평소 변동폭(MIN_ADR)·전일 거래대금을 거른 뒤 (프리마켓 % + 급등예상 가산) 순으로 n개"""
+def early_pick(pre: dict, info: dict, boost: set | None = None, n: int = EARLY_N, after: dict | None = None,
+               flow: dict | None = None) -> list[dict]:
+    """09:00 선발 — 프리마켓(pre) · 어제 저녁 애프터마켓(after) = {코드: [가격, 종가 대비 %]} 등락이 +EARLY_MIN~MAX% 인 종목 중
+    info[code] = {adr, pv(전일 거래대금), name} 로 평소 변동폭(MIN_ADR)·전일 거래대금을 거른 뒤 점수 순으로 n개.
+    점수 = 프리마켓 % + 0.5×애프터마켓 % + 급등예상 목록 가산 + 외국인·기관 3일 순매수 가산(최대 5)  (⚠ 가중치는 검증 전 초기값)
+    후보 조건: 프리마켓이 범위 안이거나, 애프터마켓이 범위 안이면서 프리마켓이 0% 이상"""
     from ..engine.daytrade import MIN_ADR
-    boost = boost or set()
+    boost, after, flow = boost or set(), after or {}, flow or {}
     rows = []
-    for c, v in pre.items():
+    for c in set(pre) | set(after):
         i = info.get(c)
-        if not i or not v or not (EARLY_MIN <= v[1] <= EARLY_MAX):
+        pv = (pre.get(c) or [None, None])[1]
+        av = (after.get(c) or [None, None])[1]
+        ok_pre = pv is not None and EARLY_MIN <= pv <= EARLY_MAX
+        ok_aft = av is not None and EARLY_MIN <= av <= EARLY_MAX and (pv is None or pv >= 0)
+        if not i or not (ok_pre or ok_aft):
             continue
         if (i.get("adr") or 0) < MIN_ADR or (i.get("pv") or 0) < EARLY_MIN_PV:
             continue
-        rows.append({"code": c, "name": i.get("name") or c, "pre": round(float(v[1]), 2), "adr": round(float(i["adr"]) * 100, 1),
-                     "pv_eok": round(float(i["pv"]) / 1e8), "surge": c in boost,
-                     "key": float(v[1]) + (EARLY_BOOST if c in boost else 0)})
+        fb = min(max(float(flow.get(c) or 0) * 100, 0.0), 5.0)
+        rows.append({"code": c, "name": i.get("name") or c, "pre": None if pv is None else round(float(pv), 2),
+                     "after": None if av is None else round(float(av), 2), "adr": round(float(i["adr"]) * 100, 1),
+                     "pv_eok": round(float(i["pv"]) / 1e8), "surge": c in boost, "flow": round(fb, 1),
+                     "key": float(pv or 0) + 0.5 * float(av or 0) + (EARLY_BOOST if c in boost else 0) + fb})
     rows.sort(key=lambda r: -r["key"])
     out = rows[:n]
     for r in out:
-        r.pop("key", None)
+        r["score"] = round(r.pop("key"), 1)
     return out
 
 
@@ -75,7 +84,7 @@ def freeze(st: dict, res: list[dict], hm: str) -> bool:
     for x in st.get("early") or []:
         r = byc.get(x["code"])
         rows.append({"code": x["code"], "name": x.get("name"), "score": round(float((r or {}).get("score") or 0), 1),
-                     "type": (r or {}).get("type"), "src": "early", "pre": x.get("pre")})
+                     "type": (r or {}).get("type"), "src": "early", "pre": x.get("pre"), "after": x.get("after")})
     rest = pick([r for r in res if r.get("code") not in early], max(N - len(rows), 0))
     rows += [{**x, "src": "score"} for x in rest]
     rows.sort(key=lambda r: -float(r.get("score") or 0))
@@ -117,16 +126,17 @@ def gate(r: dict, st: dict, tone: str | None = None) -> None:
 
 
 def tag(r: dict, st: dict) -> None:
-    """앱 표시용: 후보 순위 (후보 밖 추가분은 0)"""
-    rk = rank_of(st, r.get("code"))
+    """앱 표시용: 후보 순위 (후보 밖 추가분은 0) · 09:00 선발 종목이면 early + 근거(프리·애프터 %)"""
+    code = r.get("code")
+    rk = rank_of(st, code)
+    ex = next((x for x in st.get("list") or [] if x["code"] == code and x.get("src") == "early"), None) \
+        or next((x for x in st.get("early") or [] if x["code"] == code), None)
+    if ex:
+        r["early"] = True
+        r["early_info"] = {"pre": ex.get("pre"), "after": ex.get("after")}
     if rk is not None:
         r["cand_rank"] = rk
-        if any(x["code"] == r.get("code") and x.get("src") == "early" for x in st.get("list") or []):
-            r["early"] = True
-    elif r.get("code") in {x["code"] for x in st.get("early") or []}:
-        r["cand_rank"] = 0
-        r["early"] = True
-    elif r.get("code") in (st.get("late") or []):
+    elif ex or code in (st.get("late") or []):
         r["cand_rank"] = 0
 
 

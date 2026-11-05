@@ -83,6 +83,8 @@ class Runner:
         self.adr: dict[str, float | None] = {}                       # code → 평소 하루 변동폭 (하루 한 번)
         self.pv: dict[str, float | None] = {}                        # code → 전일 거래대금 (종가×거래량 근사)
         self.pre: dict[str, list] = {}                               # NXT 프리마켓 {코드: [가격, 전일종가 대비 %]} (intraday_live 가 넣어 줌)
+        self.after: dict[str, list] = {}                             # 어제 저녁 NXT 애프터마켓 {코드: [가격, 종가 대비 %]}
+        self.flow: dict[str, float] = {}                             # 급등예상 목록 종목의 외국인·기관 3일 순매수 비율
         self.boost: set[str] = set()                                 # 급등예상 목록(점수 상위 100·아침 보강) 코드
         self.signals: dict[tuple, dict] = {}
         self.day = _now().strftime("%Y-%m-%d")
@@ -159,17 +161,21 @@ class Runner:
         """09:00 선발 5종목 (2026-11-05) — NXT 프리마켓 +3~25% 종목 중 평소 변동폭·전일 거래대금 통과, 급등예상 목록 가산.
         09:05 에 그때 점수 상위 5개를 더해 10종목 확정 (shortlist.freeze). 프리마켓 시세가 없으면 건너뜀 (그냥 09:05 점수 상위 10)"""
         from stockeye.analysis import shortlist
-        if self.runner != "pc" or shortlist.frozen(self.sl) or self.sl.get("early") or hm < shortlist.EARLY_AT or not self.pre:
+        if self.runner != "pc" or shortlist.frozen(self.sl) or self.sl.get("early") or hm < shortlist.EARLY_AT or not (self.pre or self.after):
             return
         from concurrent.futures import ThreadPoolExecutor
-        pool = [c for c, v in sorted(self.pre.items(), key=lambda kv: -kv[1][1])
-                if c in set(self.codes) and shortlist.EARLY_MIN <= v[1] <= shortlist.EARLY_MAX][:40]
+        pset = set(self.codes)
+        def sig(c):
+            return (self.pre.get(c) or [0, 0])[1] + 0.5 * (self.after.get(c) or [0, 0])[1]
+        pool = [c for c in sorted(set(self.pre) | set(self.after), key=lambda c: -sig(c))
+                if c in pset and (shortlist.EARLY_MIN <= (self.pre.get(c) or [0, -99])[1] <= shortlist.EARLY_MAX
+                                  or shortlist.EARLY_MIN <= (self.after.get(c) or [0, -99])[1] <= shortlist.EARLY_MAX)][:40]
         with ThreadPoolExecutor(self.workers) as ex:
             list(ex.map(self._adr, pool))
         info = {c: {"adr": self.adr.get(c), "pv": self.pv.get(c), "name": self.names.get(c, c)} for c in pool}
-        self.sl["early"] = shortlist.early_pick(self.pre, info, self.boost)
+        self.sl["early"] = shortlist.early_pick(self.pre, info, self.boost, after=self.after, flow=self.flow)
         log.info("★ 09:00 선발 %d종목: %s", len(self.sl["early"]),
-                 ", ".join(f"{x['name']}(프리 {x['pre']:+.1f}%)" for x in self.sl["early"]))
+                 ", ".join(f"{x['name']}(프리 {x['pre'] if x['pre'] is not None else '-'}% 애프터 {x['after'] if x['after'] is not None else '-'}%)" for x in self.sl["early"]))
 
     def _extras(self, code: str) -> None:
         """호가 스프레드(2분마다) · 뉴스 · 평소 변동폭(하루 한 번)"""

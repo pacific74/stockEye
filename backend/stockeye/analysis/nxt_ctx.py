@@ -32,6 +32,39 @@ def pre_snapshot(snap: pd.DataFrame) -> dict[str, list]:
     return out
 
 
+def save_after(sb, day: str, rows: dict, at: str | None = None) -> None:
+    """저녁 20:05 — 전 종목 NXT 애프터마켓 {코드: [가격, 그날 KRX 종가 대비 %]} → nxt/after/<날짜>.json + latest.json (다음날 아침 선발용)"""
+    at = at or pd.Timestamp.now(tz="Asia/Seoul").strftime("%H:%M")
+    b = json.dumps({"day": day, "at": at, "rows": rows}, ensure_ascii=False).encode("utf-8")
+    sb.upload(f"nxt/after/{day}.json", b, "application/json")
+    sb.upload("nxt/after/latest.json", b, "application/json")
+
+
+def record_after_all(sb, day: str, quotes_fn, codes: list[str]) -> dict:
+    """저녁 배치 맨 끝 — 전 종목 NXT 애프터마켓 기록 (PC 19:30·20:05 기록이 더 늦은 시각이면 그걸 유지, 같은 날 더 늦게 저장된 게 없을 때만 씀)"""
+    now = pd.Timestamp.now(tz="Asia/Seoul").strftime("%H:%M")
+    rows = pre_snapshot(quotes_fn(codes))
+    if not rows:
+        return {"after_all": 0, "saved": False}
+    try:
+        old = json.loads(sb.download("nxt/after/latest.json") or b"{}")
+    except Exception:  # noqa: BLE001
+        old = {}
+    if old.get("day") == day and str(old.get("at") or "") > now and len(old.get("rows") or {}) >= 0.5 * len(rows):
+        return {"after_all": len(rows), "saved": False, "kept": old.get("at")}
+    save_after(sb, day, rows, now)
+    return {"after_all": len(rows), "saved": True, "at": now}
+
+
+def load_after(sb, today: str) -> dict[str, list]:
+    """오늘보다 앞선 날의 애프터마켓 기록 (없으면 {})"""
+    try:
+        p = json.loads(sb.download("nxt/after/latest.json") or b"{}")
+    except Exception:  # noqa: BLE001
+        return {}
+    return p.get("rows") or {} if str(p.get("day") or "") < today else {}
+
+
 def after_of(q: dict | None, close: float | None) -> dict | None:
     """저녁 시세 1종목 → {price, chg(오늘 KRX 종가 대비 %), status}"""
     if not q or not q.get("over_price") or not close:

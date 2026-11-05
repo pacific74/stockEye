@@ -1,4 +1,4 @@
-"""클라우드 일일 배치 (GitHub Actions / 클라우드 VM 에서 평일 18:30 자동 실행).
+"""클라우드 일일 배치 (GitHub Actions / 클라우드 VM 에서 평일 18:10 자동 실행).
 
   ① Storage 에서 원본 데이터 받기  ② 오늘치 수집(KRX·DART·KIS 프로그램매매)  ③ Storage 에 올리기
   ④ 리포트(시장·업종·TOP10·전략 A~E)  ⑤ 전 종목 상세  ⑥ 매매일지 분석·보유종목 점검
@@ -326,6 +326,16 @@ def main():
         step("관리자 보유종목 점검 알림", admin_holdings, errors)
     step("회원별 알림", lambda: pub.notify_members(sb, report, n, skip_topics=[n.ntfy or ""],
                                                 app_url=os.getenv("WEB_URL") or None), errors)
+    # NXT 애프터마켓 전 종목 기록 (2026-11-05): 다음날 아침 당일단타 09:00 선발에 씀. 맨 끝 = 가장 늦은 시각 (PC 19:30·20:05 기록이 더 늦으면 그걸 유지)
+    def _nxt_all():
+        from stockeye.analysis import nxt_ctx
+        from stockeye.data.sources import naver_live
+        from stockeye.engine.nextday import common_stock
+        ls = pit.listing.drop_duplicates("code", keep="last")
+        nm = dict(zip(ls["code"], ls["name"]))
+        return nxt_ctx.record_after_all(sb, report["date"], naver_live.stocks, [c for c in ls["code"] if common_stock(c, nm.get(c, ""))])
+    if not args.as_of:
+        step("NXT 애프터마켓 전 종목 기록 (다음날 아침 선발용)", _nxt_all, errors)
     log.info("완료 (%.1f분). 오류 %d건", (time.time() - t0) / 60, len(errors))
     for e in errors:
         log.warning("  - %s", e)

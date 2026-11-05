@@ -134,7 +134,8 @@ def pick(panel: pd.DataFrame, model, day, top: int = TOP) -> dict:
                       "marcap_eok": round(float(r.marcap) / 1e8) if pd.notna(r.marcap) else None,
                       "reasons": reasons(row)})
     scores = [[r.code, round(float(r.p) * 100, 2)] for r in d.head(KEEP_SCORES).itertuples(index=False)]
-    return {"items": items, "scores": scores, "n_universe": int(len(d))}
+    flow = {r.code: round(float(r.fi3r), 3) for r in d.head(KEEP_SCORES).itertuples(index=False) if pd.notna(r.fi3r)}   # 외국인·기관 3일 순매수 비율 (아침 선발 가산용)
+    return {"items": items, "scores": scores, "flow": flow, "n_universe": int(len(d))}
 
 
 def grade(items: list[dict], bars: dict[str, dict]) -> list[dict]:

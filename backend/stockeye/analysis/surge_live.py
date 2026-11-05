@@ -12,6 +12,7 @@ import logging
 log = logging.getLogger(__name__)
 LIVE_START, LIVE_END = "09:00", "15:21"
 PRE_RANK, PRE_GAP, PRE_GAP_MAX = 5.0, 10.0, 10      # 아침 보강 기준 (프리마켓 %)
+ALERT_LEVELS: tuple[str, ...] = ()        # 장중 도달 알림은 끔 (2026-11-05 사용자: 이미 오른 뒤 알림이 아니라 오를 종목을 미리 찾는 게 목적) — 화면 기록만
 LEVELS = (("lu", 29.0, "상한가 도달"), ("h20", 20.0, "+20%"), ("h15", 15.0, "+15%"), ("h10", 10.0, "+10%"))
 
 

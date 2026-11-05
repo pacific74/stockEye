@@ -112,6 +112,33 @@ class _SurgeSectionState extends State<SurgeSection> {
     );
   }
 
+  /// 오늘 지켜보는 종목 — 종목명·현재가·등락만, 옆으로 이어 붙임 (2026-11-05 사용자: 리스트가 너무 길어서)
+  Widget _mini(BuildContext context, Json r) {
+    final t = Theme.of(context).textTheme;
+    final px = (r['price'] as num?) ?? (r['close'] as num?);
+    return SizedBox(
+      width: 158,
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: InkWell(
+          onTap: () => Navigator.push(
+              context, MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${r['code']}', name: '${r['name']}'))),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              StockName('${r['name']}', style: t.titleSmall),
+              const SizedBox(height: 2),
+              Row(children: [
+                Expanded(child: Text(won(px), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.bold))),
+                if (r['chg'] is num) ChgBadge(r['chg'] as num?),
+              ]),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _prevCard(BuildContext context, Json sg) {
     final t = Theme.of(context).textTheme;
     final p = asMap(sg['prev']);
@@ -187,7 +214,10 @@ class _SurgeSectionState extends State<SurgeSection> {
             style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
       ),
       if (watch.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('목록이 없어요', style: t.bodySmall)),
-      for (final r in watch) _tile(context, r),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Wrap(spacing: 6, runSpacing: 6, children: [for (final r in watch) _mini(context, r)]),
+      ),
       if (next.isNotEmpty)
         Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),

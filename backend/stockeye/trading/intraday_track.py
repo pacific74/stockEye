@@ -96,7 +96,7 @@ class Track:
                                        "stop", "t1", "t2", "t1_pct", "risk_pct", "loss_pct", "limit", "reasons",
                                        "excluded", "risks", "parts", "labels", "maxes", "lock", "book", "news_level", "news",
                                        "fill_warn", "level", "news", "gap", "close_pos", "exit_rules", "exit_time",
-                                       "atr") if r.get(k) is not None}
+                                       "atr", "early", "early_info", "cand_rank") if r.get(k) is not None}
         first = "매수대기" if CFG[kind].get("wait_buy") else "매수구간"
         return {"kind": kind, "date": day, "code": r["code"], "name": r.get("name"), "time": hm,
                 "score": _f(r.get("score")), **p, "card": card, "events": [{"state": first, "time": hm}],

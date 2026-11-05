@@ -12,7 +12,12 @@
 """
 from __future__ import annotations
 
-FREEZE_AT = "09:10"
+EARLY_AT = "09:00"        # 2026-11-05 사용자: 10분 지켜보고 뽑으면 늦다 → 09:00 에 NXT 프리마켓 등으로 후보풀을 넓혀 5종목 먼저
+FREEZE_AT = "09:05"       # 09:05 에 그때 점수 상위 5개를 더해 총 10종목 확정 (예전엔 09:10 에 상위 10개)
+EARLY_N = 5
+EARLY_MIN, EARLY_MAX = 3.0, 25.0   # 프리마켓 등락 범위 (%) — 너무 큰 갭(상한가 근처)은 진입 불가
+EARLY_MIN_PV = 3e9        # 전일 거래대금 30억 이상
+EARLY_BOOST = 5.0         # 급등예상 목록(점수 상위 100)에도 있으면 가산
 N = 10                    # 오늘의 후보 개수
 TOP = 5                   # 그중 우선 (되돌려 보기에서 가장 좋았던 구간)
 LATE_ADD = 90.0           # 후보 밖이라도 이 점수 이상이면 추가 (검증 안 된 초기값)
@@ -22,7 +27,7 @@ TYPES: tuple[str, ...] | None = ("눌림목",)   # 2026-10-29: 후보 안에서�
 
 
 def new_state() -> dict:
-    return {"at": None, "list": [], "late": []}
+    return {"at": None, "list": [], "late": [], "early": []}
 
 
 def frozen(st: dict) -> bool:
@@ -37,11 +42,46 @@ def pick(res: list[dict], n: int = N) -> list[dict]:
              "type": r.get("type"), "rank": i} for i, r in enumerate(ok[:n], 1)]
 
 
+def early_pick(pre: dict, info: dict, boost: set | None = None, n: int = EARLY_N) -> list[dict]:
+    """09:00 선발 — 프리마켓(pre = {코드: [가격, 전일종가 대비 %]}) 등락 +EARLY_MIN~MAX% 종목 중
+    info[code] = {adr, pv(전일 거래대금), name} 로 평소 변동폭(MIN_ADR)·전일 거래대금을 거른 뒤 (프리마켓 % + 급등예상 가산) 순으로 n개"""
+    from ..engine.daytrade import MIN_ADR
+    boost = boost or set()
+    rows = []
+    for c, v in pre.items():
+        i = info.get(c)
+        if not i or not v or not (EARLY_MIN <= v[1] <= EARLY_MAX):
+            continue
+        if (i.get("adr") or 0) < MIN_ADR or (i.get("pv") or 0) < EARLY_MIN_PV:
+            continue
+        rows.append({"code": c, "name": i.get("name") or c, "pre": round(float(v[1]), 2), "adr": round(float(i["adr"]) * 100, 1),
+                     "pv_eok": round(float(i["pv"]) / 1e8), "surge": c in boost,
+                     "key": float(v[1]) + (EARLY_BOOST if c in boost else 0)})
+    rows.sort(key=lambda r: -r["key"])
+    out = rows[:n]
+    for r in out:
+        r.pop("key", None)
+    return out
+
+
 def freeze(st: dict, res: list[dict], hm: str) -> bool:
-    """09:10 뒤 처음 호출에서 후보 고정. 이미 고정이면 False"""
+    """FREEZE_AT 뒤 처음 호출에서 후보 고정 = 09:00 선발(early) + 그때 점수 상위 (N − 선발)개. 이미 고정이면 False
+    순위는 점수 순 (선발 종목이 아직 점수가 없으면 맨 뒤)"""
     if frozen(st) or hm < FREEZE_AT:
         return False
-    st["at"], st["list"], st["late"] = hm, pick(res), []
+    byc = {r["code"]: r for r in res if r.get("code")}
+    early = [x["code"] for x in st.get("early") or []]
+    rows = []
+    for x in st.get("early") or []:
+        r = byc.get(x["code"])
+        rows.append({"code": x["code"], "name": x.get("name"), "score": round(float((r or {}).get("score") or 0), 1),
+                     "type": (r or {}).get("type"), "src": "early", "pre": x.get("pre")})
+    rest = pick([r for r in res if r.get("code") not in early], max(N - len(rows), 0))
+    rows += [{**x, "src": "score"} for x in rest]
+    rows.sort(key=lambda r: -float(r.get("score") or 0))
+    for i, r in enumerate(rows, 1):
+        r["rank"] = i
+    st["at"], st["list"], st["late"] = hm, rows, []
     return True
 
 
@@ -81,12 +121,17 @@ def tag(r: dict, st: dict) -> None:
     rk = rank_of(st, r.get("code"))
     if rk is not None:
         r["cand_rank"] = rk
+        if any(x["code"] == r.get("code") and x.get("src") == "early" for x in st.get("list") or []):
+            r["early"] = True
+    elif r.get("code") in {x["code"] for x in st.get("early") or []}:
+        r["cand_rank"] = 0
+        r["early"] = True
     elif r.get("code") in (st.get("late") or []):
         r["cand_rank"] = 0
 
 
 def view(st: dict) -> dict:
-    return {"at": st.get("at"), "n": N, "top": TOP, "list": st.get("list") or [], "late": st.get("late") or [],
+    return {"at": st.get("at"), "n": N, "top": TOP, "list": st.get("list") or [], "late": st.get("late") or [], "early": st.get("early") or [], "early_at": EARLY_AT, "early_n": EARLY_N,
             "state": "확정" if frozen(st) else "선별 중", "freeze_at": FREEZE_AT}
 
 
@@ -101,6 +146,8 @@ def restore(sb, day: str) -> dict:
         s = p.get("shortlist") or {}
         if str(p.get("date")) == day and s.get("at") and s.get("list"):
             st.update({"at": s["at"], "list": s["list"], "late": list(s.get("late") or [])})
+        if str(p.get("date")) == day and s.get("early"):
+            st["early"] = list(s["early"])
     except Exception:  # noqa: BLE001
         pass
     return st

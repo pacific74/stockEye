@@ -374,7 +374,7 @@ class _UsTone extends StatelessWidget {
   }
 }
 
-/// 당일단타 '오늘의 후보' (2026-10-29) — 09:10 에 점수 상위 10개 고정, 진입은 후보 안의 눌림목형만. 상위 5개가 우선
+/// 당일단타 '오늘의 후보' (2026-10-29) — 09:00 프리마켓 선발 5 + 09:05 점수 상위 5 = 10개 고정, 진입은 후보 안의 눌림목형만. 상위 5개가 우선
 /// 되돌려 보기(20거래일): 상위 5개 평균 +0.78% · 10개 +0.27% · 전체 −0.32% (수급 없이, 한 달 한 장세 — 참고용)
 class _Shortlist extends StatelessWidget {
   const _Shortlist({required this.sl, this.chips = true});
@@ -396,9 +396,23 @@ class _Shortlist extends StatelessWidget {
           TextSpan(
               text: done
                   ? '  ${sl['at']} 확정 · 진입은 이 안에서만 (앞 $top개 우선)'
-                  : '  ${sl['freeze_at'] ?? '09:10'} 에 점수 상위 ${sl['n'] ?? 10}개를 골라요 · 그 전엔 진입 대기',
+                  : '  ${sl['early_at'] ?? '09:00'} 프리마켓으로 ${sl['early_n'] ?? 5}종목 먼저 → ${sl['freeze_at'] ?? '09:05'} 점수 상위를 더해 ${sl['n'] ?? 10}개 · 그 전엔 진입 대기',
               style: t.bodySmall?.copyWith(color: Colors.grey)),
         ])),
+        if (!done && asList(sl['early']).isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Wrap(spacing: 6, runSpacing: 2, children: [
+              for (final x in asList(sl['early']))
+                ActionChip(
+                  visualDensity: VisualDensity.compact,
+                  backgroundColor: Colors.purple.withValues(alpha: 0.12),
+                  label: Text('${x['name']} 프리 ${(x['pre'] as num?) != null && (x['pre'] as num) >= 0 ? '+' : ''}${x['pre']}%', style: t.bodySmall),
+                  onPressed: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${x['code']}', name: '${x['name']}'))),
+                ),
+            ]),
+          ),
         if (done && chips)
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -407,7 +421,7 @@ class _Shortlist extends StatelessWidget {
                 ActionChip(
                   visualDensity: VisualDensity.compact,
                   backgroundColor: ((x['rank'] as num?) ?? 99) <= top ? Colors.teal.withValues(alpha: 0.15) : null,
-                  label: Text('${x['rank']} ${x['name']} ${(x['score'] as num?)?.toStringAsFixed(0) ?? ''}',
+                  label: Text('${x['src'] == 'early' ? '★' : ''}${x['rank']} ${x['name']} ${(x['score'] as num?)?.toStringAsFixed(0) ?? ''}',
                       style: t.bodySmall?.copyWith(fontWeight: ((x['rank'] as num?) ?? 99) <= top ? FontWeight.bold : FontWeight.normal)),
                   onPressed: () => Navigator.push(context,
                       MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${x['code']}', name: '${x['name']}'))),

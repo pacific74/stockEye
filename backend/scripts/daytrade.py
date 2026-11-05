@@ -81,6 +81,9 @@ class Runner:
         self.spread: dict[str, tuple[float, float | None]] = {}     # code → (받은 시각, 스프레드)
         self.hi_n: dict[str, float | None] = {}                       # code → 최근 일봉(30거래일) 고가 (신고가 돌파 제외용)
         self.adr: dict[str, float | None] = {}                       # code → 평소 하루 변동폭 (하루 한 번)
+        self.pv: dict[str, float | None] = {}                        # code → 전일 거래대금 (종가×거래량 근사)
+        self.pre: dict[str, list] = {}                               # NXT 프리마켓 {코드: [가격, 전일종가 대비 %]} (intraday_live 가 넣어 줌)
+        self.boost: set[str] = set()                                 # 급등예상 목록(점수 상위 100·아침 보강) 코드
         self.signals: dict[tuple, dict] = {}
         self.day = _now().strftime("%Y-%m-%d")
         from stockeye.cloud.recommend import IntradayRecorder
@@ -108,7 +111,8 @@ class Runner:
         rank = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
         if len(rank):
             rank = rank[rank["code"].isin(set(self.codes))]
-            extra = [c for c in self.watch | set(self.track.codes()) if c not in set(rank["code"])]
+            early = {x["code"] for x in (getattr(self, "sl", None) or {}).get("early") or []}
+            extra = [c for c in self.watch | set(self.track.codes()) | early if c not in set(rank["code"])]
             if extra:
                 try:
                     rank = pd.concat([rank, naver_live.stocks(extra)], ignore_index=True)
@@ -143,11 +147,29 @@ class Runner:
                 d = d[d["date"] < pd.Timestamp(self.day)]                 # 오늘(장중) 봉 제외
                 self.adr[code] = dt.adr(d)
                 self.hi_n[code] = float(d["high"].max()) if len(d) >= 10 else None
+                self.pv[code] = float(d["close"].iloc[-1] * d["volume"].iloc[-1]) if len(d) else None
             except Exception as e:  # noqa: BLE001
                 log.debug("일봉 실패 %s: %s", code, e)
                 self.adr[code] = None
                 self.hi_n[code] = None
+                self.pv[code] = None
         return self.adr[code]
+
+    def _early(self, hm: str) -> None:
+        """09:00 선발 5종목 (2026-11-05) — NXT 프리마켓 +3~25% 종목 중 평소 변동폭·전일 거래대금 통과, 급등예상 목록 가산.
+        09:05 에 그때 점수 상위 5개를 더해 10종목 확정 (shortlist.freeze). 프리마켓 시세가 없으면 건너뜀 (그냥 09:05 점수 상위 10)"""
+        from stockeye.analysis import shortlist
+        if self.runner != "pc" or shortlist.frozen(self.sl) or self.sl.get("early") or hm < shortlist.EARLY_AT or not self.pre:
+            return
+        from concurrent.futures import ThreadPoolExecutor
+        pool = [c for c, v in sorted(self.pre.items(), key=lambda kv: -kv[1][1])
+                if c in set(self.codes) and shortlist.EARLY_MIN <= v[1] <= shortlist.EARLY_MAX][:40]
+        with ThreadPoolExecutor(self.workers) as ex:
+            list(ex.map(self._adr, pool))
+        info = {c: {"adr": self.adr.get(c), "pv": self.pv.get(c), "name": self.names.get(c, c)} for c in pool}
+        self.sl["early"] = shortlist.early_pick(self.pre, info, self.boost)
+        log.info("★ 09:00 선발 %d종목: %s", len(self.sl["early"]),
+                 ", ".join(f"{x['name']}(프리 {x['pre']:+.1f}%)" for x in self.sl["early"]))
 
     def _extras(self, code: str) -> None:
         """호가 스프레드(2분마다) · 뉴스 · 평소 변동폭(하루 한 번)"""
@@ -181,6 +203,7 @@ class Runner:
         from stockeye.engine import daytrade as dt
         now = _now()
         hhmmss = now.strftime("%H%M%S")
+        self._early(now.strftime("%H:%M"))                            # 09:00 선발 (시세를 받기 전에 — 선발 종목도 같이 받게)
         snap = self.discover()
         idx = naver_live.indices()
         idx_chg = {r["code"]: float(r["chg_pct"]) for _, r in idx.iterrows()} if not idx.empty else {}
@@ -196,7 +219,8 @@ class Runner:
         live = snap[snap["value"] >= dt.MIN_VALUE]                    # 거래대금 10억 미만은 어차피 제외 → 분봉 안 받음
         top = live.sort_values("value", ascending=False).head(self.top).index.tolist()
         keepers = [x["code"] for x in (self.sl.get("list") or []) if x["code"] in live.index] + [c for c in self.sl.get("late") or [] if c in live.index]
-        cands = list(dict.fromkeys(top + keepers + [c for c in self.watch if c in live.index] + self.track.codes()))   # 후보 10개는 순위가 밀려도 계속 계산
+        early = [x["code"] for x in (self.sl.get("early") or []) if x["code"] in snap.index]      # 오전 거래대금이 모자라도 선발 종목은 계속 계산
+        cands = list(dict.fromkeys(top + keepers + early + [c for c in self.watch if c in live.index] + self.track.codes()))   # 후보 10개는 순위가 밀려도 계속 계산
         with ThreadPoolExecutor(self.workers) as ex:                 # 1분봉을 여러 종목 동시에 (KIS 초당 한도 안에서)
             bars = dict(zip(cands, ex.map(lambda c: self._bars(c, hhmmss), cands)))
 

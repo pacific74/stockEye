@@ -263,6 +263,7 @@ def main():
             except Exception:  # noqa: BLE001
                 pass
             add = sg_watch.add_pre(pre, scores, dt.names)
+            dt.boost = {c for c, _ in scores} | {i["code"] for i in sg_watch.items}
             print(f"급등예상 아침 보강 {len(add)}종목 추가")
             seen = False
             try:
@@ -369,6 +370,7 @@ def main():
             except Exception as e:  # noqa: BLE001
                 print(f"⚠ NXT 프리마켓 기록 실패: {e}")
         nxt_done[0] = True
+        dt.pre = {c: v for c, v in pre.items() if isinstance(v, (list, tuple)) and len(v) >= 2}   # 당일단타 09:00 후보 선발용
         surge_pre(pre)
         for tr in (dt.track, lc.track):
             tr.nxt_pre = pre

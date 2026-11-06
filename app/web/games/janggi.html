@@ -138,6 +138,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
 #game #top-actions[hidden]{display:none!important}
 #game #topstack{transform-origin:50% 0}
 #game.p2 #topstack{transform:translateY(var(--tsh,0px)) rotate(180deg)}
+.actions:has(#g-pass)>.btn:nth-last-child(2),.actions:has(#t-pass)>.btn:nth-last-child(2){grid-column:1 / -1}
 </style>
 
 <style>
@@ -285,7 +286,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
     <div id="g-status" class="num"></div>
     <button class="linkbtn" id="g-sound">소리 켬</button>
   </div>
-  <div id="topstack"><div class="pbar" id="bar-top"></div><div class="actions tops" id="top-actions" hidden><button class="btn small" id="t-undo">무르기</button><button class="btn small" id="t-draw">비기기</button><button class="btn small" id="t-resign">기권</button></div></div>
+  <div id="topstack"><div class="pbar" id="bar-top"></div><div class="actions tops" id="top-actions" hidden><button class="btn small" id="t-undo">무르기</button><button class="btn small" id="t-draw">비기기</button><button class="btn small" id="t-pass">순서 넘기기</button><button class="btn small" id="t-resign">기권</button></div></div>
   <div class="board-wrap">
     <svg id="board" viewBox="0 0 560 620" role="img" aria-label="장기판"></svg>
     <div class="flag" id="flag">장군</div>
@@ -294,6 +295,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
   <div class="actions">
     <button class="btn small" id="g-undo">무르기</button>
     <button class="btn small" id="g-draw">비기기</button>
+    <button class="btn small" id="g-pass">순서 넘기기</button>
     <button class="btn small" id="g-resign">기권</button>
   </div>
 </section>
@@ -638,10 +640,10 @@ var LEVELS=[
   {depth:6,noise:0,rand:0,q:true,time:4500},
   {depth:7,noise:0,rand:0,q:true,time:5000}];
 
-function think(board,side,level){
+function think(board,side,level,banned){
   var cfg=LEVELS[Math.max(1,Math.min(10,level))-1];
   var pos=new Pos(Int8Array.from(board),side);
-  var root=legalMoves(pos);
+  var root=legalMoves(pos).filter(function(m){return !(banned&&banned.indexOf(m)>=0);});
   if(!root.length)return{move:-1};
   if(root.length===1)return{move:root[0]};
   if(Math.random()<cfg.rand)return{move:root[(Math.random()*root.length)|0]};
@@ -737,12 +739,12 @@ function boardSVG(b,o){o=o||{};const f=!!o.flip;
 /* game state */
 let G=null,pos=null,hist=[],legal=[],sel=-1,thinking=false,reqId=0,flagT;
 function startGame(cfg){G={mode:cfg.mode,level:cfg.level||0,human:cfg.human||0,setups:cfg.setups,tl:cfg.tl||0,moves:[],t:Date.now(),over:null};
-  pos=new EN.Pos(initialBoard(G.setups[0],G.setups[1]),CHO);hist=[];sel=-1;thinking=false;mkClock();legal=EN.legalMoves(pos);persist();show('game');renderGame();maybeAI();}
+  pos=new EN.Pos(initialBoard(G.setups[0],G.setups[1]),CHO);hist=[];sel=-1;thinking=false;mkClock();legal=legalNow();persist();show('game');renderGame();maybeAI();}
 function persist(){if(G&&G.mode==='online')return;save(KEY.cur,G&&!G.over?{mode:G.mode,level:G.level,human:G.human,setups:G.setups,tl:G.tl||0,moves:G.moves,t:G.t}:null);}
 function resume(){const s=load(KEY.cur,null);if(!s)return;G=Object.assign({over:null},s);G.moves=[];
   pos=new EN.Pos(initialBoard(G.setups[0],G.setups[1]),CHO);hist=[];
   s.moves.forEach(m=>{if(m<0){hist.push({m:-1,side:pos.side});pos.side^=1;}else{const side=pos.side;const cap=EN.doMove(pos,m);hist.push({m,cap,side});}G.moves.push(m);});
-  sel=-1;thinking=false;legal=EN.legalMoves(pos);mkClock();show('game');renderGame();maybeAI();}
+  sel=-1;thinking=false;legal=legalNow();mkClock();show('game');renderGame();maybeAI();}
 const isHumanTurn=()=>G&&!G.over&&!G.undoWait&&(G.mode==='2p'||pos.side===G.human);
 function gong(){try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();const t=actx.currentTime,o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.setValueAtTime(140,t);o.frequency.exponentialRampToValueAtTime(70,t+0.5);g.gain.setValueAtTime(0.9,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.7);o.connect(g);g.connect(actx.destination);o.start(t);o.stop(t+0.75);}catch(e){}}
 function say(text){if(!prefs.sound)return;const t=text+'!';
@@ -754,10 +756,11 @@ try{window.speechSynthesis&&speechSynthesis.getVoices();}catch(e){}
 function flag(text,side){say(text);const f=$('flag');f.textContent=text;f.className='flag show '+(side?'han':'cho');clearTimeout(flagT);flagT=setTimeout(()=>f.classList.remove('show'),1100);}
 function applyMove(m,remote){
   const side=pos.side;if(G.mode==='online'&&!remote&&m>=0)ON.send({m});
-  if(m<0){hist.push({m:-1,side});G.moves.push(-1);pos.side^=1;toast(SIDE[side]+'은(는) 둘 곳이 없어 한 수 쉽니다');}
+  if(m<0){hist.push({m:-1,side});G.moves.push(-1);pos.side^=1;toast(passMsg||(SIDE[side]+'은(는) 둘 곳이 없어 한 수 쉽니다'));}
   else{const was=EN.inCheck(pos,side);const cap=EN.doMove(pos,m);hist.push({m,cap,side});G.moves.push(m);clack(!!cap);
     if(EN.inCheck(pos,pos.side))flag('장군',side);else if(was)flag('멍군',side);}
-  sel=-1;legal=EN.legalMoves(pos);
+  sel=-1;legal=legalNow();
+  if(!legal.length&&EN.legalMoves(pos).length){persist();renderGame();toast('같은 행위 3번 연속은 둘 수 없어 순서를 넘깁니다');return setTimeout(()=>{if(G&&!G.over)applyMove(-1);},500);}
   if(!legal.length){
     if(EN.inCheck(pos,pos.side))return endGame(1-pos.side,'외통');
     if(G.moves.length&&G.moves[G.moves.length-1]===-1)return endByPoints('양쪽 모두 둘 곳 없음');
@@ -779,10 +782,10 @@ function maybeAI(){if(!G||G.over||G.mode!=='1p'||pos.side===G.human)return;reque
 
 /* AI worker */
 let worker=null,t0=0,pending=null;
-function getWorker(){if(worker!==null)return worker;try{const url=URL.createObjectURL(new Blob([SRC+'\nonmessage=function(e){var d=e.data;var r=think(d.board,d.side,d.level);postMessage({id:d.id,move:r.move});};'],{type:'text/javascript'}));
+function getWorker(){if(worker!==null)return worker;try{const url=URL.createObjectURL(new Blob([SRC+'\nonmessage=function(e){var d=e.data;var r=think(d.board,d.side,d.level,d.banned);postMessage({id:d.id,move:r.move});};'],{type:'text/javascript'}));
   worker=new Worker(url);worker.onmessage=e=>onAI(e.data);worker.onerror=ev=>{ev.preventDefault&&ev.preventDefault();worker=false;if(pending)runSync(pending);};}catch(e){worker=false;}return worker;}
-function runSync(p){setTimeout(()=>onAI({id:p.id,move:EN.think(p.board,p.side,p.level).move}),30);}
-function requestAI(){thinking=true;renderGame();t0=Date.now();const p={id:++reqId,board:Array.from(pos.b),side:pos.side,level:G.level};pending=p;
+function runSync(p){setTimeout(()=>onAI({id:p.id,move:EN.think(p.board,p.side,p.level,p.banned).move}),30);}
+function requestAI(){thinking=true;renderGame();t0=Date.now();const p={id:++reqId,board:Array.from(pos.b),side:pos.side,level:G.level,banned:banNow()};pending=p;
   const w=getWorker();if(w)w.postMessage(p);else runSync(p);}
 function onAI(d){if(d.id!==reqId||!G||G.over)return;pending=null;const wait=Math.max(0,500-(Date.now()-t0));
   setTimeout(()=>{if(d.id!==reqId||!G||G.over)return;thinking=false;applyMove(d.move);},wait);}
@@ -812,16 +815,28 @@ function renderGame(){if(!G)return;const flip=G.mode!=='2p'&&G.human===HAN;
   $('bar-top').classList.toggle('turn',!G.over&&pos.side===top[0]);$('bar-bot').classList.toggle('turn',!G.over&&pos.side===bot[0]);
   const n=G.moves.length;
   $('g-status').textContent=G.over?`대국 종료 · ${G.over.reason}`:`${n}수 / ${MAX_PLIES} · ${G.mode==='online'?(pos.side===G.human?'내 차례':'상대 차례'):SIDE[pos.side]+' 차례'}${chk>=0?' · 장군!':''}`;
-  $('g-undo').disabled=!canUndo();$('g-resign').disabled=!!G.over||(G.mode==='1p'&&thinking);
-  $('g-resign').textContent=G.over?'대국 종료':'기권';
+  $('g-undo').disabled=!canUndo();const again=!!G.over&&G.mode!=='online';$('g-resign').disabled=!again&&(!!G.over||(G.mode==='1p'&&thinking));
+  $('g-resign').textContent=again?'다시 하기':(G.over?'대국 종료':'기권');
+  $('g-pass').disabled=!G||G.over||thinking||G.mode==='online'||(G.mode==='1p'&&pos.side!==G.human);
   const dl=G.mode==='online'&&G.drawWait?'비기기 기다리는 중':(drawLeft()>0?`비기기 (${drawLeft()}회)`:'비기기 (0회)');$('g-draw').textContent=G.over?'비기기':dl;$('g-draw').disabled=!!G.over||drawLeft()<=0||!!(G.mode==='online'&&G.drawWait);
   $('g-sound').textContent=prefs.sound?'소리 켬':'소리 끔';$('g-undo').textContent=G.mode==='online'?(G.undoWait?'답 기다리는 중':'무르기 부탁'):'무르기';clockTurn();}
+/* ---- 같은 행위 3번 연속 금지 / 순서 넘기기 ---- */
+function isRepeat(side,m){if(m<0)return false;var mine=[];for(var i=hist.length-1;i>=0&&mine.length<2;i--){if(hist[i].side===side)mine.push(hist[i]);}
+  if(mine.length<2)return false;var b1=mine[0],b2=mine[1];if(b1.m<0||b2.m<0)return false;
+  var f=m>>7,to=m&127,bf=b2.m>>7,bt=b2.m&127,cf=b1.m>>7,ct=b1.m&127;
+  return bf===f&&bt===to&&cf===to&&ct===f;}
+function legalNow(){return EN.legalMoves(pos).filter(function(m){return !isRepeat(pos.side,m);});}
+function banNow(){return EN.legalMoves(pos).filter(function(m){return isRepeat(pos.side,m);});}
+let passMsg=null;
+function passTurn(){if(!G||G.over||G.mode==='online'||thinking)return;if(G.mode==='1p'&&pos.side!==G.human)return;
+  passMsg=SIDE[pos.side]+' 순서를 넘겼습니다';applyMove(-1);passMsg=null;}
+$('g-pass').onclick=passTurn;
 function canUndo(){if(!G||G.over)return false;if(G.mode==='online')return !G.undoWait&&hist.some(h=>h.side===G.human&&h.m>=0);if(G.mode==='2p')return hist.length>0;return hist.some(h=>h.side===G.human&&h.m>=0);}
 function popOne(){const h=hist.pop();G.moves.pop();if(h.m<0)pos.side^=1;else EN.undoMove(pos,h.m,h.cap);}
 $('g-undo').onclick=()=>{if(!canUndo())return;if(G.mode==='online'){askUndo();return;}if(thinking){reqId++;thinking=false;}
   if(G.mode==='2p'){popOne();while(hist.length&&hist[hist.length-1].m<0)popOne();}
   else{while(hist.length){const h=hist[hist.length-1];popOne();if(h.side===G.human&&h.m>=0)break;}}
-  sel=-1;legal=EN.legalMoves(pos);persist();renderGame();toast('한 수 물렀습니다');maybeAI();};
+  sel=-1;legal=legalNow();persist();renderGame();toast('한 수 물렀습니다');maybeAI();};
 /* ---- 비기기 신청 (상대가 세 번 거절하면 그 쪽은 더 신청할 수 없음) ---- */
 function drawSide(){return G.mode==='2p'?pos.side:(G.mode==='online'?G.seat:G.human);}
 function drawLeft(){const r=(G.drawRej&&G.drawRej[drawSide()])||0;return 3-r;}
@@ -841,7 +856,7 @@ function onDrawMsg(v){
   if(v.drawOk!=null){if(v.s!==G.seat)drawAccepted();return;}
   if(v.drawNo!=null){if(v.s===G.seat)return;G.drawWait=null;toast('상대가 비기기를 거절했습니다',2500);renderGame();return;}
 }
-$('g-resign').onclick=()=>{if(!G||G.over)return;const loser=G.mode!=='2p'?G.human:Number(window.__rs!=null?window.__rs:$('g-resign').dataset.side);
+$('g-resign').onclick=()=>{if(G&&G.over&&G.mode!=='online'){startGame({mode:G.mode,level:G.level,human:G.human,setups:G.setups,tl:G.tl});return;}if(!G||G.over)return;const loser=G.mode!=='2p'?G.human:Number(window.__rs!=null?window.__rs:$('g-resign').dataset.side);
   modal(`<h3>기권할까요?</h3><p>${G.mode!=='2p'?'이 대국은 패배로 기록됩니다.':SIDE[loser]+'의 패배로 기록됩니다.'}</p>`,[{label:'계속 두기'},{label:'기권',cls:'primary',fn:()=>{if(G.mode==='online')ON.send({resign:G.seat});endGame(1-loser,'기권');}}]);};
 $('g-menu').onclick=()=>{if(G&&G.mode==='online'&&!G.over){modal('<h3>대국에서 나갈까요?</h3><p>나가도 판은 그대로 남습니다. 처음 화면의 \'온라인 대전 이어하기\'로 다시 들어올 수 있습니다.</p>',[{label:'계속 두기'},{label:'나가기',cls:'primary',fn:()=>{ON.close(true);ON=null;show('home');}}]);return;}if(ON&&G&&G.over){ON.close();ON=null;}reqId++;thinking=false;show('home');};
 $('g-sound').onclick=()=>{prefs.sound=!prefs.sound;savePrefs();renderGame();};
@@ -900,11 +915,11 @@ function goOnline(){NET.lobby({game:'janggi',timeLimit:{get:()=>prefs.tl||0,set:
 function askRematchOnline(){if(!ON)return;const r=ON.askRematch();if(r==='wait')toast('상대에게 한 판 더를 제안했습니다. 상대가 누르면 시작합니다',2500);}
 function restartOnline(){if(!ON||!G||G.mode!=='online')return;const human=G.human===CHO?HAN:CHO;
   G={...G,human,moves:[],t:Date.now(),over:null,undoWait:null};
-  pos=new EN.Pos(initialBoard(G.setups[0],G.setups[1]),CHO);hist=[];sel=-1;thinking=false;legal=EN.legalMoves(pos);mkClock();show('game');renderGame();
+  pos=new EN.Pos(initialBoard(G.setups[0],G.setups[1]),CHO);hist=[];sel=-1;thinking=false;legal=legalNow();mkClock();show('game');renderGame();
   toast(G.human===CHO?'새 판: 내가 초입니다':'새 판: 내가 한입니다',2500);}
 function startOnline(res){ON=res.room;ONAMES=res.names||['',''];const su=(res.cfg&&res.cfg.setups)||['마상마상','마상마상'];
   G={mode:'online',seat:res.seat,level:0,human:res.seat===0?CHO:HAN,setups:su,tl:(res.cfg&&res.cfg.tl)||0,moves:[],t:Date.now(),over:null};
-  pos=new EN.Pos(initialBoard(su[0],su[1]),CHO);hist=[];sel=-1;thinking=false;legal=EN.legalMoves(pos);mkClock();show('game');renderGame();
+  pos=new EN.Pos(initialBoard(su[0],su[1]),CHO);hist=[];sel=-1;thinking=false;legal=legalNow();mkClock();show('game');renderGame();
   ON.rmCb=restartOnline;
   ON.listen((t,v)=>{if(!G||G.mode!=='online'||ON!==res.room)return;
     if(t==='move'&&v.rm!=null){if(v.s!==G.seat&&ON.gotRematch())toast('상대가 한 판 더 하자고 합니다. 한 판 더 버튼을 누르세요',3000);return;}
@@ -921,7 +936,7 @@ function timeLose(s){if(!G||G.over)return;if(G.mode==='online')ON.send({timeout:
 function clkHTML(side){return CLK?`<span class="clk" data-clk="${side}"></span>`:'';}
 /* ---- 온라인 무르기 (상대 허락) ---- */
 let undoAnswered={};
-function undoFor(side){while(hist.length){const h=hist[hist.length-1];popOne();if(h.side===side&&h.m>=0)break;}sel=-1;legal=EN.legalMoves(pos);persist();renderGame();}
+function undoFor(side){while(hist.length){const h=hist[hist.length-1];popOne();if(h.side===side&&h.m>=0)break;}sel=-1;legal=legalNow();persist();renderGame();}
 function askUndo(){if(G.undoWait)return;const u=Math.random().toString(36).slice(2,8);G.undoWait=u;ON.send({undoReq:G.seat,u});toast('상대에게 한 수 물러 달라고 부탁했습니다',2500);renderGame();}
 function onUndoMsg(v){
   if(v.undoReq!=null){if(v.undoReq===G.seat)return true;const u=v.u;
@@ -938,7 +953,7 @@ show('home');
 /* 2인 대국: 위쪽(백) 플레이어 패널과 버튼을 뒤집어 맞은편에서 읽을 수 있게 */
 document.addEventListener('DOMContentLoaded',function(){
   var g=document.getElementById('game');
-  var pairs=[['g-undo','t-undo'],['g-draw','t-draw'],['g-resign','t-resign']];
+  var pairs=[['g-undo','t-undo'],['g-draw','t-draw'],['g-pass','t-pass'],['g-resign','t-resign']];
   pairs.forEach(function(p){var d=document.getElementById(p[1]),s=document.getElementById(p[0]);
     if(!d||!s)return;
     if(p[1]==='t-resign'){d.addEventListener('click',function(){window.__rs=Number(d.dataset.side);s.click();window.__rs=null;});return;}

@@ -574,14 +574,14 @@ function renderGame(){if(!G)return;
   $('bar-top').classList.toggle('turn',!G.over&&turn===top[0]);$('bar-bot').classList.toggle('turn',!G.over&&turn===bot[0]);
   const empty=EN.count(b)[0];
   $('g-status').textContent=G.over?`대국 종료 · ${G.over.reason}`:`빈칸 ${empty} · ${G.mode==='online'?(turn===G.human?'내 차례':'상대 차례'):NAME[turn]+' 차례'}`;
-  $('g-undo').disabled=!canUndo();$('g-resign').disabled=!!G.over||(G.mode==='1p'&&thinking);
-  $('g-resign').textContent='기권';
+  $('g-undo').disabled=!canUndo();const again=!!G.over&&G.mode!=='online';$('g-resign').disabled=!again&&(!!G.over||(G.mode==='1p'&&thinking));
+  $('g-resign').textContent=again?'다시 하기':'기권';
   $('g-hint').textContent=prefs.hints?'둘 곳 표시':'표시 끔';}
 function canUndo(){if(!G||G.over||thinking||G.mode==='online')return false;return hist.some(h=>h.move>=0&&(G.mode==='2p'||h.turn===G.human));}
 $('g-undo').onclick=()=>{if(!canUndo())return;
   while(hist.length){const h=hist.pop();G.moves.pop();b=h.b;turn=h.turn;if(h.move>=0&&(G.mode==='2p'||h.turn===G.human))break;}
   lastFlips=[];persist();renderGame();toast('한 수 물렀습니다');maybeAI();};
-$('g-resign').onclick=()=>{if(!G||G.over)return;const loser=G.mode!=='2p'?G.human:Number(window.__rs!=null?window.__rs:$('g-resign').dataset.side);
+$('g-resign').onclick=()=>{if(G&&G.over&&G.mode!=='online'){startGame({mode:G.mode,level:G.level,human:G.human});return;}if(!G||G.over)return;const loser=G.mode!=='2p'?G.human:Number(window.__rs!=null?window.__rs:$('g-resign').dataset.side);
   modal(`<h3>기권할까요?</h3><p>${G.mode!=='2p'?'이 대국은 패배로 기록됩니다.':NAME[loser]+'의 패배로 기록됩니다.'}</p>`,[{label:'계속 두기'},{label:'기권',cls:'primary',fn:()=>{if(G.mode==='online')ON.send({resign:G.seat});endGame(3-loser,'기권');}}]);};
 $('g-menu').onclick=()=>{if(G&&G.mode==='online'&&!G.over){modal('<h3>대국에서 나갈까요?</h3><p>나가도 판은 그대로 남습니다. 처음 화면의 \'온라인 대전 이어하기\'로 다시 들어올 수 있습니다.</p>',[{label:'계속 두기'},{label:'나가기',cls:'primary',fn:()=>{ON.close(true);ON=null;show('home');}}]);return;}if(ON&&G&&G.over){ON.close();ON=null;}reqId++;thinking=false;show('home');};
 $('g-hint').onclick=()=>{prefs.hints=!prefs.hints;savePrefs();renderGame();};

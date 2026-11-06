@@ -383,6 +383,7 @@ img.card{display:block;width:100%;height:auto;border-radius:5px;user-select:none
   <div class="topbar">
     <button class="linkbtn" id="g-menu">‹ 메뉴</button>
     <div id="g-status" class="num"></div>
+    <button class="linkbtn" id="g-again" hidden>다음 판</button>
     <button class="linkbtn" id="g-bgm">배경음 켬</button><button class="linkbtn" id="g-sound">소리 켬</button>
   </div>
   <div id="opps" class="opps"></div>
@@ -847,7 +848,7 @@ function syncSlots(order){const sp=spec();
 /* ---- dealing animation ---- */
 let deal=null;const inFlight=new Set(),oppFlight=[0,0,0];
 const vHand=p=>deal?deal.hand[p]:S.hands[p],vFloor=()=>deal?deal.floor:S.floor,vPile=()=>deal?deal.left:S.pile.length;
-function newRound(preS){stopBgm();gen++;S=preS||EN.deal(meta.n,meta.first);busy=true;resetView();persist();inFlight.clear();oppFlight.fill(0);
+function newRound(preS){stopBgm();gen++;$('g-again').hidden=true;S=preS||EN.deal(meta.n,meta.first);busy=true;resetView();persist();inFlight.clear();oppFlight.fill(0);
   deal={hand:S.hands.map(()=>[]),floor:[],left:S.pile.length+S.floor.length+S.hands.reduce((a,h)=>a+h.length,0),skip:false};
   show('game');const g0=gen;
   runDeal(g0).then(()=>{if(g0!==gen)return;deal=null;inFlight.clear();oppFlight.fill(0);busy=false;render();
@@ -1113,6 +1114,7 @@ $('opps').addEventListener('click',e=>{const b=e.target.closest('.opp');if(!b||!
   viewer(`<h3 style="font-size:22px">${NAMES(S.n)[q]}가 먹은 패</h3>${['광','열','띠','피'].map(k=>`<p class="h3" style="margin:0">${k==='열'?'열끗':k} ${g[k].length}</p><div class="cs big">${g[k].map(id=>cardSVG(id)).join('')||'<small style="color:var(--muted)">없음</small>'}</div>`).join('')}${breakdownHTML(EN.scoreFor(S,q))}`);});
 $('mine').addEventListener('click',e=>{if(!S)return;if(e.target.closest('#kbtn')){toggleK();return;}if(e.target.closest('.kbtn'))return;const g=groupCapt(S.capt[0],0);
   viewer(`<h3 style="font-size:22px">내가 먹은 패</h3>${['광','열','띠','피'].map(k=>`<p class="h3" style="margin:0">${k==='열'?'열끗':k} ${g[k].length}</p><div class="cs big">${g[k].map(id=>cardSVG(id)).join('')||'<small style="color:var(--muted)">없음</small>'}</div>`).join('')}${breakdownHTML(EN.scoreFor(S,0))}`);});
+$('g-again').onclick=()=>{if(meta&&meta.online)return;$('modal').hidden=true;newRound();};
 $('g-menu').onclick=()=>{if(meta&&meta.online&&ON){modal('<h3>판에서 나갈까요?</h3><p>나가도 판은 그대로 남습니다. 처음 화면의 \'온라인 고스톱 이어하기\'로 다시 들어올 수 있습니다.</p>',[{label:'계속 치기'},{label:'나가기',cls:'primary',fn:()=>{ON.close(true);ON=null;gen++;stopBgm();meta=null;S=null;show('home');}}]);return;}stopBgm();show('home');};
 $('g-bgm').onclick=()=>{prefs.bgm=prefs.bgm===false;savePrefs();if(prefs.bgm===false)stopBgm();else if(S&&!S.over&&maxGo())startBgm(maxGo());render();toast(prefs.bgm===false?'고 배경음을 껐습니다':'고 배경음을 켰습니다');};
 $('g-sound').onclick=()=>{prefs.sound=!prefs.sound;savePrefs();if(!prefs.sound)stopBgm();else if(S&&!S.over&&maxGo())startBgm(maxGo());render();};
@@ -1167,7 +1169,7 @@ function rotS(Sg){const n=Sg.n,k=SEAT,S2=JSON.parse(JSON.stringify(Sg)),rot=a=>a
 function startRound(Sg,carry){$('modal').hidden=true;if(carry!=null)meta.carry=carry;meta.first=(Sg.turn-SEAT+meta.n)%meta.n;newRound(rotS(Sg));}
 function hostDeal(){const firstG=(meta.first+SEAT)%meta.n,Sg=EN.deal(meta.n,firstG);SEND({deal:JSON.stringify(Sg),carry:meta.carry});startRound(Sg);}
 function waitDeal(){const g0=gen;takeRemote().then(m=>{if(!meta||!meta.online)return;if(m.deal)startRound(JSON.parse(m.deal),m.carry||0);else{console.warn('unexpected',m);waitDeal();}});}
-function nextBtns(){if(!meta.online)return [{label:'메뉴',fn:()=>show('home')},{label:'판 보기'},{label:'다음 판',cls:'primary',fn:()=>newRound()}];
+function nextBtns(){$('g-again').hidden=!!meta.online;if(!meta.online)return [{label:'메뉴',fn:()=>show('home')},{label:'판 보기'},{label:'다음 판',cls:'primary',fn:()=>newRound()}];
   if(SEAT===0&&!drivenNow())return [{label:'다음 판',cls:'primary',fn:()=>hostDeal()}];
   setTimeout(waitDeal,0);return [{label:'판 보기'}];}
 function goOnline(){NET.lobby({game:'gostop',timeLimit:{get:()=>prefs.tl||0,set:v=>{prefs.tl=v;savePrefs();}},sizes:[2,3],makeCfg:n=>({n,tl:prefs.tl||0}),describe:(c,n)=>'시간 제한 '+TMR.label(c.tl)+' · '+(n===2?'맞고: 두 사람이 칩니다 · 7점부터 고/스톱 · 한 사람당 10장':'3인 고스톱: 세 사람이 칩니다 · 3점부터 고/스톱 · 한 사람당 7장')}).then(startOnline).catch(()=>{});}

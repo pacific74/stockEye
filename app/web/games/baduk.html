@@ -799,8 +799,8 @@ function renderGame(){if(!G)return;const cells=cellsOf(),N=G.N;
   else if(sc){const f=x=>Number.isInteger(x)?x:x.toFixed(1);$('g-status').textContent=`계가 중 · 흑 ${f(sc.b)} : 백 ${f(sc.w)} · ${G.mode==='online'&&G.scoring.ok[G.seat]?'상대 확인 기다리는 중':'죽은 돌을 눌러 바꿀 수 있습니다'}`;}
   else $('g-status').textContent=`${N}줄 · ${nMoves+1}수째 · ${G.mode==='online'?(turn()===G.human?'내 차례':'상대 차례'):NAME[turn()]+' 차례'}${b.ko>=0?' · 패':''}`;
   $('play-acts').hidden=!!(G.scoring&&!G.over);$('score-acts').hidden=!(G.scoring&&!G.over);
-  $('g-undo').disabled=!canUndo();$('g-resign').disabled=!!G.over||(G.mode==='1p'&&thinking);$('g-pass').disabled=!isHumanTurn()||thinking;
-  $('g-resign').textContent='기권';
+  $('g-undo').disabled=!canUndo();const again=!!G.over&&G.mode!=='online';$('g-resign').disabled=!again&&(!!G.over||(G.mode==='1p'&&thinking));$('g-pass').disabled=!isHumanTurn()||thinking;
+  $('g-resign').textContent=again?'다시 하기':'기권';
   $('g-confirm').textContent=prefs.tap2?'두 번 눌러 두기':'바로 두기';$('g-undo').textContent=G.mode==='online'?(G.undoWait?'답 기다리는 중':'무르기 부탁'):'무르기';clockTurn();}
 function canUndo(){if(!G||G.over||G.scoring)return false;if(G.mode==='online')return !G.undoWait&&G.moves.some((_,k)=>moverOf(k)===G.human);if(G.mode==='2p')return G.moves.length>0;return G.moves.some((_,k)=>moverOf(k)===G.human);}
 $('g-undo').onclick=()=>{if(!canUndo())return;ghost=-1;if(G.mode==='online'){askUndo();return;}if(thinking){reqId++;thinking=false;}
@@ -809,7 +809,7 @@ $('g-undo').onclick=()=>{if(!canUndo())return;ghost=-1;if(G.mode==='online'){ask
 $('g-pass').onclick=()=>{if(!isHumanTurn()||thinking)return;
   const n=G.moves.length,end=n&&G.moves[n-1]<0;
   modal(`<h3>한 수 쉴까요?</h3><p>${end?'상대도 쉬었으므로 대국을 마치고 계가합니다.':'둘 곳이 없을 때 쉬세요. 양쪽이 이어서 쉬면 계가합니다.'}</p>`,[{label:'취소'},{label:'한 수 쉬기',cls:'primary',fn:pass}]);};
-$('g-resign').onclick=()=>{if(!G||G.over)return;const loser=G.mode!=='2p'?G.human:Number(window.__rs!=null?window.__rs:$('g-resign').dataset.side);
+$('g-resign').onclick=()=>{if(G&&G.over&&G.mode!=='online'){startGame({mode:G.mode,level:G.level,human:G.human,N:G.N,hc:G.hc,tl:G.tl});return;}if(!G||G.over)return;const loser=G.mode!=='2p'?G.human:Number(window.__rs!=null?window.__rs:$('g-resign').dataset.side);
   modal(`<h3>기권할까요?</h3><p>${G.mode!=='2p'?'이 대국은 패배로 기록됩니다.':NAME[loser]+'의 패배로 기록됩니다.'}</p>`,[{label:'계속 두기'},{label:'기권',cls:'primary',fn:()=>{if(G.mode==='online')ON.send({resign:G.seat});endGame(3-loser,`${NAME[loser]} 기권`);}}]);};
 $('g-menu').onclick=()=>{if(G&&G.mode==='online'&&!G.over){modal('<h3>대국에서 나갈까요?</h3><p>나가도 판은 그대로 남습니다. 처음 화면의 \'온라인 대전 이어하기\'로 다시 들어올 수 있습니다.</p>',[{label:'계속 두기'},{label:'나가기',cls:'primary',fn:()=>{ON.close(true);ON=null;show('home');}}]);return;}if(ON&&G&&G.over){ON.close();ON=null;}reqId++;thinking=false;show('home');};
 $('g-confirm').onclick=()=>{prefs.tap2=!prefs.tap2;savePrefs();ghost=-1;renderGame();toast(prefs.tap2?'같은 자리를 두 번 누르면 둡니다':'누르는 즉시 둡니다');};

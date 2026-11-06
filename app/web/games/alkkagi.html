@@ -623,12 +623,12 @@ function renderGame(){if(!G)return;const topSide=3-G.bottom,botSide=G.bottom;let
   $('bar-top').innerHTML=barHTML(...top);$('bar-bot').innerHTML=barHTML(...bot);
   $('bar-top').classList.toggle('turn',!G.over&&turn===top[0]);$('bar-bot').classList.toggle('turn',!G.over&&turn===bot[0]);
   $('g-status').textContent=G.over?`대국 종료`:anim?'…':isHumanTurn()?`${G.mode==='online'?'내':NAME[turn]} 차례 · 당겨서 조준, 게이지 보고 놓기`:`${G.mode==='online'?'상대':NAME[turn]} 차례`;
-  $('g-undo').disabled=!canUndo();$('g-resign').disabled=!!G.over||anim||(G.mode==='1p'&&thinking);
-  $('g-resign').textContent='기권';$('g-sound').textContent=prefs.sound?'소리 켬':'소리 끔';draw();}
+  $('g-undo').disabled=!canUndo();const again=!!G.over&&G.mode!=='online';$('g-resign').disabled=!again&&(!!G.over||anim||(G.mode==='1p'&&thinking));
+  $('g-resign').textContent=again?'다시 하기':'기권';$('g-sound').textContent=prefs.sound?'소리 켬':'소리 끔';draw();}
 function canUndo(){if(!G||G.over||anim||thinking||G.mode==='online')return false;return hist.some(h=>G.mode==='2p'||h.turn===G.human);}
 $('g-undo').onclick=()=>{if(!canUndo())return;while(hist.length){const h=hist.pop();st=h.st;turn=h.turn;G.shots=h.shots;if(G.mode==='2p'||h.turn===G.human)break;}
   fallers=[];setGauge(0,false);persist();renderGame();toast('한 번 물렀습니다');maybeAI();};
-$('g-resign').onclick=()=>{if(!G||G.over)return;const loser=G.mode!=='2p'?G.human:Number(window.__rs!=null?window.__rs:$('g-resign').dataset.side);
+$('g-resign').onclick=()=>{if(G&&G.over&&G.mode!=='online'){startGame({mode:G.mode,level:G.level,human:G.human,n:G.n});return;}if(!G||G.over)return;const loser=G.mode!=='2p'?G.human:Number(window.__rs!=null?window.__rs:$('g-resign').dataset.side);
   modal(`<h3>기권할까요?</h3><p>${G.mode!=='2p'?'이 대국은 패배로 기록됩니다.':NAME[loser]+'의 패배로 기록됩니다.'}</p>`,[{label:'계속 하기'},{label:'기권',cls:'primary',fn:()=>{if(G.mode==='online')ON.send({resign:G.seat});endGame(3-loser,'기권');}}]);};
 $('g-menu').onclick=()=>{if(G&&G.mode==='online'&&!G.over){modal('<h3>대국에서 나갈까요?</h3><p>나가도 판은 그대로 남습니다. 처음 화면의 \'온라인 대전 이어하기\'로 다시 들어올 수 있습니다.</p>',[{label:'계속 두기'},{label:'나가기',cls:'primary',fn:()=>{ON.close(true);ON=null;show('home');}}]);return;}if(ON&&G&&G.over){ON.close();ON=null;}reqId++;thinking=false;if(anim){/* let animation finish silently */}show('home');};
 $('g-sound').onclick=()=>{prefs.sound=!prefs.sound;savePrefs();renderGame();};

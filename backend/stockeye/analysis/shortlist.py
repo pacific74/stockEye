@@ -42,34 +42,49 @@ def pick(res: list[dict], n: int = N) -> list[dict]:
              "type": r.get("type"), "rank": i} for i, r in enumerate(ok[:n], 1)]
 
 
+TIERS = ((EARLY_MIN, EARLY_MIN_PV, None), (1.5, 1e9, 0.03), (0.5, 5e8, 0.0))   # 5개가 안 모이면 기준을 단계적으로 풀어 채움
+
+
 def early_pick(pre: dict, info: dict, boost: set | None = None, n: int = EARLY_N, after: dict | None = None,
-               flow: dict | None = None) -> list[dict]:
-    """09:00 선발 — 프리마켓(pre) · 어제 저녁 애프터마켓(after) = {코드: [가격, 종가 대비 %]} 등락이 +EARLY_MIN~MAX% 인 종목 중
-    info[code] = {adr, pv(전일 거래대금), name} 로 평소 변동폭(MIN_ADR)·전일 거래대금을 거른 뒤 점수 순으로 n개.
-    점수 = 프리마켓 % + 0.5×애프터마켓 % + 급등예상 목록 가산 + 외국인·기관 3일 순매수 가산(최대 5)  (⚠ 가중치는 검증 전 초기값)
-    후보 조건: 프리마켓이 범위 안이거나, 애프터마켓이 범위 안이면서 프리마켓이 0% 이상"""
+               flow: dict | None = None, live: dict | None = None) -> list[dict]:
+    """09:00 선발 — 프리마켓(pre) · 어제 저녁 애프터마켓(after) = {코드: [가격, 종가 대비 %]} · 09:00 시초 등락(live = {코드: %}) 중
+    하나라도 +EARLY_MIN~MAX% 인 종목 (애프터는 프리마켓이 0% 이상일 때만). info[code] = {adr, pv(전일 거래대금), name}.
+    평소 변동폭(MIN_ADR)·전일 거래대금을 거른 뒤 점수 순으로 n개. 모자라면 TIERS 순서로 기준을 풀어 n개를 채움.
+    점수 = max(프리마켓, 시초 등락) + 0.5×애프터마켓 + 급등예상 가산 + 외국인·기관 3일 순매수 가산(최대 5)  (⚠ 가중치는 검증 전 초기값)"""
     from ..engine.daytrade import MIN_ADR
-    boost, after, flow = boost or set(), after or {}, flow or {}
-    rows = []
-    for c in set(pre) | set(after):
-        i = info.get(c)
-        pv = (pre.get(c) or [None, None])[1]
-        av = (after.get(c) or [None, None])[1]
-        ok_pre = pv is not None and EARLY_MIN <= pv <= EARLY_MAX
-        ok_aft = av is not None and EARLY_MIN <= av <= EARLY_MAX and (pv is None or pv >= 0)
-        if not i or not (ok_pre or ok_aft):
-            continue
-        if (i.get("adr") or 0) < MIN_ADR or (i.get("pv") or 0) < EARLY_MIN_PV:
-            continue
-        fb = min(max(float(flow.get(c) or 0) * 100, 0.0), 5.0)
-        rows.append({"code": c, "name": i.get("name") or c, "pre": None if pv is None else round(float(pv), 2),
-                     "after": None if av is None else round(float(av), 2), "adr": round(float(i["adr"]) * 100, 1),
-                     "pv_eok": round(float(i["pv"]) / 1e8), "surge": c in boost, "flow": round(fb, 1),
-                     "key": float(pv or 0) + 0.5 * float(av or 0) + (EARLY_BOOST if c in boost else 0) + fb})
-    rows.sort(key=lambda r: -r["key"])
-    out = rows[:n]
-    for r in out:
-        r["score"] = round(r.pop("key"), 1)
+    boost, after, flow, live = boost or set(), after or {}, flow or {}, live or {}
+    out: list[dict] = []
+    have: set[str] = set()
+    for lo, min_pv, adr_min in TIERS:
+        rows = []
+        for c in set(pre) | set(after) | set(live):
+            i = info.get(c)
+            if c in have or not i:
+                continue
+            pv = (pre.get(c) or [None, None])[1]
+            av = (after.get(c) or [None, None])[1]
+            lv = live.get(c)
+            ok_pre = pv is not None and lo <= pv <= EARLY_MAX
+            ok_live = lv is not None and lo <= lv <= EARLY_MAX
+            ok_aft = av is not None and lo <= av <= EARLY_MAX and (pv is None or pv >= 0)
+            if not (ok_pre or ok_live or ok_aft):
+                continue
+            if (i.get("adr") or 0) < (MIN_ADR if adr_min is None else adr_min) or (i.get("pv") or 0) < min_pv:
+                continue
+            fb = min(max(float(flow.get(c) or 0) * 100, 0.0), 5.0)
+            top = max([x for x in (pv, lv) if x is not None] or [0.0])
+            rows.append({"code": c, "name": i.get("name") or c, "pre": None if pv is None else round(float(pv), 2),
+                         "after": None if av is None else round(float(av), 2), "open": None if lv is None else round(float(lv), 2),
+                         "adr": round(float(i["adr"]) * 100, 1), "pv_eok": round(float(i["pv"]) / 1e8),
+                         "surge": c in boost, "flow": round(fb, 1), "tier": TIERS.index((lo, min_pv, adr_min)) + 1,
+                         "key": float(top) + 0.5 * float(av or 0) + (EARLY_BOOST if c in boost else 0) + fb})
+        rows.sort(key=lambda r: -r["key"])
+        for r in rows[: n - len(out)]:
+            r["score"] = round(r.pop("key"), 1)
+            out.append(r)
+            have.add(r["code"])
+        if len(out) >= n:
+            break
     return out
 
 

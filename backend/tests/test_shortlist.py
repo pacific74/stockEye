@@ -68,7 +68,8 @@ def test_early_pick_filters_and_boost():
             "c": {"adr": 0.09, "pv": 5e9}, "d": {"adr": 0.09, "pv": 5e9},
             "e": {"adr": 0.03, "pv": 5e9}, "f": {"adr": 0.09, "pv": 1e9}}
     out = sl.early_pick(pre, info, {"b"})
-    assert [x["code"] for x in out] == ["b", "a"]               # c 갭 과대 · d 갭 작음 · e 변동폭 작음 · f 거래대금 작음 / b 는 급등예상 가산
+    assert [x["code"] for x in out if x["tier"] == 1] == ["b", "a"]   # 기본 기준: c 갭 과대 · d 갭 작음 · e 변동폭 작음 · f 거래대금 작음 / b 는 급등예상 가산
+    assert "c" not in [x["code"] for x in out]                       # 갭 과대(+25% 초과)는 기준을 풀어도 제외
     assert out[0]["surge"] and "key" not in out[0]
 
 
@@ -118,3 +119,12 @@ def test_types_allow_breakout_by_default():
     st["early"] = [{"code": "a", "pre": 5.0, "after": 3.0}]
     sl.tag(r, st)
     assert r["early_info"] == {"pre": 5.0, "after": 3.0}
+
+
+def test_early_pick_fills_five_by_relaxing_and_uses_open_gap():
+    info = {f"x{i}": {"adr": 0.04, "pv": 2e9, "name": f"X{i}"} for i in range(8)}      # 기본 기준(변동폭 5%·30억)은 모두 탈락
+    info["g"] = {"adr": 0.09, "pv": 9e9, "name": "G"}
+    pre = {f"x{i}": [1000, 2.0 + i * 0.1] for i in range(8)}
+    out = sl.early_pick(pre, info, live={"g": 12.0})
+    assert len(out) == 5 and out[0]["code"] == "g" and out[0]["tier"] == 1 and out[0]["open"] == 12.0   # 시초 갭만 있는 종목도 잡힘
+    assert all(x["tier"] >= 2 for x in out[1:])                                         # 나머지는 기준을 풀어 채움

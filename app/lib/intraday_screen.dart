@@ -286,6 +286,7 @@ class _Section extends StatelessWidget {
         Expanded(
             child: Text(today ? lookupLabel(d, at) : '오늘 결과 없음',
                 overflow: TextOverflow.ellipsis, style: t.bodySmall?.copyWith(color: Colors.grey))),
+        if (!_lc && today) _UsChip(us: asMap(d['us'])),
         DaytradeFindButton(kind: kind, onDone: onDone),
       ]),
       if (d['scan_closed'] == true)
@@ -346,6 +347,32 @@ class _Section extends StatelessWidget {
           ),
         ),
     ]);
+  }
+}
+
+/// 당일단타 제목줄 — 미국 선물 등락 + 오르는 중(▲ 빨강)·내리는 중(▼ 파랑) 깜빡임 (2026-11-06 사용자). 거의 보합(±0.05%)이면 깜빡이지 않음
+class _UsChip extends StatelessWidget {
+  const _UsChip({required this.us});
+  final Json us;
+
+  @override
+  Widget build(BuildContext context) {
+    final nq = us['NQ'] as num?, es = us['ES'] as num?;
+    final vals = [if (nq != null) nq, if (es != null) es];
+    if (vals.isEmpty) return const SizedBox.shrink();
+    final avg = (us['avg'] as num?) ?? vals.reduce((a, b) => a + b) / vals.length;
+    final dir = avg >= 0.05 ? 1 : (avg <= -0.05 ? -1 : 0);
+    final c = dir > 0 ? upColor : (dir < 0 ? downColor : Colors.grey);
+    String f(String n, num? v) => v == null ? '' : '$n ${v >= 0 ? '+' : ''}${v.toStringAsFixed(2)}%';
+    final t = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(left: 6, right: 4),
+      child: Blink(
+        on: dir != 0,
+        child: Text('${dir > 0 ? '▲' : (dir < 0 ? '▼' : '–')} 미국선물 ${[f('NQ', nq), f('ES', es)].where((x) => x.isNotEmpty).join(' ')}',
+            style: t.bodySmall?.copyWith(color: c, fontWeight: FontWeight.bold)),
+      ),
+    );
   }
 }
 
@@ -410,7 +437,7 @@ class _Shortlist extends StatelessWidget {
                 ActionChip(
                   visualDensity: VisualDensity.compact,
                   backgroundColor: Colors.purple.withValues(alpha: 0.12),
-                  label: Text('${x['name']} 프리 ${x['pre'] ?? '-'}% · 애프터 ${x['after'] ?? '-'}%', style: t.bodySmall),
+                  label: Text('${x['name']} 프리 ${x['pre'] ?? '-'}% · 시초 ${x['open'] ?? '-'}% · 애프터 ${x['after'] ?? '-'}%', style: t.bodySmall),
                   onPressed: () => Navigator.push(context,
                       MaterialPageRoute(builder: (_) => StockDetailScreen(code: '${x['code']}', name: '${x['name']}'))),
                 ),

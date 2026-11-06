@@ -164,18 +164,26 @@ class Runner:
         if self.runner != "pc" or shortlist.frozen(self.sl) or self.sl.get("early") or hm < shortlist.EARLY_AT or not (self.pre or self.after):
             return
         from concurrent.futures import ThreadPoolExecutor
+        from stockeye.data.sources import naver_live
         pset = set(self.codes)
+        try:                                                        # 09:00 시초 등락 (프리마켓·애프터에 안 잡힌 갭도 보려고)
+            lv = naver_live.stocks(self.codes)
+            live = {r.code: float(r.chg_pct) for r in lv.itertuples() if getattr(r, "chg_pct", None) is not None}
+        except Exception as e:  # noqa: BLE001
+            log.warning("09:00 선발: 시초 시세 실패 (프리마켓·애프터만 사용): %s", e)
+            live = {}
         def sig(c):
-            return (self.pre.get(c) or [0, 0])[1] + 0.5 * (self.after.get(c) or [0, 0])[1]
-        pool = [c for c in sorted(set(self.pre) | set(self.after), key=lambda c: -sig(c))
-                if c in pset and (shortlist.EARLY_MIN <= (self.pre.get(c) or [0, -99])[1] <= shortlist.EARLY_MAX
-                                  or shortlist.EARLY_MIN <= (self.after.get(c) or [0, -99])[1] <= shortlist.EARLY_MAX)][:40]
+            return max((self.pre.get(c) or [0, -99])[1], live.get(c, -99)) + 0.5 * (self.after.get(c) or [0, 0])[1]
+        lo = shortlist.TIERS[-1][0]                                 # 가장 넓은 기준으로 후보 풀을 잡고, 단계별 선별은 early_pick 이
+        pool = [c for c in sorted(set(self.pre) | set(self.after) | set(live), key=lambda c: -sig(c))
+                if c in pset and any(lo <= x <= shortlist.EARLY_MAX for x in (
+                    (self.pre.get(c) or [0, -99])[1], live.get(c, -99), (self.after.get(c) or [0, -99])[1]))][:80]
         with ThreadPoolExecutor(self.workers) as ex:
             list(ex.map(self._adr, pool))
         info = {c: {"adr": self.adr.get(c), "pv": self.pv.get(c), "name": self.names.get(c, c)} for c in pool}
-        self.sl["early"] = shortlist.early_pick(self.pre, info, self.boost, after=self.after, flow=self.flow)
+        self.sl["early"] = shortlist.early_pick(self.pre, info, self.boost, after=self.after, flow=self.flow, live=live)
         log.info("★ 09:00 선발 %d종목: %s", len(self.sl["early"]),
-                 ", ".join(f"{x['name']}(프리 {x['pre'] if x['pre'] is not None else '-'}% 애프터 {x['after'] if x['after'] is not None else '-'}%)" for x in self.sl["early"]))
+                 ", ".join(f"{x['name']}(프리 {x['pre'] if x['pre'] is not None else '-'}% 시초 {x.get('open') if x.get('open') is not None else '-'}% 애프터 {x['after'] if x['after'] is not None else '-'}%)" for x in self.sl["early"]))
 
     def _extras(self, code: str) -> None:
         """호가 스프레드(2분마다) · 뉴스 · 평소 변동폭(하루 한 번)"""

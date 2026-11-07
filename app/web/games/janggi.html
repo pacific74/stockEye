@@ -240,7 +240,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
     <button class="btn" id="btn-online"><span class="glyph cho">網</span><span class="t">온라인 대전 · 인터넷으로 두기<small>방 번호로 멀리 있는 친구와 둡니다</small></span></button>
     <button class="btn" id="btn-stats"><span class="glyph cho" style="font-size:18px">戰</span><span class="t">전적 · 승률<small>난이도별 기록과 최근 대국</small></span></button>
   </div>
-  <p class="footnote">기록은 이 기기의 브라우저에만 저장됩니다. 사이트 데이터를 지우면 함께 지워집니다.<br><span class="ver">버전 5.0.4 · © 왕대박</span></p>
+  <p class="footnote">기록은 이 기기의 브라우저에만 저장됩니다. 사이트 데이터를 지우면 함께 지워집니다.<br><span class="ver">버전 5.0.6 · © 왕대박</span></p>
 </section>
 
 <section id="setup1" hidden>
@@ -758,9 +758,10 @@ function applyMove(m,remote){
   const side=pos.side;if(G.mode==='online'&&!remote&&m>=0)ON.send({m});
   if(m<0){hist.push({m:-1,side});G.moves.push(-1);pos.side^=1;toast(passMsg||(SIDE[side]+'은(는) 둘 곳이 없어 한 수 쉽니다'));}
   else{const was=EN.inCheck(pos,side);const cap=EN.doMove(pos,m);hist.push({m,cap,side});G.moves.push(m);clack(!!cap);
+    if(cap&&(cap&7)===K)return endGame(side,'왕을 잡음');
     if(EN.inCheck(pos,pos.side))flag('장군',side);else if(was)flag('멍군',side);}
   sel=-1;legal=legalNow();
-  if(!legal.length&&EN.legalMoves(pos).length){persist();renderGame();toast('같은 행위 3번 연속은 둘 수 없어 순서를 넘깁니다');return setTimeout(()=>{if(G&&!G.over)applyMove(-1);},500);}
+  if(!legal.length&&EN.legalMoves(pos).length){if(EN.inCheck(pos,pos.side))return endGame(1-pos.side,'3회 왕복 금지로 왕이 움직일 수 없음 (기권)');persist();renderGame();toast('같은 자리 3회 왕복 금지로 순서를 넘깁니다');return setTimeout(()=>{if(G&&!G.over)applyMove(-1);},500);}
   if(!legal.length){
     if(EN.inCheck(pos,pos.side))return endGame(1-pos.side,'외통');
     if(G.moves.length&&G.moves[G.moves.length-1]===-1)return endByPoints('양쪽 모두 둘 곳 없음');
@@ -793,7 +794,7 @@ function onAI(d){if(d.id!==reqId||!G||G.over)return;pending=null;const wait=Math
 /* input */
 function tap(i){if(!isHumanTurn()||thinking)return;const p=pos.b[i];
   if(sel>=0&&legal.includes(sel<<7|i)){applyMove(sel<<7|i);return;}
-  if(p&&(p>>3)===pos.side){sel=sel===i?-1:i;if(sel>=0&&!legal.some(m=>(m>>7)===i)){toast('그 기물은 지금 움직일 수 없습니다');}}else sel=-1;
+  if(p&&(p>>3)===pos.side){sel=sel===i?-1:i;if(sel>=0)explainPiece(i);}else sel=-1;
   renderGame();}
 $('board').addEventListener('pointerdown',e=>{const svg=$('board');const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;
   const q=pt.matrixTransform(svg.getScreenCTM().inverse());const dc=Math.round((q.x-40)/60),dr=Math.round((q.y-40)/60);
@@ -821,10 +822,10 @@ function renderGame(){if(!G)return;const flip=G.mode!=='2p'&&G.human===HAN;
   const dl=G.mode==='online'&&G.drawWait?'비기기 기다리는 중':(drawLeft()>0?`비기기 (${drawLeft()}회)`:'비기기 (0회)');$('g-draw').textContent=G.over?'비기기':dl;$('g-draw').disabled=!!G.over||drawLeft()<=0||!!(G.mode==='online'&&G.drawWait);
   $('g-sound').textContent=prefs.sound?'소리 켬':'소리 끔';$('g-undo').textContent=G.mode==='online'?(G.undoWait?'답 기다리는 중':'무르기 부탁'):'무르기';clockTurn();}
 /* ---- 같은 행위 3번 연속 금지 / 순서 넘기기 ---- */
-function isRepeat(side,m){if(m<0)return false;var mine=[];for(var i=hist.length-1;i>=0&&mine.length<2;i--){if(hist[i].side===side)mine.push(hist[i]);}
-  if(mine.length<2)return false;var b1=mine[0],b2=mine[1];if(b1.m<0||b2.m<0)return false;
-  var f=m>>7,to=m&127,bf=b2.m>>7,bt=b2.m&127,cf=b1.m>>7,ct=b1.m&127;
-  return bf===f&&bt===to&&cf===to&&ct===f;}
+function isRepeat(side,m){if(m<0)return false;var own=[];for(var i=hist.length-1;i>=0&&own.length<6;i--){if(hist[i].side!==side)continue;if(hist[i].m<0)break;own.push(hist[i].m);}
+  if(own.length<6)return false;var f=m>>7,to=m&127;
+  for(var k=0;k<6;k++){var mm=own[k],mf=mm>>7,mt=mm&127;var wf=(k%2===0)?to:f,wt=(k%2===0)?f:to;if(mf!==wf||mt!==wt)return false;}
+  return true;}
 function legalNow(){return EN.legalMoves(pos).filter(function(m){return !isRepeat(pos.side,m);});}
 function banNow(){return EN.legalMoves(pos).filter(function(m){return isRepeat(pos.side,m);});}
 let passMsg=null;

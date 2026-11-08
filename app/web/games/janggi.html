@@ -240,7 +240,7 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
     <button class="btn" id="btn-online"><span class="glyph cho">網</span><span class="t">온라인 대전 · 인터넷으로 두기<small>방 번호로 멀리 있는 친구와 둡니다</small></span></button>
     <button class="btn" id="btn-stats"><span class="glyph cho" style="font-size:18px">戰</span><span class="t">전적 · 승률<small>난이도별 기록과 최근 대국</small></span></button>
   </div>
-  <p class="footnote">기록은 이 기기의 브라우저에만 저장됩니다. 사이트 데이터를 지우면 함께 지워집니다.<br><span class="ver">버전 5.0.6 · © 왕대박</span></p>
+  <p class="footnote">기록은 이 기기의 브라우저에만 저장됩니다. 사이트 데이터를 지우면 함께 지워집니다.<br><span class="ver">버전 5.0.7 · © 왕대박</span></p>
 </section>
 
 <section id="setup1" hidden>
@@ -826,6 +826,15 @@ function isRepeat(side,m){if(m<0)return false;var own=[];for(var i=hist.length-1
   if(own.length<6)return false;var f=m>>7,to=m&127;
   for(var k=0;k<6;k++){var mm=own[k],mf=mm>>7,mt=mm&127;var wf=(k%2===0)?to:f,wt=(k%2===0)?f:to;if(mf!==wf||mt!==wt)return false;}
   return true;}
+function explainPiece(i){
+  var raw=EN.gen(pos.b,pos.side,false).filter(function(m){return (m>>7)===i;});
+  var ok=legal.filter(function(m){return (m>>7)===i;});
+  if(ok.length)return;
+  if(!raw.length){toast('이 기물은 움직일 수 없습니다');return;}
+  var banned=raw.filter(function(m){return isRepeat(pos.side,m);});
+  if(banned.length){toast('같은 자리 3회 왕복 금지: 이 기물은 지금 둘 수 없는 칸이 있습니다');return;}
+  toast('내 궁이 공격받게 되어 이 기물은 지금 둘 수 없습니다');
+}
 function legalNow(){return EN.legalMoves(pos).filter(function(m){return !isRepeat(pos.side,m);});}
 function banNow(){return EN.legalMoves(pos).filter(function(m){return isRepeat(pos.side,m);});}
 let passMsg=null;

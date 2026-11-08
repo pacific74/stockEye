@@ -251,6 +251,25 @@ class KISClient:
                             "value": f("acml_tr_pbmn")})
         return out.dropna(subset=["close"]).reset_index(drop=True)
 
+    def volume_rank(self, market: str = "0000", kind: str = "volume") -> pd.DataFrame:
+        """거래량 기준 순위 상위 30 (FHPST01710000, 보통주) — 거래대금 순위는 대형주만 나와서 당일단타 후보에 안 맞음 (2026-11-09 사용자)
+        kind: 'volume' 거래량 순위(FID_BLNG_CLS_CODE 0) · 'surge' 거래량 증가율 순위(1). 반환 code·name·close·chg_pct·volume·value·vol_inrt"""
+        blng = {"volume": "0", "surge": "1"}[kind]
+        js = self._get("/uapi/domestic-stock/v1/quotations/volume-rank", "FHPST01710000",
+                       {"FID_COND_MRKT_DIV_CODE": "J", "FID_COND_SCR_DIV_CODE": "20171", "FID_INPUT_ISCD": market,
+                        "FID_DIV_CLS_CODE": "1", "FID_BLNG_CLS_CODE": blng, "FID_TRGT_CLS_CODE": "111111111",
+                        "FID_TRGT_EXLS_CLS_CODE": "0000000000", "FID_INPUT_PRICE_1": "", "FID_INPUT_PRICE_2": "",
+                        "FID_VOL_CNT": "", "FID_INPUT_DATE_1": ""})
+        df = pd.DataFrame(js.get("output") or [])
+        cols = ["code", "name", "close", "chg_pct", "volume", "value", "vol_inrt"]
+        if df.empty or "mksc_shrn_iscd" not in df:
+            return pd.DataFrame(columns=cols)
+        f = lambda c: pd.to_numeric(df.get(c), errors="coerce")  # noqa: E731
+        out = pd.DataFrame({"code": df["mksc_shrn_iscd"].astype(str).str.zfill(6), "name": df.get("hts_kor_isnm"),
+                            "close": f("stck_prpr"), "chg_pct": f("prdy_ctrt"), "volume": f("acml_vol"),
+                            "value": f("acml_tr_pbmn"), "vol_inrt": f("vol_inrt")})
+        return out.dropna(subset=["close"]).reset_index(drop=True)
+
     def program_daily(self, code: str) -> pd.DataFrame:
         """종목별 프로그램 순매수 금액(일별, 최근 약 30영업일)."""
         js = self._get("/uapi/domestic-stock/v1/quotations/program-trade-by-stock-daily", "FHPPG04650201",

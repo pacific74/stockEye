@@ -10,6 +10,7 @@ MOVE_UP = 8.0        # +8% 이상 오른 종목 (상한가 후보·급등)
 MOVE_DOWN = -8.0     # −8% 이하 (급락 후 반등 연구용)
 MIN_VALUE = 3e9      # 위 두 가지는 거래대금 30억 이상만
 MAX_MOVERS = 120
+TOP_VOLUME = 100     # 2026-11-09: 거래량 상위 (거래대금 10억↑) — 단타 검증 자료가 대형주에 쏠리지 않게
 CARRY = 25.0         # 어제 +25% 이상(상한가 마감)이면 오늘도 저장 (상한가 다음날 연구)
 
 
@@ -21,7 +22,9 @@ def pick(snap: pd.DataFrame, prev_hot: list[str] | None = None, top: int = TOP_V
     by_val = s.sort_values("value", ascending=False).head(top)["code"].tolist()
     mv = s[(s.value >= MIN_VALUE) & ((s.chg_pct >= MOVE_UP) | (s.chg_pct <= MOVE_DOWN))]
     movers = mv.sort_values("value", ascending=False).head(MAX_MOVERS)["code"].tolist()
-    return list(dict.fromkeys(by_val + movers + list(prev_hot or [])))
+    vv = s[s.value >= 1e9]
+    by_vol = vv.sort_values("volume", ascending=False).head(TOP_VOLUME)["code"].tolist() if "volume" in vv else []
+    return list(dict.fromkeys(by_val + movers + by_vol + list(prev_hot or [])))
 
 
 def hot(snap: pd.DataFrame) -> list[str]:

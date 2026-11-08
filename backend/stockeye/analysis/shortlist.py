@@ -13,12 +13,17 @@
 from __future__ import annotations
 
 EARLY_AT = "09:00"        # 2026-11-05 사용자: 10분 지켜보고 뽑으면 늦다 → 09:00 에 NXT 프리마켓 등으로 후보풀을 넓혀 5종목 먼저
-FREEZE_AT = "09:05"       # 09:05 에 그때 점수 상위 5개를 더해 총 10종목 확정 (예전엔 09:10 에 상위 10개)
+FREEZE_AT = "09:05"       # 09:05 에 전일 동시간 거래량 300%↑ 종목 중 점수 상위를 더해 총 10종목 확정 (예전엔 09:10 에 거래대금 상위 점수 10개)
 EARLY_N = 5
+VOL_RATIO = 3.0           # 2026-11-09 사용자: 09:05 후보 = 거래대금 상위가 아니라 '전일 같은 시각(09:00~09:05) 거래량 대비 300% 이상'
+VOL_MIN_PREV = 1000       # 전일 같은 시각 거래량이 이보다 적으면 비율이 의미 없음 (몇 주만 거래된 종목의 수천 % 방지)
+VOL_MIN_VALUE = 3e8       # 09:05 기준 오늘 누적 거래대금 3억 이상만 비교 (KIS 분봉 호출 수를 줄이려는 사전 거름, 상승 종목만)
+VOL_MAX = 300             # 비교할 최대 종목 수 (거래대금 큰 순)
 EARLY_MIN, EARLY_MAX = 3.0, 25.0   # 프리마켓 등락 범위 (%) — 너무 큰 갭(상한가 근처)은 진입 불가
 EARLY_MIN_PV = 3e9        # 전일 거래대금 30억 이상
 EARLY_BOOST = 5.0         # 급등예상 목록(점수 상위 100)에도 있으면 가산
 N = 10                    # 오늘의 후보 개수
+SURGE_EXTRA = 5           # 급등 포착 종목이 들어올 때 비울 '진입 금지' 자리가 없으면 N 을 넘겨서라도 최대 이만큼 더 붙임
 TOP = 5                   # 그중 우선 (되돌려 보기에서 가장 좋았던 구간)
 LATE_ADD = 90.0           # 후보 밖이라도 이 점수 이상이면 추가 (검증 안 된 초기값)
 LATE_ADD_UP = 85.0        # 미국 선물 상승(적극)이면 후보 밖 추가 기준을 90 → 85점 (검증 안 됨)
@@ -27,7 +32,7 @@ TYPES: tuple[str, ...] | None = None   # 2026-10-29: 후보 안에서도 눌림�
 
 
 def new_state() -> dict:
-    return {"at": None, "list": [], "late": [], "early": []}
+    return {"at": None, "list": [], "late": [], "early": [], "vs": None, "surge": []}
 
 
 def frozen(st: dict) -> bool:
@@ -88,6 +93,52 @@ def early_pick(pre: dict, info: dict, boost: set | None = None, n: int = EARLY_N
     return out
 
 
+def vol_surge(today: dict, prev: dict, names: dict | None = None) -> list[dict]:
+    """09:05 까지 오늘 누적 거래량 ÷ 전일 같은 시각(09:00~09:05) 누적 거래량 ≥ VOL_RATIO 인 종목 (비율 큰 순).
+    today·prev = {코드: 거래량}. 전일 거래량이 VOL_MIN_PREV 미만이면 제외"""
+    names = names or {}
+    rows = []
+    for c, t in today.items():
+        p = prev.get(c)
+        if not p or p < VOL_MIN_PREV or not t:
+            continue
+        r = t / p
+        if r >= VOL_RATIO:
+            rows.append({"code": c, "name": names.get(c, c), "vr": round(r * 100), "today": int(t), "prev": int(p)})
+    rows.sort(key=lambda x: -x["vr"])
+    return rows
+
+
+def add_surge(st: dict, codes: list[str], res: list[dict], names: dict, fixed: set[str] | None = None) -> list[dict]:
+    """장중 급등 포착(상한가포착의 '상한가 예비' 종목, 2026-11-09 사용자) → 당일단타 후보 맨 뒤에 넣고, 후보 중 '진입 금지' 하나를 뺌.
+    · 이미 후보인 종목·이번에 계산 결과가 없는 종목·급등 종목 자신이 진입 금지인 경우는 건너뜀 (다음 회차에 다시 봄)
+    · 뺄 '진입 금지' 후보가 없으면 N 을 넘겨 붙임 (최대 N + SURGE_EXTRA)
+    · 이미 진입해 고정된 종목(fixed)은 안 뺌. 한 번 처리한 종목은 st['surge'] 에 기록해 다시 넣지 않음
+    반환 = [{add, removed}]"""
+    if not frozen(st):
+        return []
+    byc = {r["code"]: r for r in res if r.get("code")}
+    done = st.setdefault("surge", [])
+    fixed = fixed or set()
+    out = []
+    for c in codes:
+        r = byc.get(c)
+        if c in done or r is None or r.get("excluded") or any(x["code"] == c for x in st["list"]):
+            continue
+        lst = st["list"]
+        drop = next((x for x in reversed(lst) if byc.get(x["code"], {}).get("excluded") and x["code"] not in fixed), None)
+        if drop is None and len(lst) >= N + SURGE_EXTRA:
+            continue
+        if drop is not None:
+            lst.remove(drop)
+        lst.append({"code": c, "name": names.get(c, c), "score": round(float(r.get("score") or 0), 1), "type": r.get("type"), "src": "surge"})
+        for i, x in enumerate(lst, 1):
+            x["rank"] = i
+        done.append(c)
+        out.append({"add": c, "removed": drop["code"] if drop else None})
+    return out
+
+
 def freeze(st: dict, res: list[dict], hm: str) -> bool:
     """FREEZE_AT 뒤 처음 호출에서 후보 고정 = 09:00 선발(early) + 그때 점수 상위 (N − 선발)개. 이미 고정이면 False
     순위는 점수 순 (선발 종목이 아직 점수가 없으면 맨 뒤)"""
@@ -100,8 +151,11 @@ def freeze(st: dict, res: list[dict], hm: str) -> bool:
         r = byc.get(x["code"])
         rows.append({"code": x["code"], "name": x.get("name"), "score": round(float((r or {}).get("score") or 0), 1),
                      "type": (r or {}).get("type"), "src": "early", "pre": x.get("pre"), "after": x.get("after")})
-    rest = pick([r for r in res if r.get("code") not in early], max(N - len(rows), 0))
-    rows += [{**x, "src": "score"} for x in rest]
+    vs = st.get("vs")                                              # None = 거래량 비교를 못 했음 → 예전처럼 점수 상위
+    vr = {x["code"]: x["vr"] for x in vs or []}
+    pool = [r for r in res if r.get("code") not in early and (vs is None or r.get("code") in vr)]
+    rest = pick(pool, max(N - len(rows), 0))
+    rows += [{**x, "src": "score" if vs is None else "vol", "vr": vr.get(x["code"])} for x in rest]
     rows.sort(key=lambda r: -float(r.get("score") or 0))
     for i, r in enumerate(rows, 1):
         r["rank"] = i
@@ -156,7 +210,7 @@ def tag(r: dict, st: dict) -> None:
 
 
 def view(st: dict) -> dict:
-    return {"at": st.get("at"), "n": N, "top": TOP, "list": st.get("list") or [], "late": st.get("late") or [], "early": st.get("early") or [], "early_at": EARLY_AT, "early_n": EARLY_N,
+    return {"at": st.get("at"), "n": N, "top": TOP, "list": st.get("list") or [], "late": st.get("late") or [], "early": st.get("early") or [], "vs": (st.get("vs") or [])[:30], "surge": st.get("surge") or [], "vol_ratio": VOL_RATIO * 100, "early_at": EARLY_AT, "early_n": EARLY_N,
             "state": "확정" if frozen(st) else "선별 중", "freeze_at": FREEZE_AT}
 
 
@@ -173,6 +227,10 @@ def restore(sb, day: str) -> dict:
             st.update({"at": s["at"], "list": s["list"], "late": list(s.get("late") or [])})
         if str(p.get("date")) == day and s.get("early"):
             st["early"] = list(s["early"])
+        if str(p.get("date")) == day and s.get("surge"):
+            st["surge"] = list(s["surge"])
+        if str(p.get("date")) == day and s.get("vs") is not None and s.get("at"):
+            st["vs"] = list(s["vs"])
     except Exception:  # noqa: BLE001
         pass
     return st

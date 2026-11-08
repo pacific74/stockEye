@@ -336,6 +336,21 @@ def main():
         return nxt_ctx.record_after_all(sb, report["date"], naver_live.stocks, [c for c in ls["code"] if common_stock(c, nm.get(c, ""))])
     if not args.as_of:
         step("NXT 애프터마켓 전 종목 기록 (다음날 아침 선발용)", _nxt_all, errors)
+    # 분석 장부 (2026-11-09): 거래량·상승 상위 종목 지표를 날마다 저장 → 조건 검증 자료 (PC 꺼져 있어도 쌓임). 애프터 기록 뒤라 NXT 값을 같이 담음
+    def _ledger():
+        import json as _json
+        from stockeye.analysis import ledger
+        ls = pit.listing.drop_duplicates("code", keep="last")
+        extra = {}
+        try:
+            na = _json.loads(sb.download("nxt/after/latest.json") or b"{}")
+            if na.get("day") == report["date"]:
+                extra = {c: {"nxt_after": v[1]} for c, v in (na.get("rows") or {}).items()}
+        except Exception:  # noqa: BLE001
+            pass
+        return ledger.run(sb, pit.ohlcv, report["date"], dict(zip(ls["code"], ls["name"])), extra)
+    if not args.as_of:
+        step("분석 장부 기록 (거래량·상승 상위, 조건 검증용)", _ledger, errors)
     log.info("완료 (%.1f분). 오류 %d건", (time.time() - t0) / 60, len(errors))
     for e in errors:
         log.warning("  - %s", e)

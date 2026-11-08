@@ -486,6 +486,7 @@ def main():
                 q = lc.step()
                 lc.publish(q)
                 print(f"{q['time']} [상한가포착] 대상 {q['scanned']} · 고정 {len(q['tracked'])}")
+                dt.surge_codes = list(lc.pre_first)                    # 그날 '상한가 예비'가 된 종목 → 당일단타 후보 맨 뒤 (shortlist.add_surge)
             elif lc.track.any_open():                          # 09:05 전: 전날 상한가포착 종목만 1분봉으로
                 for code in lc.track.codes():
                     b = lc._bars(code, now.strftime("%H%M%S"))

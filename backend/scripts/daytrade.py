@@ -69,6 +69,12 @@ class Runner:
         from stockeye.engine.nextday import common_stock
         self.sb, self.kis, self.top, self.workers, self.runner = sb, kis, top, workers, runner
         self.until = "10:00"
+        if sb:                                                         # 승인된 엔진 파라미터 (없으면 코드 기본값)
+            try:
+                from stockeye.engine import daytrade as _dt, params as _pm
+                _pm.load_and_apply(sb, _dt)
+            except Exception as e:  # noqa: BLE001
+                log.warning("엔진 파라미터 적용 실패(기본값 사용): %s", e)
         lst = listing.drop_duplicates("code", keep="last")
         self.names = dict(zip(lst["code"], lst["name"]))
         self.market = dict(zip(lst["code"], lst["market"])) if "market" in lst else {}
@@ -81,10 +87,12 @@ class Runner:
         self.spread: dict[str, tuple[float, float | None]] = {}     # code → (받은 시각, 스프레드)
         self.hi_n: dict[str, float | None] = {}                       # code → 최근 일봉(30거래일) 고가 (신고가 돌파 제외용)
         self.adr: dict[str, float | None] = {}                       # code → 평소 하루 변동폭 (하루 한 번)
+        self.av20: dict[str, float | None] = {}                      # code → 최근 20일 평균 일 거래량 (거래량 점수의 '평소 대비')
         self.pv: dict[str, float | None] = {}                        # code → 전일 거래대금 (종가×거래량 근사)
         self.pre: dict[str, list] = {}                               # NXT 프리마켓 {코드: [가격, 전일종가 대비 %]} (intraday_live 가 넣어 줌)
         self.after: dict[str, list] = {}                             # 어제 저녁 NXT 애프터마켓 {코드: [가격, 종가 대비 %]}
         self.flow: dict[str, float] = {}                             # 급등예상 목록 종목의 외국인·기관 3일 순매수 비율
+        self.surge_codes: list[str] = []                             # 장중 급등 포착(상한가포착 '상한가 예비') 종목 — intraday_live 가 매 회차 넣어 줌
         self.boost: set[str] = set()                                 # 급등예상 목록(점수 상위 100·아침 보강) 코드
         self.signals: dict[tuple, dict] = {}
         self.day = _now().strftime("%Y-%m-%d")
@@ -101,19 +109,28 @@ class Runner:
         self.sl = shortlist.restore(sb, self.day) if runner == "pc" else shortlist.new_state()   # 오늘의 후보 10 (09:10 고정)
 
     def discover(self) -> pd.DataFrame:
-        """후보 찾기 (2026-10-13): KIS 거래대금 순위 코스피·코스닥 상위 30씩 + 관심 탭 종목만 네이버 시세
+        """후보 찾기 (2026-10-13 → 2026-11-09 거래량 기준으로 변경): KIS 거래량 순위·거래량 증가율 순위 코스피·코스닥 상위 30씩 + 관심 탭 종목만 네이버 시세
         → 실패하면 네이버 전 종목 (5분에 한 번만). 전 종목 시세를 1분마다 받지 않음"""
         from stockeye.data.sources import naver_live
         parts = []
-        for mk in ("0001", "1001"):
-            try:
-                parts.append(self.kis.value_rank(mk))
-            except Exception as e:  # noqa: BLE001
-                log.warning("KIS 거래대금 순위(%s) 실패: %s", mk, e)
+        for mk in ("0001", "1001"):                                     # 2026-11-09: 거래대금 상위(대형주 쏠림) 대신 거래량 순위 + 거래량 증가율 순위 (거래대금은 10억 최소만)
+            for kind in ("volume", "surge"):
+                try:
+                    parts.append(self.kis.volume_rank(mk, kind))
+                except Exception as e:  # noqa: BLE001
+                    log.warning("KIS 거래량 순위(%s %s) 실패: %s", mk, kind, e)
+        if not any(len(x) for x in parts):                              # 새 순위가 안 되면 예전 방식 (거래대금 상위)으로라도
+            parts = []
+            for mk in ("0001", "1001"):
+                try:
+                    parts.append(self.kis.value_rank(mk))
+                except Exception as e:  # noqa: BLE001
+                    log.warning("KIS 거래대금 순위(%s) 실패: %s", mk, e)
         rank = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
         if len(rank):
             rank = rank[rank["code"].isin(set(self.codes))]
-            early = {x["code"] for x in (getattr(self, "sl", None) or {}).get("early") or []}
+            sl_ = getattr(self, "sl", None) or {}
+            early = {x["code"] for x in sl_.get("early") or []} | {x["code"] for x in sl_.get("vs") or []} | set(getattr(self, "surge_codes", []))
             extra = [c for c in self.watch | set(self.track.codes()) | early if c not in set(rank["code"])]
             if extra:
                 try:
@@ -150,12 +167,60 @@ class Runner:
                 self.adr[code] = dt.adr(d)
                 self.hi_n[code] = float(d["high"].max()) if len(d) >= 10 else None
                 self.pv[code] = float(d["close"].iloc[-1] * d["volume"].iloc[-1]) if len(d) else None
+                self.av20[code] = float(d["volume"].tail(20).mean()) if len(d) >= 5 else None
             except Exception as e:  # noqa: BLE001
                 log.debug("일봉 실패 %s: %s", code, e)
                 self.adr[code] = None
                 self.hi_n[code] = None
                 self.pv[code] = None
+                self.av20[code] = None
         return self.adr[code]
+
+    def _vol_scan(self, hm: str) -> None:
+        """09:05 후보 = 전일 같은 시각(09:00~09:05) 거래량 대비 300% 이상 (2026-11-09 사용자: 거래대금 상위가 아니라).
+        전 종목 시세(네이버 1회)로 오늘 거래대금 3억↑ 상승 종목을 거른 뒤(최대 300개), KIS 1분봉으로 오늘·전일의 09:00~09:05 거래량을 같은 방식으로 합산해 비교.
+        실패하면 st['vs']=None → 예전처럼 점수 상위로 확정"""
+        from stockeye.analysis import shortlist
+        if self.runner != "pc" or shortlist.frozen(self.sl) or hm < shortlist.FREEZE_AT or getattr(self, "_vs_tried", False):
+            return
+        self._vs_tried = True
+        prevs = sorted(d for d in self.reg_days if d < self.day)
+        if not prevs:
+            log.warning("거래량 비교: 전 거래일을 모름 → 점수 상위로 확정")
+            return
+        pd_ = prevs[-1].replace("-", "")
+        from concurrent.futures import ThreadPoolExecutor
+        from stockeye.data.sources import naver_live
+        try:
+            sn = naver_live.stocks(self.codes)
+            sn = sn[(sn["value"] >= shortlist.VOL_MIN_VALUE) & (sn["chg_pct"] > 0)].sort_values("value", ascending=False).head(shortlist.VOL_MAX)
+        except Exception as e:  # noqa: BLE001
+            log.warning("거래량 비교: 시세 실패 %s → 점수 상위로 확정", e)
+            return
+        pool = sn["code"].tolist()
+
+        def vol(code: str, day: str | None) -> float | None:
+            try:
+                b = self.kis.minute_bars_day(code, "090000", "090500", day=day, max_calls=2) if day else self.kis.minute_bars(code, "090500")
+            except Exception:  # noqa: BLE001
+                return None
+            if b is None or b.empty:
+                return None
+            hm_ = b["time"].dt.strftime("%H%M%S")
+            return float(b.loc[(hm_ >= "090000") & (hm_ <= "090500"), "volume"].sum())
+
+        nv = dict(zip(sn["code"], sn["volume"]))                      # 지금(09:05 직후) 오늘 누적 거래량 — 정확한 09:05 값은 아래에서 후보만 다시 받음
+        with ThreadPoolExecutor(self.workers) as ex:                  # KIS 호출 줄이기: 전일 분봉 300번 → 대략 비율이 모자란 종목은 버리고 → 남은 종목만 오늘 분봉
+            pv = dict(zip(pool, ex.map(lambda c: vol(c, pd_), pool)))
+            near = [c for c in pool if pv.get(c) and nv.get(c) and nv[c] / pv[c] >= shortlist.VOL_RATIO * 0.8]
+            tv = dict(zip(near, ex.map(lambda c: vol(c, None), near)))
+        ok = [(c, tv[c], pv[c]) for c in near if tv.get(c) is not None]
+        if sum(1 for c in pool if pv.get(c) is not None) < 0.3 * len(pool):   # 전일 분봉을 거의 못 받음 (보관 기간·휴장 등) → 믿을 수 없음
+            log.warning("거래량 비교: 전일 분봉 %d/%d개만 받음 → 점수 상위로 확정", sum(1 for c in pool if pv.get(c) is not None), len(pool))
+            return
+        self.sl["vs"] = shortlist.vol_surge({c: t for c, t, _ in ok}, {c: p for c, _, p in ok}, self.names)
+        log.info("★ 09:05 전일 동시간 거래량 %d%%↑: %d종목 (비교 %d개) %s", shortlist.VOL_RATIO * 100, len(self.sl["vs"]), len(pool),
+                 ", ".join(f"{x['name']}({x['vr']}%)" for x in self.sl["vs"][:8]))
 
     def _early(self, hm: str) -> None:
         """09:00 선발 5종목 (2026-11-05) — NXT 프리마켓 +3~25% 종목 중 평소 변동폭·전일 거래대금 통과, 급등예상 목록 가산.
@@ -218,6 +283,7 @@ class Runner:
         now = _now()
         hhmmss = now.strftime("%H%M%S")
         self._early(now.strftime("%H:%M"))                            # 09:00 선발 (시세를 받기 전에 — 선발 종목도 같이 받게)
+        self._vol_scan(now.strftime("%H:%M"))                         # 09:05 전일 동시간 거래량 300%↑ (선발 종목처럼 시세·분봉을 같이 받게)
         snap = self.discover()
         idx = naver_live.indices()
         idx_chg = {r["code"]: float(r["chg_pct"]) for _, r in idx.iterrows()} if not idx.empty else {}
@@ -234,6 +300,8 @@ class Runner:
         top = live.sort_values("value", ascending=False).head(self.top).index.tolist()
         keepers = [x["code"] for x in (self.sl.get("list") or []) if x["code"] in live.index] + [c for c in self.sl.get("late") or [] if c in live.index]
         early = [x["code"] for x in (self.sl.get("early") or []) if x["code"] in snap.index]      # 오전 거래대금이 모자라도 선발 종목은 계속 계산
+        early += [x["code"] for x in (self.sl.get("vs") or []) if x["code"] in snap.index]          # 거래량 300%↑ 종목도 오전 거래대금과 상관없이 계산
+        early += [c for c in self.surge_codes if c in snap.index]                                     # 급등 포착 종목도 계산 (후보로 넣을지 판단하려고)
         cands = list(dict.fromkeys(top + keepers + early + [c for c in self.watch if c in live.index] + self.track.codes()))   # 후보 10개는 순위가 밀려도 계속 계산
         with ThreadPoolExecutor(self.workers) as ex:                 # 1분봉을 여러 종목 동시에 (KIS 초당 한도 안에서)
             bars = dict(zip(cands, ex.map(lambda c: self._bars(c, hhmmss), cands)))
@@ -264,7 +332,8 @@ class Runner:
             if code in need:
                 ctx = ctx_of(code, bars[code])
                 ctx.update({"spread": (self.spread.get(code) or (0, None))[1], "news_level": self.news.get(code),
-                            "adr": self.adr.get(code), "hi_n": self.hi_n.get(code)})
+                            "adr": self.adr.get(code), "hi_n": self.hi_n.get(code),
+                            "vol_day": (float(bars[code]["volume"].sum()) / self.av20[code]) if self.av20.get(code) else None})
                 r = dt.evaluate(bars[code], ctx)
             r.update({"code": code, "name": self.names.get(code, code)})
             if self.news_items.get(code):
@@ -275,6 +344,10 @@ class Runner:
         gated = self.runner == "pc"
         if gated and shortlist.freeze(self.sl, res, now.strftime("%H:%M")):
             log.info("★ 오늘의 후보 %d개 확정: %s", len(self.sl["list"]), ", ".join(f"{x['name']}({x['score']})" for x in self.sl["list"]))
+        if gated and shortlist.frozen(self.sl) and self.surge_codes:          # 장중 급등 포착 → 후보 맨 뒤 (진입 금지 하나와 교체)
+            for ch in shortlist.add_surge(self.sl, self.surge_codes, res, self.names, set(self.track.codes())):
+                log.info("★ 급등 포착 → 후보 추가: %s%s", self.names.get(ch["add"], ch["add"]),
+                         f" (진입 금지 {self.names.get(ch['removed'], ch['removed'])} 뺌)" if ch["removed"] else "")
         for r in res:
             if gated:
                 shortlist.gate(r, self.sl, self.us.get("tone"))

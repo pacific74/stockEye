@@ -128,3 +128,77 @@ def test_early_pick_fills_five_by_relaxing_and_uses_open_gap():
     out = sl.early_pick(pre, info, live={"g": 12.0})
     assert len(out) == 5 and out[0]["code"] == "g" and out[0]["tier"] == 1 and out[0]["open"] == 12.0   # 시초 갭만 있는 종목도 잡힘
     assert all(x["tier"] >= 2 for x in out[1:])                                         # 나머지는 기준을 풀어 채움
+
+
+def test_vol_surge_ratio_and_min_prev():
+    out = sl.vol_surge({"a": 31000, "b": 29000, "c": 90000, "d": 5000}, {"a": 10000, "b": 10000, "c": 500, "d": 1000}, {"a": "A"})
+    assert [x["code"] for x in out] == ["d", "a"]        # 비율 큰 순 · b 290% 미만 · c 전일 거래량 너무 적음
+    assert out[1]["vr"] == 310 and out[1]["name"] == "A"
+
+
+def test_freeze_uses_vol_surge_pool_and_falls_back():
+    res = [_r(f"s{i}", 90 - i) for i in range(12)]
+    st = sl.new_state()
+    st["early"] = [{"code": "e1", "name": "E1", "pre": 5.0}]
+    st["vs"] = [{"code": "s3", "vr": 450}, {"code": "s7", "vr": 320}, {"code": "e1", "vr": 999}]
+    assert sl.freeze(st, res, "09:05")
+    codes = [x["code"] for x in st["list"]]
+    assert set(codes) == {"e1", "s3", "s7"}                  # 거래량 300%↑ 풀에 없는 종목은 점수가 높아도 제외
+    assert next(x for x in st["list"] if x["code"] == "s3")["src"] == "vol"
+    st2 = sl.new_state()                                     # 거래량 비교를 못 했으면 (vs None) 예전처럼 점수 상위
+    assert sl.freeze(st2, res, "09:05") and len(st2["list"]) == sl.N
+    assert all(x["src"] == "score" for x in st2["list"])
+
+
+def test_add_surge_replaces_excluded_and_goes_last():
+    res = [_r(f"s{i}", 90 - i) for i in range(12)]
+    for r in res:
+        r["excluded"] = False
+    st = sl.new_state()
+    sl.freeze(st, res, "09:05")
+    names = {r["code"] for r in st["list"]}
+    bad = st["list"][3]["code"]
+    byc = {r["code"]: r for r in res}
+    byc[bad]["excluded"] = True                                   # 후보 중 하나가 진입 금지가 됨
+    res.append({**_r("hot", 70), "excluded": False})
+    ch = sl.add_surge(st, ["hot", "none"], res, {"hot": "급등주"}, set())
+    assert ch == [{"add": "hot", "removed": bad}]
+    codes = [x["code"] for x in st["list"]]
+    assert codes[-1] == "hot" and bad not in codes and len(codes) == sl.N       # 진입 금지 자리에 맨 뒤로
+    assert [x["rank"] for x in st["list"]] == list(range(1, sl.N + 1)) and st["list"][-1]["src"] == "surge"
+    assert sl.add_surge(st, ["hot"], res, {}, set()) == []                       # 두 번 넣지 않음
+    # 진입 금지가 없으면 N 을 넘겨 붙임 (최대 N+5) · 급등 종목 자신이 진입 금지면 건너뜀
+    byc[bad]["excluded"] = False
+    res += [{**_r(f"h{i}", 60), "excluded": False} for i in range(7)] + [{**_r("bad", 99), "excluded": True}]
+    sl.add_surge(st, [f"h{i}" for i in range(7)] + ["bad"], res, {}, set())
+    assert len(st["list"]) == sl.N + sl.SURGE_EXTRA and "bad" not in [x["code"] for x in st["list"]]
+
+
+def test_volume_rank_parse_and_score_weights():
+    import pandas as pd
+    from stockeye.data.sources.kis_source import KISClient
+    from stockeye.engine import daytrade as dt
+    k = KISClient.__new__(KISClient)
+    k._get = lambda *a, **kw: {"output": [{"mksc_shrn_iscd": "5930", "hts_kor_isnm": "A", "stck_prpr": "1000", "prdy_ctrt": "3.5",
+                                           "acml_vol": "500000", "acml_tr_pbmn": "500000000", "vol_inrt": "420.5"}]}
+    df = k.volume_rank("0001", "surge")
+    assert df.loc[0, "code"] == "005930" and df.loc[0, "vol_inrt"] == 420.5
+    assert sum(m for _, m in dt.PARTS.values()) == 100 and dt.PARTS["liq20"][1] == 10 and dt.PARTS["vol15"][1] == 25
+    t = pd.date_range("2026-11-09 09:00", periods=40, freq="min")
+    b = pd.DataFrame({"time": t, "open": 1000.0, "high": 1010.0, "low": 995.0, "close": 1005.0, "volume": 1000.0})
+    ctx = {"name": "x", "prev_close": 990.0, "now": t[-1], "value": 3e9}
+    lo = dt.evaluate(b, {**ctx, "vol_day": 0.1})["parts"]["vol15"]
+    hi = dt.evaluate(b, {**ctx, "vol_day": 2.0})["parts"]["vol15"]
+    assert hi > lo                                                  # 평소 대비 누적 거래량이 클수록 거래량 점수가 높음
+    big = dt.evaluate(b, {**ctx, "value": 3e11})["parts"]["liq20"]
+    mid = dt.evaluate(b, {**ctx, "value": 3e9})["parts"]["liq20"]
+    assert big == mid                                               # 거래대금은 30억 이상이면 더 크다고 점수를 더 주지 않음
+
+
+def test_minute_archive_includes_volume_leaders():
+    import pandas as pd
+    from stockeye.analysis import minute_archive as ma
+    rows = [{"code": f"{i:06d}", "chg_pct": 0.0, "value": 5e9 if i < 150 else 2e9, "volume": 100.0 + i} for i in range(300)]
+    snap = pd.DataFrame(rows)
+    out = ma.pick(snap)
+    assert "000299" in out and len(out) >= 150 + ma.TOP_VOLUME - 150    # 거래량 큰 종목(거래대금 20억)도 포함

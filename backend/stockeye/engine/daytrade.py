@@ -37,7 +37,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-VERSION = "DT-0.4"   # 0.2: 1차 목표 +3%↑ · 2차 +5%↑ · 평소 하루 변동폭 5% 미만 제외 · 0.3: 손절 = 지지선 아래 (3% 이내)
+VERSION = "DT-0.5"   # 0.2: 1차 목표 +3%↑ · 2차 +5%↑ · 평소 하루 변동폭 5% 미만 제외 · 0.3: 손절 = 지지선 아래 (3% 이내)
 COST = 0.002                 # 왕복 수수료·세금 (비율)
 MIN_VALUE = 10e8             # 오전 누적 거래대금 10억
 MAX_SPREAD = 0.003           # 0.3%
@@ -56,7 +56,10 @@ US_DOWN_SCORE = 3.0          # 미국 선물 하락(보수): 진입 기준 +3점
 US_CHASE = 0.01              # 미국 선물 상승이면 VWAP 추격 한도 +1%p · 하락이면 −1%p (2026-11-02)
 WARMUP = "09:05"             # 이 전에는 신규 진입 신호 없음
 WATCH, PRIORITY = 70.0, 80.0
-PARTS = {"liq20": ("거래대금·유동성", 20), "vol15": ("거래량·매수세", 15), "pat25": ("가격 구조·진입 패턴", 25),
+# DT-0.5 (2026-11-09 사용자): 단타는 변동폭을 먹는 매매 → 거래대금이 크다고 점수를 더 주지 않음 (대형주 쏠림). 거래대금은 '최소 금액'(10억) + 30억에서 만점,
+#   그 몫을 거래량으로 이동: 유동성 20→10 (거래대금 4 + 스프레드 6) · 거래량·매수세 15→25 (최근 5분 거래량 10 + 상승 봉 비중 5 + 평소 하루 거래량 대비 누적 10)
+#   ⚠ 키 이름(liq20·vol15)은 기록 호환을 위해 그대로 둠. 80점 기준의 의미가 달라졌으므로 이전 되돌려 보기 결과(DT-0.4)와 직접 비교하지 말 것
+PARTS = {"liq20": ("거래대금(최소)·스프레드", 10), "vol15": ("거래량·매수세", 25), "pat25": ("가격 구조·진입 패턴", 25),
          "trend15": ("단기 추세", 15), "news10": ("뉴스·공시 재료", 10), "mkt10": ("시장·업종 동조", 10),
          "risk5": ("손익비·위험 여유", 5)}
 SEVERE = ["횡령", "배임", "거래정지", "상장폐지", "상장적격성", "감사의견", "회생", "부도"]
@@ -267,9 +270,15 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
     slope5 = p / float(b["close"].iloc[-6]) - 1 if len(b) > 5 else 0.0
     sp_pts = 3.0 if spread is None else ramp(spread, [(0.0005, 6), (0.001, 5), (0.002, 3), (0.003, 0)])
     room = (use["level"] - p) / max(p - pl["stop"], 1e-9) if typ == "눌림목" and use.get("level") else None
+    # 평소 하루 거래량(20일 평균) 대비 오늘 누적 거래량 — 그 시각까지 보통 쓰는 비중(09:05 10% · 09:30 22% · 10:00 32% · 12:00 50%)으로 나눠 '평소보다 몇 배 활발한가'
+    vd = ctx.get("vol_day")
+    mins = max((now - pd.Timestamp(b["time"].iloc[0]).normalize().replace(hour=9, minute=0)).total_seconds() / 60, 1)
+    frac = ramp(mins, [(5, 0.10), (30, 0.22), (60, 0.32), (120, 0.50)])
+    vr_day = None if not vd else float(vd) / frac
+    vday_pts = 4.0 if vr_day is None else ramp(vr_day, [(1, 0), (2, 4), (3.5, 8), (5, 10)])      # 자료 없으면 중립 4점
     parts = {
-        "liq20": ramp(value / 1e8, [(10, 4), (30, 8), (100, 12), (300, 14)]) + sp_pts,
-        "vol15": ramp(v5 / vavg if vavg > 0 else 0, [(1, 3), (1.5, 6), (2.5, 10)]) + ramp(upshare, [(0.4, 0), (0.7, 5)]),
+        "liq20": ramp(value / 1e8, [(10, 2), (30, 4)]) + sp_pts,
+        "vol15": ramp(v5 / vavg if vavg > 0 else 0, [(1, 3), (1.5, 6), (2.5, 10)]) + ramp(upshare, [(0.4, 0), (0.7, 5)]) + vday_pts,
         "pat25": float(use["score"]),
         "trend15": (5 if p > vw else 0) + (4 if slope5 > 0 else 0) + (3 if ema(5) > ema(20) else 0) + (3 if p > or_high else 0),
         "news10": {"pos": 10.0, "neg": 0.0, "severe": 0.0}.get(ctx.get("news_level"), 5.0),

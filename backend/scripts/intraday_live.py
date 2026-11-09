@@ -200,6 +200,12 @@ def main():
     kis = KISClient(kc.get("env", "prod"), data_dir(cfg) / ".kis_token.json", kc.get("calls_per_sec", 15))
     dt = sd.Runner(sb, kis, listing, args.top, args.workers, runner="pc")
     dt.until = "10:00"
+    try:                                                              # 전 종목 외국인·기관 최근 3일 순매수 ÷ 거래대금 → 09:00 선발 수급 가산 (2026-11-09)
+        from stockeye.analysis.flow3 import flow3_ratio
+        dt.flow = flow3_ratio(store.load("flows"), ohlcv)
+        print(f"수급(외국인·기관 3일) {len(dt.flow)}종목")
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠ 수급 계산 실패 (계속 진행): {e}")
     lc = sl.Runner(sb, kis, listing, ohlcv, sectors, args.workers, runner="pc", log_dir=data_dir(cfg) / "limitcatch")
     from stockeye.trading.intraday_track import Tracker
     cb = Tracker(sb, "closingbet", _now().strftime("%Y-%m-%d"), carry_only=True)   # 전날 종가배팅 → 오늘 10:30 까지
@@ -272,7 +278,7 @@ def main():
                 pass
             add = sg_watch.add_pre(pre, scores, dt.names)
             dt.boost = {c for c, _ in scores} | {i["code"] for i in sg_watch.items}
-            dt.flow = {c: float(v) for c, v in (lst.get("flow") or {}).items()}
+            dt.flow = {**dt.flow, **{c: float(v) for c, v in (lst.get("flow") or {}).items()}}
             print(f"급등예상 아침 보강 {len(add)}종목 추가")
             seen = False
             try:

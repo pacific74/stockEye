@@ -100,13 +100,13 @@ def test_early_pick_after_market_and_flow():
     pre = {"a": [1000, 0.5], "b": [1000, 4.0], "c": [1000, -2.0]}
     after = {"a": [1000, 6.0], "b": [1000, 2.0], "c": [1000, 7.0], "z": [1000, 9.0]}
     info = {k: {"adr": 0.08, "pv": 5e9, "name": k} for k in "abcz"}
-    out = sl.early_pick(pre, info, after=after, flow={"a": 0.10})
+    out = sl.early_pick(pre, info, after=after, flow={"a": 0.12})
     codes = [x["code"] for x in out]
     assert "c" not in codes                              # 애프터는 올랐지만 프리마켓이 0% 미만이면 제외
     assert codes[0] == "z" or codes[0] == "a"
     a = next(x for x in out if x["code"] == "a")
-    assert a["after"] == 6.0 and a["flow"] == 5.0        # 수급 가산은 최대 5
-    assert a["score"] == round(0.5 + 3.0 + 5.0, 1)
+    assert a["after"] == 6.0 and a["flow"] == 10.0       # 수급 가산은 최대 10 (비율 10%)
+    assert a["score"] == round(0.5 + 3.0 + 10.0, 1)
 
 
 def test_types_allow_breakout_by_default():

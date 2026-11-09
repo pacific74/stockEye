@@ -172,7 +172,7 @@ def test_support_stop_none_within_3pct():
 
 
 def test_us_futures_tone_changes_threshold_and_chase():
-    """미국 선물 하락(보수): 진입 기준 83점 · 추격 한도 2% / 상승(적극): 추격 한도 4% / 없음·중립: 그대로"""
+    """미국 선물 하락(보수): 추격 한도 2% / 상승(적극): 추격 한도 4% / 없음·중립: 그대로"""
     rows = [(10000, 10040, 9990, 10030, 1000)] * 3 + [(10030, 10050, 10000, 10020, 800)] * 12
     rows += [(10020, 10045, 10010, 10040, 900)] * 3 + [(10040, 10110, 10040, 10100, 3000)]
     b = _bars(rows)
@@ -181,9 +181,19 @@ def test_us_futures_tone_changes_threshold_and_chase():
     down = dt.evaluate(b, _ctx(b, us_tone="하락", us_pct=-0.9))
     assert base["us_tone"] is None and up["us_tone"] == "상승" and down["us_pct"] == -0.9
     assert base["score"] == up["score"] == down["score"]                          # 점수 자체는 그대로 (기준·추격 한도만 바뀜)
-    s = base["score"]
-    if s >= 80:
-        assert base["status"] == "진입 조건 충족" and up["status"] == "진입 조건 충족"
-        assert (down["status"] == "진입 조건 충족") == (s >= 83)
-        if s < 83:
-            assert any("미국 선물 하락" in w for w in down["warnings"])
+    # DT-0.6: 진입은 점수와 무관 — 신호가 있고 제외 사유·추격이 없으면 충족 (미국 선물 하락 때도 83점 규칙 없음)
+    if base["signal"] and not base["excluded"] and base["vwap_gap_pct"] < 3.0:
+        assert base["status"] == "진입 조건 충족"
+
+
+
+def test_entry_ignores_score(monkeypatch):
+    """점수가 낮아도 신호가 있으면 진입 조건 충족 / ENTRY_MIN_SCORE 를 올리면 그 점수 미만은 진입 안 함"""
+    rows = [(10000, 10040, 9990, 10030, 1000)] * 3 + [(10030, 10050, 10000, 10020, 800)] * 12
+    rows += [(10020, 10045, 10010, 10040, 900)] * 3 + [(10040, 10110, 10040, 10100, 3000)]
+    b = _bars(rows)
+    r = dt.evaluate(b, _ctx(b))
+    if r["signal"] and not r["excluded"]:
+        assert r["status"] == "진입 조건 충족"
+        monkeypatch.setattr(dt, "ENTRY_MIN_SCORE", 101.0)
+        assert dt.evaluate(b, _ctx(b))["status"] != "진입 조건 충족"

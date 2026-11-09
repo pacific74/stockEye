@@ -2,7 +2,7 @@
   Storage  surge/lists/<기준일>.json   목록(기준일 종가 → 다음 거래일 관찰) + 점수 상위 100
            surge/results.json          {rows: 종목별 채점(최근 KEEP), days: 날짜별 요약(최근 120)}
   system_status 'surge'        {date, items(20), model, prev(가장 최근 채점일 요약+종목별+놓친 상한가), stats}
-                'surge_stats'  {stats, days(최근 30), rows(최근 80)}   ← 앱 '검증' 화면
+                'surge_stats'  {stats, days(최근 30), rows(최근 80), hist(전체 채점 행 [기준일·종가%·고가%·상한가 닿음·종가 상한가] — 앱 분포 그래프)}   ← 앱 '검증' 화면
 """
 from __future__ import annotations
 
@@ -95,5 +95,6 @@ def run(sb, pit, today: str) -> dict:
     from ..cloud import publish as pub
     pub.publish_status(sb, "surge", {"updated": today, "version": sg.VERSION, "date": lst["date"], "model": info,
                                      "items": lst["items"], "prev": ({**prev, "rows": prev_rows} if prev else None), "stats": st})
-    pub.publish_status(sb, "surge_stats", {"updated": today, "version": sg.VERSION, "stats": st, "days": days[-30:], "rows": rows[-80:]})
+    pub.publish_status(sb, "surge_stats", {"updated": today, "version": sg.VERSION, "stats": st, "days": days[-30:], "rows": rows[-80:],
+                                           "hist": [[r["date"], r.get("close"), r.get("high"), bool(r.get("reached")), bool(r.get("closed"))] for r in rows]})
     return {"date": lst["date"], "items": len(lst["items"]), "graded": added, "train": info["rows"], **(st.get("all") or {})}

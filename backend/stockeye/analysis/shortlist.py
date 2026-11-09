@@ -22,6 +22,7 @@ VOL_MAX = 300             # 비교할 최대 종목 수 (거래대금 큰 순)
 EARLY_MIN, EARLY_MAX = 3.0, 25.0   # 프리마켓 등락 범위 (%) — 너무 큰 갭(상한가 근처)은 진입 불가
 EARLY_MIN_PV = 3e9        # 전일 거래대금 30억 이상
 EARLY_BOOST = 5.0         # 급등예상 목록(점수 상위 100)에도 있으면 가산
+FLOW_MAX = 10.0           # 외국인·기관 3일 순매수 가산 최대 (2026-11-09 사용자: 장초반 진입하려면 수급 좋은 종목 — 5 → 10)
 N = 10                    # 오늘의 후보 개수
 SURGE_EXTRA = 5           # 급등 포착 종목이 들어올 때 비울 '진입 금지' 자리가 없으면 N 을 넘겨서라도 최대 이만큼 더 붙임
 TOP = 5                   # 그중 우선 (되돌려 보기에서 가장 좋았던 구간)
@@ -55,7 +56,7 @@ def early_pick(pre: dict, info: dict, boost: set | None = None, n: int = EARLY_N
     """09:00 선발 — 프리마켓(pre) · 어제 저녁 애프터마켓(after) = {코드: [가격, 종가 대비 %]} · 09:00 시초 등락(live = {코드: %}) 중
     하나라도 +EARLY_MIN~MAX% 인 종목 (애프터는 프리마켓이 0% 이상일 때만). info[code] = {adr, pv(전일 거래대금), name}.
     평소 변동폭(MIN_ADR)·전일 거래대금을 거른 뒤 점수 순으로 n개. 모자라면 TIERS 순서로 기준을 풀어 n개를 채움.
-    점수 = max(프리마켓, 시초 등락) + 0.5×애프터마켓 + 급등예상 가산 + 외국인·기관 3일 순매수 가산(최대 5)  (⚠ 가중치는 검증 전 초기값)"""
+    점수 = max(프리마켓, 시초 등락) + 0.5×애프터마켓 + 급등예상 가산 + 외국인·기관 3일 순매수 가산(최대 FLOW_MAX=10)  (⚠ 가중치는 검증 전 초기값)"""
     from ..engine.daytrade import MIN_ADR
     boost, after, flow, live = boost or set(), after or {}, flow or {}, live or {}
     out: list[dict] = []
@@ -76,7 +77,7 @@ def early_pick(pre: dict, info: dict, boost: set | None = None, n: int = EARLY_N
                 continue
             if (i.get("adr") or 0) < (MIN_ADR if adr_min is None else adr_min) or (i.get("pv") or 0) < min_pv:
                 continue
-            fb = min(max(float(flow.get(c) or 0) * 100, 0.0), 5.0)
+            fb = min(max(float(flow.get(c) or 0) * 100, 0.0), FLOW_MAX)
             top = max([x for x in (pv, lv) if x is not None] or [0.0])
             rows.append({"code": c, "name": i.get("name") or c, "pre": None if pv is None else round(float(pv), 2),
                          "after": None if av is None else round(float(av), 2), "open": None if lv is None else round(float(lv), 2),

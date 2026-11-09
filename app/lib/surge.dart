@@ -30,7 +30,8 @@ Color surgeStatusColor(String? s) => switch (s) {
     };
 
 class SurgeSection extends StatefulWidget {
-  const SurgeSection({super.key});
+  const SurgeSection({super.key, this.watchOnly = false});
+  final bool watchOnly; // true = 당일매매 화면: '오늘 지켜보는 종목' 만 (2026-11-09) · false = 통계 > 급등예상 탭: 지난 결과·검증
   @override
   State<SurgeSection> createState() => _SurgeSectionState();
 }
@@ -186,6 +187,21 @@ class _SurgeSectionState extends State<SurgeSection> {
     final next = listDate.isNotEmpty && listDate.compareTo(today) >= 0 ? items : <Json>[];
     final days = asList(_st?['days']).reversed.take(10).toList();
     String f(dynamic v) => v == null ? '-' : '$v';
+    if (widget.watchOnly) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 2),
+        child: Text(liveToday ? '오늘 지켜보는 종목 ${watch.length}' : '다음 장 관찰 목록 ${watch.length} ($listDate 저녁 기준)',
+            style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+      ),
+      if (watch.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('목록이 없어요', style: t.bodySmall)),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Wrap(spacing: 6, runSpacing: 6, children: [for (final r in watch) _mini(context, r)]),
+      ),
+      const Divider(height: 16),
+      ]);
+    }
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(4, 4, 4, 2),
@@ -208,16 +224,7 @@ class _SurgeSectionState extends State<SurgeSection> {
               style: t.bodySmall?.copyWith(color: Colors.purple)),
         ),
       _prevCard(context, sg),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(4, 8, 4, 2),
-        child: Text(liveToday ? '오늘 지켜보는 종목 ${watch.length}' : '다음 장 관찰 목록 ${watch.length} ($listDate 저녁 기준)',
-            style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-      ),
-      if (watch.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('목록이 없어요', style: t.bodySmall)),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Wrap(spacing: 6, runSpacing: 6, children: [for (final r in watch) _mini(context, r)]),
-      ),
+      const SurgeHistogram(),
       if (next.isNotEmpty)
         Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -250,5 +257,156 @@ class _SurgeSectionState extends State<SurgeSection> {
         ),
       const Divider(height: 16),
     ]);
+  }
+}
+
+/// 급등예상 목록의 다음 거래일 종가 등락 분포 (2026-11-09) — 하락부터 상한가까지 10% 구간별 종목 수 · 기간 검색
+///   자료: system_status 'surge_stats' 의 hist [[기준일, 종가%, 고가%, 상한가 닿음, 종가 상한가], ...] (없으면 rows)
+class SurgeHistogram extends StatefulWidget {
+  const SurgeHistogram({super.key});
+  @override
+  State<SurgeHistogram> createState() => _SurgeHistogramState();
+}
+
+class _SurgeHistogramState extends State<SurgeHistogram> {
+  List<List<dynamic>>? _h; // [date, close, high, reached, closed]
+  DateTimeRange? _range;
+  int _quick = 0; // 0 전체 · 7 · 30 (일)
+  bool _err = false;
+
+  static const _labels = ['-20% 이하', '-20~-10', '-10~0', '0~10', '10~20', '20~상한가 전', '상한가 마감'];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final st = await Api.statusKey('surge_stats');
+      var h = <List<dynamic>>[];
+      for (final x in (st['hist'] as List? ?? const [])) {
+        if (x is List && x.length >= 5) h.add(x);
+      }
+      if (h.isEmpty) {
+        for (final r in asList(st['rows'])) {
+          h.add(['${r['date']}', r['close'], r['high'], r['reached'], r['closed']]);
+        }
+      }
+      if (mounted) setState(() => _h = h);
+    } catch (_) {
+      if (mounted) setState(() => _err = true);
+    }
+  }
+
+  String _ds(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  List<List<dynamic>> _sel() {
+    final h = _h ?? const <List<dynamic>>[];
+    String? from, to;
+    if (_range != null) {
+      from = _ds(_range!.start);
+      to = _ds(_range!.end);
+    } else if (_quick > 0) {
+      from = _ds(DateTime.now().subtract(Duration(days: _quick)));
+    }
+    return h.where((x) {
+      final d = '${x[0]}';
+      return (from == null || d.compareTo(from) >= 0) && (to == null || d.compareTo(to) <= 0);
+    }).toList();
+  }
+
+  static int _bin(List<dynamic> x) {
+    if (x[4] == true) return 6;
+    final c = (x[1] as num?)?.toDouble() ?? 0;
+    if (c < -20) return 0;
+    if (c < -10) return 1;
+    if (c < 0) return 2;
+    if (c < 10) return 3;
+    if (c < 20) return 4;
+    return 5;
+  }
+
+  Future<void> _pick() async {
+    final now = DateTime.now();
+    final r = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(2026, 1, 1),
+        lastDate: now,
+        initialDateRange: _range,
+        helpText: '기준일(저녁 목록 날짜) 기간');
+    if (r != null) setState(() {
+          _range = r;
+          _quick = 0;
+        });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    if (_err) return Text('분포를 불러오지 못했어요', style: t.bodySmall?.copyWith(color: Colors.orange));
+    if (_h == null) return const Padding(padding: EdgeInsets.all(12), child: LinearProgressIndicator());
+    final sel = _sel();
+    final cnt = List<int>.filled(7, 0);
+    for (final x in sel) {
+      cnt[_bin(x)]++;
+    }
+    final n = sel.length;
+    final mx = cnt.fold<int>(1, (a, b) => b > a ? b : a);
+    int pct(int k) => n == 0 ? 0 : (k / n * 100).round();
+    final hi = sel.where((x) => x[3] == true).length;
+    Color col(int i) => i >= 3 ? (i == 6 ? const Color(0xFFD32F2F) : upColor) : downColor;
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('종가 등락 분포 (목록 다음 거래일 · 기준일 종가 대비)', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            for (final (d, lb) in [(0, '전체'), (7, '최근 7일'), (30, '최근 30일')])
+              ChoiceChip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text(lb),
+                  selected: _range == null && _quick == d,
+                  onSelected: (_) => setState(() {
+                        _range = null;
+                        _quick = d;
+                      })),
+            ActionChip(
+                visualDensity: VisualDensity.compact,
+                avatar: const Icon(Icons.date_range, size: 16),
+                label: Text(_range == null ? '기간 선택' : '${_ds(_range!.start)} ~ ${_ds(_range!.end)}'),
+                onPressed: _pick),
+          ]),
+          const SizedBox(height: 8),
+          if (n == 0) Text('이 기간에 채점된 종목이 없어요', style: t.bodySmall?.copyWith(color: Colors.grey)),
+          for (var i = 0; i < 7; i++)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(children: [
+                SizedBox(width: 92, child: Text(_labels[i], style: t.bodySmall)),
+                Expanded(
+                  child: LayoutBuilder(builder: (context, c) {
+                    final w = c.maxWidth * (cnt[i] / mx);
+                    return Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                          height: 16,
+                          width: cnt[i] == 0 ? 2 : w.clamp(2, c.maxWidth).toDouble(),
+                          decoration: BoxDecoration(color: col(i).withValues(alpha: 0.8), borderRadius: BorderRadius.circular(3))),
+                    );
+                  }),
+                ),
+                SizedBox(width: 74, child: Text('${cnt[i]}종목 ${pct(i)}%', textAlign: TextAlign.right, style: t.bodySmall)),
+              ]),
+            ),
+          const SizedBox(height: 4),
+          Text('총 $n종목 · 장중 상한가 닿음 ${n == 0 ? '-' : '${(hi / n * 100).toStringAsFixed(1)}%'} ($hi) · 상한가 마감 ${pct(6)}% (${cnt[6]})',
+              style: t.bodySmall?.copyWith(color: Colors.teal)),
+        ]),
+      ),
+    );
   }
 }

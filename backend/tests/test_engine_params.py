@@ -29,9 +29,9 @@ def test_params_apply_and_bounds():
 
 def test_params_save_history():
     sb = FakeSB()
-    o = pm.save(sb, {"entry_score": 83}, "t", "2026-11-09 10:00")
+    o = pm.save(sb, {"entry_score": 60}, "t", "2026-11-09 10:00")
     o = pm.save(sb, {"vwap_chase": 0.04, "bad": 1}, "t2", "2026-11-10 10:00")
-    assert o["version"] == 2 and o["params"] == {"entry_score": 83.0, "vwap_chase": 0.04} and len(o["history"]) == 2
+    assert o["version"] == 2 and o["params"] == {"entry_score": 60.0, "vwap_chase": 0.04} and len(o["history"]) == 2
 
 
 def _oh(n=40):
@@ -65,3 +65,11 @@ def test_judge_requires_both_periods():
     assert wo.judge(base, good, "2026-10-10")
     assert wo.judge(base, bad_hold, "2026-10-10") is None
     assert wo.judge(base, good[:10], "2026-10-10") is None   # 거래 수 급감
+
+
+def test_flow3_ratio():
+    from stockeye.analysis.flow3 import flow3_ratio
+    d = [pd.Timestamp("2026-11-0%d" % i) for i in (4, 5, 6)]
+    fl = pd.DataFrame([{"date": x, "code": "A", "foreign": 1e8, "institution": 2e8} for x in d])
+    oh = pd.DataFrame([{"date": x, "code": "A", "close": 1000.0, "volume": 1e6} for x in d])
+    assert flow3_ratio(fl, oh) == {"A": round(9e8 / 3e9, 4)}

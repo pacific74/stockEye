@@ -213,7 +213,7 @@ class _IntradayScreenState extends State<IntradayScreen> {
                 children: [
                   _Section(kind: 'daytrade', d: _dt!, at: _at, onDone: _load, stale: _stale(_dt), quotes: _quotes, rtAt: _rtAt),
                   const SizedBox(height: 12),
-                  const SurgeSection(), // 급등예상 (2026-11-02): 어젯밤 목록 · 오늘 지켜보기 · 지난 결과
+                  const SurgeSection(watchOnly: true), // 급등예상: 오늘 지켜보는 종목만 (지난 결과·검증은 통계 > 급등예상 탭, 2026-11-09)
                   // 급등 포착(장중 실시간) 구역은 화면에서 삭제 (2026-11-09 사용자) — 포착된 종목은 당일단타 후보 맨 뒤에 들어감 (백엔드는 그대로 기록)
                   const SizedBox(height: 12),
                   _ClosingSection(d: _cb ?? const <String, dynamic>{}, tracked: asList(_cbm['tracked']), at: _at, onDone: _load),
@@ -303,23 +303,24 @@ class _Section extends StatelessWidget {
       if (_lc) _PreSection(items: today ? asList(d['pre']) : const []),
       if (!_lc && today) _UsTone(us: asMap(d['us'])),
       if (!_lc) _Shortlist(sl: today ? asMap(d['shortlist']) : const {}, chips: cands.isEmpty),
-      _grid([for (final (i, r) in cands.indexed) tile(r, ((r['cand_rank'] as num?)?.toInt() ?? 0) > 0 ? (r['cand_rank'] as num).toInt() - 1 : i, compact: true)]),
-      sub('진입조건충족', tracked.length, '충족된 시간 순 · 고정'),
-      if (tracked.isEmpty) Padding(padding: const EdgeInsets.all(8), child: Text('아직 없어요', style: t.bodySmall)),
+      // 진입조건 충족 종목은 후보 카드 맨 앞(1번 자리)으로 — 배경색으로 구분 (2026-11-09 사용자). 줄 제목·'아직 없어요'는 뺌
+      if (_lc) sub('진입조건충족', tracked.length, '충족된 시간 순 · 고정'),
       _grid([
         for (final x in tracked)
-          _TrackCard(
-              t: x,
-              kind: kind,
-              quote: stale && x['done'] != true ? quotes['${x['code']}'] : null,
-              candRank: _lc ? null : candRankOf['${x['code']}']),
+          _Fired(
+              child: _TrackCard(
+                  t: x,
+                  kind: kind,
+                  quote: stale && x['done'] != true ? quotes['${x['code']}'] : null,
+                  candRank: _lc ? null : candRankOf['${x['code']}'])),
       ], width: _trackW),
+      _grid([for (final (i, r) in cands.indexed) tile(r, ((r['cand_rank'] as num?)?.toInt() ?? 0) > 0 ? (r['cand_rank'] as num).toInt() - 1 : i, compact: true)]),
       if (_lc) ...[
         // 당일단타는 '진입대기'·'기준 미달' 구역을 안 보임 (2026-11-05 사용자) — 후보 10개 카드와 진입조건충족만
         sub('진입대기', wait.length, '+20%↑ · 100억↑ · 75점↑ (바뀔 수 있음)'),
         _grid([for (final (i, r) in wait.indexed) tile(r, i)]),
       ],
-      if (watch.isNotEmpty)
+      if (_lc && watch.isNotEmpty)
         Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
@@ -348,6 +349,21 @@ class _Section extends StatelessWidget {
         ),
     ]);
   }
+}
+
+/// 진입조건 충족 종목 카드 배경 — 후보 카드와 구분 (연한 초록 바탕 + 초록 테두리)
+class _Fired extends StatelessWidget {
+  const _Fired({required this.child});
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => Container(
+        decoration: BoxDecoration(
+          color: Colors.green.withValues(alpha: 0.13),
+          border: Border.all(color: Colors.green.withValues(alpha: 0.7), width: 1.5),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: child,
+      );
 }
 
 /// 당일단타 제목줄 — 미국 선물 등락 + 오르는 중(▲ 빨강)·내리는 중(▼ 파랑) 깜빡임 (2026-11-06 사용자). 거의 보합(±0.05%)이면 깜빡이지 않음
@@ -397,7 +413,10 @@ class _UsTone extends StatelessWidget {
         TextSpan(text: '미국 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
         TextSpan(text: fut, style: t.bodySmall?.copyWith(color: c, fontWeight: FontWeight.w600)),
         TextSpan(text: '  →  ', style: t.bodySmall?.copyWith(color: Colors.grey)),
-        TextSpan(text: mode, style: t.bodySmall?.copyWith(color: c, fontWeight: FontWeight.bold)),
+        WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: Blink(on: true, child: Text(mode, style: t.bodySmall?.copyWith(color: c, fontWeight: FontWeight.bold)))), // 중립·상승·하락 깜빡임 (2026-11-09 사용자)
         if (us['at'] != null) TextSpan(text: '  (${us['at']})', style: t.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
       ])),
     );
@@ -421,14 +440,6 @@ class _Shortlist extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text.rich(TextSpan(children: [
-          TextSpan(text: '당일단타 후보 ${done ? list.length : 0}', style: t.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-          TextSpan(
-              text: done
-                  ? '  ${sl['at']} 확정 · 진입은 이 안에서만 (앞 $top개 우선)'
-                  : '  ${sl['early_at'] ?? '09:00'} 프리마켓으로 ${sl['early_n'] ?? 5}종목 먼저 → ${sl['freeze_at'] ?? '09:05'} 전일 동시간 거래량 ${sl['vol_ratio'] ?? 300}%↑ 종목을 더해 ${sl['n'] ?? 10}개 · 그 전엔 진입 대기',
-              style: t.bodySmall?.copyWith(color: Colors.grey)),
-        ])),
         if (!done && asList(sl['early']).isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 4),

@@ -19,7 +19,8 @@
   거래정지·투자경고 등 위험 상태 · 심각 악재 뉴스 · 시세 지연(마지막 봉이 3분 넘게 지남)
   VWAP 대비 3% 이상 위 → 신규 진입 보류 (추격 금지) · 09:05 전 → 후보 수집만
 
-상태: 진입 금지 / 관찰(70↑) / 진입 대기(80↑, 신호 없음) / 진입 조건 충족(80↑ + 신호)
+상태: 진입 금지 / 관찰(70↑) / 진입 대기(80↑, 신호 없음) / 진입 조건 충족(신호 + 제외 사유 없음 + 추격 아님 — 점수 무관, DT-0.6)
+  DT-0.6 (2026-11-09): 점수는 종목 선정(후보 순위)에만 쓰고 진입 조건에서는 뺌. 미국 선물 하락 때 진입 83점 규칙도 없앰 (추격 한도만 조정)
 주문: 1차 익절 = 위험의 1.5배, 2차 = 2배 (비용 0.2% 반영), 손절 = 지지선 아래, 장 마감 전 청산
 
 손절 (DT-0.3, 2026-10-14): 예전엔 패턴 가격 바로 밑(돌파 전이면 지금가 −1호가)이라 호가가 한 번 튀면 손절됐음 →
@@ -37,7 +38,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-VERSION = "DT-0.5"   # 0.2: 1차 목표 +3%↑ · 2차 +5%↑ · 평소 하루 변동폭 5% 미만 제외 · 0.3: 손절 = 지지선 아래 (3% 이내)
+VERSION = "DT-0.6"   # 0.2: 1차 목표 +3%↑ · 2차 +5%↑ · 평소 하루 변동폭 5% 미만 제외 · 0.3: 손절 = 지지선 아래 (3% 이내)
 COST = 0.002                 # 왕복 수수료·세금 (비율)
 MIN_VALUE = 10e8             # 오전 누적 거래대금 10억
 MAX_SPREAD = 0.003           # 0.3%
@@ -56,6 +57,7 @@ US_DOWN_SCORE = 3.0          # 미국 선물 하락(보수): 진입 기준 +3점
 US_CHASE = 0.01              # 미국 선물 상승이면 VWAP 추격 한도 +1%p · 하락이면 −1%p (2026-11-02)
 WARMUP = "09:05"             # 이 전에는 신규 진입 신호 없음
 WATCH, PRIORITY = 70.0, 80.0
+ENTRY_MIN_SCORE = 0.0       # 진입 조건에는 점수를 안 씀 (2026-11-09 사용자: 점수는 종목 선정용). 0 = 점수 무관 · 올리면 그 점수 이상만 진입 (주간 최적화가 비교해 보는 값)
 # DT-0.5 (2026-11-09 사용자): 단타는 변동폭을 먹는 매매 → 거래대금이 크다고 점수를 더 주지 않음 (대형주 쏠림). 거래대금은 '최소 금액'(10억) + 30억에서 만점,
 #   그 몫을 거래량으로 이동: 유동성 20→10 (거래대금 4 + 스프레드 6) · 거래량·매수세 15→25 (최근 5분 거래량 10 + 상승 봉 비중 5 + 평소 하루 거래량 대비 누적 10)
 #   ⚠ 키 이름(liq20·vol15)은 기록 호환을 위해 그대로 둠. 80점 기준의 의미가 달라졌으므로 이전 되돌려 보기 결과(DT-0.4)와 직접 비교하지 말 것
@@ -299,14 +301,10 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
     w = out["warnings"]
     chase = REB_CHASE if reb else VWAP_CHASE
     us = ctx.get("us_tone")                                           # 미국 선물: 상승 → 적극 · 하락 → 보수 (analysis/us_tone.py)
-    prio = PRIORITY
     if us == "상승":
         chase += US_CHASE
     elif us == "하락":
         chase = max(0.015, chase - US_CHASE)
-        prio = PRIORITY + US_DOWN_SCORE
-        if PRIORITY <= score < prio:
-            w.append(f"미국 선물 하락 — 진입 기준 {prio:.0f}점 (보수적)")
     if gap >= chase:
         w.append(f"VWAP 대비 +{gap * 100:.1f}% — 추격 금지 (신규 진입 보류)")
     if hm < WARMUP:
@@ -314,12 +312,12 @@ def evaluate(bars: pd.DataFrame, ctx: dict) -> dict:
     late = bool(reb) and hm > REB_ENTRY_UNTIL
     if late:
         w.append(f"{reb['why']} — {REB_ENTRY_UNTIL} 이후 신규 진입 보류 (오전 급등 되밀림)")
-    can_enter = sig and gap < chase and hm >= WARMUP and not late
+    can_enter = sig and gap < chase and hm >= WARMUP and not late and score >= ENTRY_MIN_SCORE
     if ex:
         status = "진입 금지"
-    elif score >= prio and can_enter:
+    elif can_enter:                                                   # 진입 = 패턴 신호 + 제외 사유 없음 + VWAP 추격 아님 (점수 무관)
         status = "진입 조건 충족"
-    elif score >= prio:
+    elif score >= PRIORITY:
         status = "진입 대기"
     elif score >= WATCH:
         status = "관찰"

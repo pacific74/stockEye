@@ -15,7 +15,7 @@ PROPOSAL = "engine/proposal.json"
 
 # 이름: (daytrade 모듈 상수, 후보값, 하한, 상한) — 한 번에 하나씩 바꿔 비교할 대상
 TUNABLE = {
-    "entry_score": ("PRIORITY", [75.0, 78.0, 80.0, 83.0, 85.0], 70.0, 90.0),
+    "entry_score": ("ENTRY_MIN_SCORE", [0.0, 50.0, 60.0, 70.0, 80.0], 0.0, 90.0),   # 진입 최소 점수 (0 = 점수 무관)
     "vwap_chase": ("VWAP_CHASE", [0.02, 0.025, 0.03, 0.04, 0.05], 0.01, 0.07),
     "min_value": ("MIN_VALUE", [5e8, 10e8, 20e8, 30e8], 3e8, 50e8),
     "min_adr": ("MIN_ADR", [0.04, 0.05, 0.06, 0.07], 0.03, 0.10),

@@ -136,7 +136,8 @@ def main():
 
     t0 = time.time()
     base_all = run({})
-    base_cur = base_all.get("80.0") or []
+    bk = str(float(base_params["entry_score"]))
+    base_cur = base_all.get(bk) or []
     print(f"기준(지금 조건) {stats(base_cur)}  ({(time.time() - t0) / 60:.0f}분)")
     cands = []
     for s in scores:                                                 # 진입 점수는 한 번 계산한 결과에서 비교
@@ -151,7 +152,7 @@ def main():
         for v in (order[i - 1] if i > 0 else None, order[i + 1] if i + 1 < len(order) else None):
             if v is None:
                 continue
-            cands.append((name, v, run({name: v}).get("80.0") or []))
+            cands.append((name, v, run({name: v}).get(bk) or []))
             print(f"  {name}={v}: {stats(cands[-1][2])}  ({(time.time() - t0) / 60:.0f}분)")
     if ex:
         ex.shutdown()

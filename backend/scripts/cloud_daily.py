@@ -100,7 +100,12 @@ def main():
 
     t0 = time.time()
     # 주말·공휴일(휴장일)은 아무것도 하지 않음 (수동 실행 --force / --as-of / --skip-collect 는 그대로 진행)
-    if not (args.force or args.as_of or args.skip_collect):
+    # 09시 전에 도는 건 '어제 저녁 예약이 GitHub 사정으로 밤새 밀린 것' (2026-11-10: 11/9 분이 04:45 에 돌아 '오늘 휴장'으로 오인해 건너뜀)
+    #   → 그땐 오늘이 아니라 어제 장의 배치이므로 휴장일 판정을 하지 않고 수집 → '새 거래일 데이터 없으면 분석 생략' 으로 처리
+    late_run = pd.Timestamp.now(tz="Asia/Seoul").hour < 9
+    if late_run:
+        log.info("09시 전 실행 = 어제 저녁 예약이 밀려서 돈 것 → 휴장일 판정 생략하고 진행")
+    if not (args.force or args.as_of or args.skip_collect or late_run):
         from stockeye.data.sources.naver_live import is_trading_day
         open_today = is_trading_day()
         if open_today is False:

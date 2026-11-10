@@ -305,6 +305,7 @@ class _Section extends StatelessWidget {
       if (!_lc) _Shortlist(sl: today ? asMap(d['shortlist']) : const {}, chips: cands.isEmpty),
       // 진입조건 충족 종목은 후보 카드 맨 앞(1번 자리)으로 — 배경색으로 구분 (2026-11-09 사용자). 줄 제목·'아직 없어요'는 뺌
       if (_lc) sub('진입조건충족', tracked.length, '충족된 시간 순 · 고정'),
+      // 한 격자 안에서 매수 종목이 1번 자리(맨 앞)로 가고 나머지는 하나씩 밀림 (2026-11-10 사용자) — 카드 폭도 후보와 같은 칸
       _grid([
         for (final x in tracked)
           _Fired(
@@ -313,8 +314,8 @@ class _Section extends StatelessWidget {
                   kind: kind,
                   quote: stale && x['done'] != true ? quotes['${x['code']}'] : null,
                   candRank: _lc ? null : candRankOf['${x['code']}'])),
-      ], width: _trackW),
-      _grid([for (final (i, r) in cands.indexed) tile(r, ((r['cand_rank'] as num?)?.toInt() ?? 0) > 0 ? (r['cand_rank'] as num).toInt() - 1 : i, compact: true)]),
+        for (final (i, r) in cands.indexed) tile(r, ((r['cand_rank'] as num?)?.toInt() ?? 0) > 0 ? (r['cand_rank'] as num).toInt() - 1 : i, compact: true),
+      ], width: tracked.isEmpty ? _cardW : 500),
       if (_lc) ...[
         // 당일단타는 '진입대기'·'기준 미달' 구역을 안 보임 (2026-11-05 사용자) — 후보 10개 카드와 진입조건충족만
         sub('진입대기', wait.length, '+20%↑ · 100억↑ · 75점↑ (바뀔 수 있음)'),

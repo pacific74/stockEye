@@ -283,6 +283,7 @@ class _Section extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Text(_lc ? '급등 포착 (장중 실시간)' : '당일단타', style: t.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+        if (!_lc && today) Flexible(child: _UsChip(us: asMap(d['us']))),   // 미국 선물 (제목 바로 옆)
         const SizedBox(width: 8),
         Expanded(
             child: Text(today ? lookupLabel(d, at) : '오늘 결과 없음',
@@ -1026,6 +1027,32 @@ class _BlinkState extends State<Blink> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) =>
       widget.on ? FadeTransition(opacity: _c, child: widget.child) : widget.child;
+}
+
+/// 당일단타 제목줄 — 미국 선물 등락 + 오르는 중(▲ 빨강)·내리는 중(▼ 파랑) 깜빡임 (2026-11-06 사용자 · 11-11 '당일단타' 글자 바로 옆으로). 거의 보합(±0.05%)이면 깜빡이지 않음
+class _UsChip extends StatelessWidget {
+  const _UsChip({required this.us});
+  final Json us;
+
+  @override
+  Widget build(BuildContext context) {
+    final nq = us['NQ'] as num?, es = us['ES'] as num?;
+    final vals = [if (nq != null) nq, if (es != null) es];
+    if (vals.isEmpty) return const SizedBox.shrink();
+    final avg = (us['avg'] as num?) ?? vals.reduce((a, b) => a + b) / vals.length;
+    final dir = avg >= 0.05 ? 1 : (avg <= -0.05 ? -1 : 0);
+    final c = dir > 0 ? upColor : (dir < 0 ? downColor : Colors.grey);
+    String f(String n, num? v) => v == null ? '' : '$n ${v >= 0 ? '+' : ''}${v.toStringAsFixed(2)}%';
+    final t = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(left: 6, right: 4),
+      child: Blink(
+        on: dir != 0,
+        child: Text('${dir > 0 ? '▲' : (dir < 0 ? '▼' : '–')} 미국선물 ${[f('NQ', nq), f('ES', es)].where((x) => x.isNotEmpty).join(' ')}',
+            style: t.bodySmall?.copyWith(color: c, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
 }
 
 /// 상단 시계 (시:분:초 · 1초마다) — 2026-11-11 사용자 요청

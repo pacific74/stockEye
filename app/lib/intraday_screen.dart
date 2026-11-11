@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -202,7 +203,7 @@ class _IntradayScreenState extends State<IntradayScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const LogoTitle('당일매매'), actions: topActions(context, onRefresh: _load)),
+      appBar: AppBar(title: const Row(mainAxisSize: MainAxisSize.min, children: [LogoTitle('당일매매'), SizedBox(width: 12), _Clock()]), actions: topActions(context, onRefresh: _load)),
       body: (_dt == null || _lc == null)
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -286,7 +287,6 @@ class _Section extends StatelessWidget {
         Expanded(
             child: Text(today ? lookupLabel(d, at) : '오늘 결과 없음',
                 overflow: TextOverflow.ellipsis, style: t.bodySmall?.copyWith(color: Colors.grey))),
-        if (!_lc && today) _UsChip(us: asMap(d['us'])),
         DaytradeFindButton(kind: kind, onDone: onDone),
       ]),
       if (d['scan_closed'] == true)
@@ -301,7 +301,6 @@ class _Section extends StatelessWidget {
         Text('● 실시간 (체결 때마다 목표·손절 판단)', style: t.bodySmall?.copyWith(color: Colors.green)),
       // 상한가 예비 (2026-10-16): +10~20% 급등 초입 — 상한가 갈 만한 종목을 미리 (표시+기록만)
       if (_lc) _PreSection(items: today ? asList(d['pre']) : const []),
-      if (!_lc && today) _UsTone(us: asMap(d['us'])),
       if (!_lc) _Shortlist(sl: today ? asMap(d['shortlist']) : const {}, chips: cands.isEmpty),
       // 진입조건 충족 종목은 후보 카드 맨 앞(1번 자리)으로 — 배경색으로 구분 (2026-11-09 사용자). 줄 제목·'아직 없어요'는 뺌
       if (_lc) sub('진입조건충족', tracked.length, '충족된 시간 순 · 고정'),
@@ -365,63 +364,6 @@ class _Fired extends StatelessWidget {
         ),
         child: child,
       );
-}
-
-/// 당일단타 제목줄 — 미국 선물 등락 + 오르는 중(▲ 빨강)·내리는 중(▼ 파랑) 깜빡임 (2026-11-06 사용자). 거의 보합(±0.05%)이면 깜빡이지 않음
-class _UsChip extends StatelessWidget {
-  const _UsChip({required this.us});
-  final Json us;
-
-  @override
-  Widget build(BuildContext context) {
-    final nq = us['NQ'] as num?, es = us['ES'] as num?;
-    final vals = [if (nq != null) nq, if (es != null) es];
-    if (vals.isEmpty) return const SizedBox.shrink();
-    final avg = (us['avg'] as num?) ?? vals.reduce((a, b) => a + b) / vals.length;
-    final dir = avg >= 0.05 ? 1 : (avg <= -0.05 ? -1 : 0);
-    final c = dir > 0 ? upColor : (dir < 0 ? downColor : Colors.grey);
-    String f(String n, num? v) => v == null ? '' : '$n ${v >= 0 ? '+' : ''}${v.toStringAsFixed(2)}%';
-    final t = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.only(left: 6, right: 4),
-      child: Blink(
-        on: dir != 0,
-        child: Text('${dir > 0 ? '▲' : (dir < 0 ? '▼' : '–')} 미국선물 ${[f('NQ', nq), f('ES', es)].where((x) => x.isNotEmpty).join(' ')}',
-            style: t.bodySmall?.copyWith(color: c, fontWeight: FontWeight.bold)),
-      ),
-    );
-  }
-}
-
-/// 미국 선물(나스닥·S&P) 등락 → 오늘 단타 성향 (2026-11-02): 상승 = 적극 매수 · 하락 = 보수적 매수 · 중립 = 그대로
-///   적극: VWAP 추격 한도 +1%p · 후보 밖 추가 85점 / 보수: 진입 기준 83점 · 추격 한도 −1%p · 후보 상위 5개만
-class _UsTone extends StatelessWidget {
-  const _UsTone({required this.us});
-  final Json us;
-
-  @override
-  Widget build(BuildContext context) {
-    final tone = us['tone'];
-    if (tone == null) return const SizedBox.shrink();
-    final t = Theme.of(context).textTheme;
-    final c = tone == '상승' ? upColor : (tone == '하락' ? downColor : Colors.grey);
-    String f(String k, String n) => us[k] is num ? '$n ${(us[k] as num) >= 0 ? '+' : ''}${(us[k] as num).toStringAsFixed(2)}%' : '';
-    final fut = [f('NQ', '나스닥 선물'), f('ES', 'S&P 선물')].where((x) => x.isNotEmpty).join(' · ');
-    final mode = tone == '상승' ? '적극 매수' : (tone == '하락' ? '보수적 매수' : '중립');
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
-      child: Text.rich(TextSpan(children: [
-        TextSpan(text: '미국 ', style: t.bodySmall?.copyWith(color: Colors.grey)),
-        TextSpan(text: fut, style: t.bodySmall?.copyWith(color: c, fontWeight: FontWeight.w600)),
-        TextSpan(text: '  →  ', style: t.bodySmall?.copyWith(color: Colors.grey)),
-        WidgetSpan(
-            alignment: PlaceholderAlignment.baseline,
-            baseline: TextBaseline.alphabetic,
-            child: Blink(on: true, child: Text(mode, style: t.bodySmall?.copyWith(color: c, fontWeight: FontWeight.bold)))), // 중립·상승·하락 깜빡임 (2026-11-09 사용자)
-        if (us['at'] != null) TextSpan(text: '  (${us['at']})', style: t.bodySmall?.copyWith(color: Colors.grey, fontSize: 11)),
-      ])),
-    );
-  }
 }
 
 /// 당일단타 '오늘의 후보' (2026-10-29) — 09:00 프리마켓 선발 5 + 09:05 전일 동시간 거래량 300%↑ 5 = 10개 고정, 진입은 후보 안의 눌림목형만. 상위 5개가 우선
@@ -1084,4 +1026,37 @@ class _BlinkState extends State<Blink> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) =>
       widget.on ? FadeTransition(opacity: _c, child: widget.child) : widget.child;
+}
+
+/// 상단 시계 (시:분:초 · 1초마다) — 2026-11-11 사용자 요청
+class _Clock extends StatefulWidget {
+  const _Clock();
+  @override
+  State<_Clock> createState() => _ClockState();
+}
+
+class _ClockState extends State<_Clock> {
+  Timer? _t;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return Text('${two(_now.hour)}:${two(_now.minute)}:${two(_now.second)}',
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontFeatures: const [FontFeature.tabularFigures()], color: Colors.grey));
+  }
 }

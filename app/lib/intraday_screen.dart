@@ -203,7 +203,7 @@ class _IntradayScreenState extends State<IntradayScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Row(mainAxisSize: MainAxisSize.min, children: [LogoTitle('당일매매'), SizedBox(width: 12), _Clock()]), actions: topActions(context, onRefresh: _load)),
+      appBar: AppBar(title: const Row(children: [LogoTitle('당일매매'), Expanded(child: Center(child: _Clock()))]), actions: topActions(context, onRefresh: _load)), // 시계: 제목과 돋보기 사이 가운데 (2026-11-11)
       body: (_dt == null || _lc == null)
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -1084,6 +1084,6 @@ class _ClockState extends State<_Clock> {
   Widget build(BuildContext context) {
     String two(int n) => n.toString().padLeft(2, '0');
     return Text('${two(_now.hour)}:${two(_now.minute)}:${two(_now.second)}',
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontFeatures: const [FontFeature.tabularFigures()], color: Colors.grey));
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 21, fontFeatures: const [FontFeature.tabularFigures()], color: Colors.grey.shade400));
   }
 }
